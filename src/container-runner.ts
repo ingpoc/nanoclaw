@@ -42,6 +42,7 @@ export interface ContainerInput {
   chatJid: string;
   isMain: boolean;
   isScheduledTask?: boolean;
+  model?: string;
   secrets?: Record<string, string>;
 }
 
@@ -137,6 +138,18 @@ function buildVolumeMounts(
       fs.cpSync(srcDir, dstDir, { recursive: true });
     }
   }
+
+  // Sync rules from container/rules/ into each group's .claude/rules/
+  const rulesSrc = path.join(process.cwd(), 'container', 'rules');
+  const rulesDst = path.join(groupSessionsDir, 'rules');
+  if (fs.existsSync(rulesSrc)) {
+    fs.mkdirSync(rulesDst, { recursive: true });
+    for (const ruleFile of fs.readdirSync(rulesSrc)) {
+      if (!ruleFile.endsWith('.md')) continue;
+      fs.copyFileSync(path.join(rulesSrc, ruleFile), path.join(rulesDst, ruleFile));
+    }
+  }
+
   mounts.push({
     hostPath: groupSessionsDir,
     containerPath: '/home/node/.claude',
@@ -182,20 +195,23 @@ function buildVolumeMounts(
  * Secrets are never written to disk or mounted as files.
  */
 function readSecrets(): Record<string, string> {
-  return readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']);
+  return readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN']);
 }
 
 function buildContainerArgs(mounts: VolumeMount[], containerName: string): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
-  // Run as host user so bind-mounted files are accessible.
-  // Skip when running as root (uid 0), as the container's node user (uid 1000),
-  // or when getuid is unavailable (native Windows without WSL).
-  const hostUid = process.getuid?.();
-  const hostGid = process.getgid?.();
-  if (hostUid != null && hostUid !== 0 && hostUid !== 1000) {
-    args.push('--user', `${hostUid}:${hostGid}`);
-    args.push('-e', 'HOME=/home/node');
+  // Run as host user so bind-mounted files are accessible (Docker only).
+  // Apple Container uses a Linux VM — macOS UIDs (e.g. 501) can't be mapped to the
+  // container's Linux UID namespace, causing XPC connection failure on startup.
+  // The image already sets USER node via Dockerfile so no --user flag is needed.
+  if (CONTAINER_RUNTIME_BIN !== 'container') {
+    const hostUid = process.getuid?.();
+    const hostGid = process.getgid?.();
+    if (hostUid != null && hostUid !== 0 && hostUid !== 1000) {
+      args.push('--user', `${hostUid}:${hostGid}`);
+      args.push('-e', 'HOME=/home/node');
+    }
   }
 
   for (const mount of mounts) {

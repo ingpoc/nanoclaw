@@ -26,6 +26,7 @@ interface ContainerInput {
   chatJid: string;
   isMain: boolean;
   isScheduledTask?: boolean;
+  model?: string;
   secrets?: Record<string, string>;
 }
 
@@ -417,6 +418,7 @@ async function runQuery(
     prompt: stream,
     options: {
       cwd: '/workspace/group',
+      model: containerInput.model,
       additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
       resume: sessionId,
       resumeSessionAt: resumeAt,
@@ -508,10 +510,33 @@ async function main(): Promise<void> {
   }
 
   // Build SDK env: merge secrets into process.env for the SDK only.
-  // Secrets never touch process.env itself, so Bash subprocesses can't see them.
   const sdkEnv: Record<string, string | undefined> = { ...process.env };
   for (const [key, value] of Object.entries(containerInput.secrets || {})) {
     sdkEnv[key] = value;
+  }
+
+  // GITHUB_TOKEN must be in process.env so bash subprocesses (git, gh) can use it.
+  // Safe inside a container: isolated, single-group, ephemeral.
+  if (containerInput.secrets?.GITHUB_TOKEN) {
+    const token = containerInput.secrets.GITHUB_TOKEN;
+    process.env.GITHUB_TOKEN = token;
+    // Auto-configure git identity and credentials so the agent doesn't need to run setup commands.
+    // gh CLI picks up GITHUB_TOKEN automatically via GH_TOKEN env alias.
+    process.env.GH_TOKEN = token;
+    try {
+      fs.writeFileSync(
+        `${process.env.HOME}/.git-credentials`,
+        `https://openclaw-gurusharan:${token}@github.com\n`,
+        { mode: 0o600 },
+      );
+      const { execSync } = await import('child_process');
+      execSync('git config --global credential.helper store', { stdio: 'ignore' });
+      execSync('git config --global user.email "openclaw-gurusharan@users.noreply.github.com"', { stdio: 'ignore' });
+      execSync('git config --global user.name "Andy (openclaw-gurusharan)"', { stdio: 'ignore' });
+      execSync('git config --global init.defaultBranch main', { stdio: 'ignore' });
+    } catch {
+      // Non-fatal: git config may fail in some environments
+    }
   }
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));

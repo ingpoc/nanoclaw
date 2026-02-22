@@ -2,6 +2,8 @@
 
 Applies when editing `groups/main/CLAUDE.md` or Andy's docs.
 
+For repository root `CLAUDE.md`, follow `.claude/rules/nanoclaw-root-claude-compression.md` instead.
+
 ## Gate: What Stays in CLAUDE.md
 
 Only if ALL three are true:

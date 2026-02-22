@@ -36,6 +36,147 @@ function getHomeDir(): string {
   return home;
 }
 
+function isWorkerImage(image?: string): boolean {
+  if (!image) return false;
+  return image === 'nanoclaw-worker' || image.startsWith('nanoclaw-worker:');
+}
+
+function isWorkerGroup(group: RegisteredGroup): boolean {
+  return group.folder.startsWith('jarvis-worker') || isWorkerImage(group.containerConfig?.image);
+}
+
+function isAndyDeveloperGroup(group: RegisteredGroup): boolean {
+  return group.folder === 'andy-developer';
+}
+
+function isAndyBotGroup(group: RegisteredGroup): boolean {
+  return group.folder === 'andy-bot';
+}
+
+const WORKER_PREBAKED_SKILLS = new Set([
+  'agent-browser',
+  'browser-testing',
+  'context-graph',
+  'global-hook-setup',
+  'implementation',
+  'initialization',
+  'mcp-setup',
+  'orchestrator',
+  'project-hook-setup',
+  'react-best-practices',
+  'research-evaluator',
+  'testing',
+  'testing-tracker',
+  'token-efficient',
+  'worktree-orchestrator',
+]);
+
+const ANDY_DEVELOPER_PREBAKED_SKILLS = new Set([
+  'agent-browser',
+  'browser-testing',
+  'claude-md-creator',
+  'context-graph',
+  'implementation',
+  'mcp-setup',
+  'research-evaluator',
+  'testing',
+  'token-efficient',
+  'worktree-orchestrator',
+]);
+
+const ANDY_BOT_PREBAKED_SKILLS = new Set([
+  'context-graph',
+  'research-evaluator',
+  'token-efficient',
+]);
+
+const WORKER_PREBAKED_RULES = new Set([
+  'compression-loop.md',
+  'jarvis-worker-operating-rule.md',
+]);
+
+const ANDY_DEVELOPER_PREBAKED_RULES = new Set([
+  'compression-loop.md',
+  'andy-developer-operating-rule.md',
+]);
+
+const ANDY_BOT_PREBAKED_RULES = new Set([
+  'compression-loop.md',
+  'andy-bot-operating-rule.md',
+]);
+
+function getPrebakedSkillFilter(group: RegisteredGroup): Set<string> | null {
+  if (isWorkerGroup(group)) return WORKER_PREBAKED_SKILLS;
+  if (isAndyDeveloperGroup(group)) return ANDY_DEVELOPER_PREBAKED_SKILLS;
+  if (isAndyBotGroup(group)) return ANDY_BOT_PREBAKED_SKILLS;
+  return null;
+}
+
+function getPrebakedRuleFilter(group: RegisteredGroup): Set<string> | null {
+  if (isWorkerGroup(group)) return WORKER_PREBAKED_RULES;
+  if (isAndyDeveloperGroup(group)) return ANDY_DEVELOPER_PREBAKED_RULES;
+  if (isAndyBotGroup(group)) return ANDY_BOT_PREBAKED_RULES;
+  return null;
+}
+
+function copySkills(
+  skillsSrc: string,
+  skillsDst: string,
+  allowedSkills: Set<string> | null,
+): void {
+  if (!fs.existsSync(skillsSrc)) return;
+  fs.rmSync(skillsDst, { recursive: true, force: true });
+  fs.mkdirSync(skillsDst, { recursive: true });
+  const dstRoot = path.resolve(skillsDst);
+
+  for (const skillDir of fs.readdirSync(skillsSrc)) {
+    // Hidden directories (for example ".docs") are metadata and can create
+    // self-copy edge cases when symlinked from external skill roots.
+    if (skillDir.startsWith('.')) continue;
+    const srcDir = path.join(skillsSrc, skillDir);
+    if (!fs.statSync(srcDir).isDirectory()) continue;
+    if (allowedSkills && !allowedSkills.has(skillDir)) continue;
+    const dstDir = path.join(skillsDst, skillDir);
+    const dstResolved = path.resolve(dstDir);
+    let srcResolved = path.resolve(srcDir);
+    try {
+      srcResolved = fs.realpathSync(srcDir);
+    } catch {
+      // Keep lexical path fallback if realpath fails on transient symlink targets.
+    }
+
+    if (
+      srcResolved === dstResolved
+      || srcResolved.startsWith(`${dstRoot}${path.sep}`)
+    ) {
+      logger.warn(
+        { srcResolved, dstResolved },
+        'Skipping skill copy due to overlapping source/destination',
+      );
+      continue;
+    }
+
+    // dereference:true follows symlinks so container gets real files only.
+    fs.cpSync(srcDir, dstDir, { recursive: true, dereference: true });
+  }
+}
+
+function copyRules(
+  rulesSrc: string,
+  rulesDst: string,
+  allowedRules: Set<string> | null,
+): void {
+  if (!fs.existsSync(rulesSrc)) return;
+  fs.rmSync(rulesDst, { recursive: true, force: true });
+  fs.mkdirSync(rulesDst, { recursive: true });
+
+  for (const ruleFile of fs.readdirSync(rulesSrc)) {
+    if (!ruleFile.endsWith('.md')) continue;
+    if (allowedRules && !allowedRules.has(ruleFile)) continue;
+    fs.copyFileSync(path.join(rulesSrc, ruleFile), path.join(rulesDst, ruleFile));
+  }
+}
+
 export interface ContainerInput {
   prompt: string;
   sessionId?: string;
@@ -74,7 +215,9 @@ function buildVolumeMounts(
   isMain: boolean,
 ): VolumeMount[] {
   const mounts: VolumeMount[] = [];
-  const isWorker = group.folder.startsWith('jarvis-worker') || !!group.containerConfig?.image;
+  const isWorker = isWorkerGroup(group);
+  const skillFilter = getPrebakedSkillFilter(group);
+  const ruleFilter = getPrebakedRuleFilter(group);
   const homeDir = getHomeDir();
   const projectRoot = process.cwd();
 
@@ -123,6 +266,39 @@ function buildVolumeMounts(
     });
   }
 
+  if (isWorker) {
+    // Worker runtime uses OpenCode. Stage skills/rules with symlinks dereferenced
+    // so mounted content is self-contained and always readable inside container.
+    const workerRuntimeDir = path.join(
+      DATA_DIR,
+      'sessions',
+      group.folder,
+      '.opencode',
+    );
+    const workerSkillsDir = path.join(workerRuntimeDir, 'skills');
+    const workerRulesDir = path.join(workerRuntimeDir, 'rules');
+    const skillsSrc = path.join(projectRoot, 'container', 'skills');
+    const rulesSrc = path.join(projectRoot, 'container', 'rules');
+
+    if (fs.existsSync(skillsSrc)) {
+      copySkills(skillsSrc, workerSkillsDir, skillFilter);
+      mounts.push({
+        hostPath: workerSkillsDir,
+        containerPath: '/home/node/.claude/skills',
+        readonly: true,
+      });
+    }
+
+    if (fs.existsSync(rulesSrc)) {
+      copyRules(rulesSrc, workerRulesDir, ruleFilter);
+      mounts.push({
+        hostPath: workerRulesDir,
+        containerPath: '/home/node/.claude/rules',
+        readonly: true,
+      });
+    }
+  }
+
   if (!isWorker) {
     // Per-group Claude sessions directory (isolated from other groups)
     // Each group gets their own .claude/ to prevent cross-group session access
@@ -156,26 +332,14 @@ function buildVolumeMounts(
     const skillsSrc = path.join(process.cwd(), 'container', 'skills');
     const skillsDst = path.join(groupSessionsDir, 'skills');
     if (fs.existsSync(skillsSrc)) {
-      for (const skillDir of fs.readdirSync(skillsSrc)) {
-        const srcDir = path.join(skillsSrc, skillDir);
-        if (!fs.statSync(srcDir).isDirectory()) continue;
-        const dstDir = path.join(skillsDst, skillDir);
-        // Remove stale dst (may be a symlink from a previous sync) before copying.
-        // dereference:true follows symlinks in src so container always gets real files.
-        fs.rmSync(dstDir, { recursive: true, force: true });
-        fs.cpSync(srcDir, dstDir, { recursive: true, dereference: true });
-      }
+      copySkills(skillsSrc, skillsDst, skillFilter);
     }
 
     // Sync rules from container/rules/ into each group's .claude/rules/
     const rulesSrc = path.join(process.cwd(), 'container', 'rules');
     const rulesDst = path.join(groupSessionsDir, 'rules');
     if (fs.existsSync(rulesSrc)) {
-      fs.mkdirSync(rulesDst, { recursive: true });
-      for (const ruleFile of fs.readdirSync(rulesSrc)) {
-        if (!ruleFile.endsWith('.md')) continue;
-        fs.copyFileSync(path.join(rulesSrc, ruleFile), path.join(rulesDst, ruleFile));
-      }
+      copyRules(rulesSrc, rulesDst, ruleFilter);
     }
 
     mounts.push({
@@ -232,7 +396,7 @@ function getContainerImage(group: RegisteredGroup): string {
  * Secrets are never written to disk or mounted as files.
  */
 function readSecrets(group: RegisteredGroup): Record<string, string> {
-  const isWorker = group.folder.startsWith('jarvis-worker') || !!group.containerConfig?.image;
+  const isWorker = isWorkerGroup(group);
   if (isWorker) return readEnvFile(['GITHUB_TOKEN']);
   return readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN']);
 }

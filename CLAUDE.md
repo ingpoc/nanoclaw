@@ -1,10 +1,29 @@
 # NanoClaw
 
-Personal Claude assistant. See [README.md](README.md) for philosophy and setup. See [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) for architecture decisions.
+Personal Claude assistant. See [README.md](README.md) for philosophy and setup. See [docs/reference/REQUIREMENTS.md](docs/reference/REQUIREMENTS.md) for architecture decisions.
 
 ## Quick Context
 
 Single Node.js process that connects to WhatsApp, routes messages to Claude Agent SDK running in containers (Linux VMs). Each group has isolated filesystem and memory.
+
+Folder-level docs index: [`docs/README.md`](docs/README.md)
+
+## Docs Index
+
+```text
+BEFORE editing root CLAUDE.md → read .claude/rules/nanoclaw-root-claude-compression.md
+BEFORE adding/removing/renaming docs → read .claude/rules/docs-pruning-loop.md
+BEFORE changing core orchestrator/channel/IPC/scheduler behavior → read docs/reference/REQUIREMENTS.md, docs/reference/SPEC.md, docs/reference/SECURITY.md
+BEFORE changing high-level orchestration methodology → read docs/architecture/harness-engineering-alignment.md
+BEFORE changing Jarvis architecture/state machine → read docs/architecture/nanoclaw-jarvis.md
+BEFORE changing worker contract code/docs → read .claude/rules/jarvis-dispatch-contract-discipline.md
+BEFORE changing worker dispatch validation/contracts → read docs/workflow/nanoclaw-jarvis-dispatch-contract.md
+BEFORE changing worker container runtime/mounts/model config → read docs/workflow/nanoclaw-jarvis-worker-runtime.md
+BEFORE debugging Andy/Jarvis worker flow issues → read .claude/rules/nanoclaw-jarvis-debug-loop.md
+BEFORE debugging Apple Container build/runtime issues → read docs/troubleshooting/DEBUG_CHECKLIST.md and docs/troubleshooting/APPLE-CONTAINER-NETWORKING.md
+```
+
+NanoClaw baseline is the default. Jarvis docs apply only when working on the `jarvis-worker-*` execution tier.
 
 ## Key Files
 
@@ -19,7 +38,7 @@ Single Node.js process that connects to WhatsApp, routes messages to Claude Agen
 | `src/task-scheduler.ts` | Runs scheduled tasks |
 | `src/db.ts` | SQLite operations |
 | `groups/{name}/CLAUDE.md` | Per-group memory (isolated) |
-| `container/skills/agent-browser.md` | Browser automation tool (available to all agents via Bash) |
+| `container/skills/agent-browser/SKILL.md` | Browser automation tool (available to all agents via Bash) |
 
 ## Skills
 
@@ -44,47 +63,3 @@ Service management:
 launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist
 launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist
 ```
-
-## Container Build Cache
-
-The container buildkit caches the build context aggressively. `--no-cache` alone does NOT invalidate COPY steps — the builder's volume retains stale files. To force a truly clean rebuild, prune the builder then re-run `./container/build.sh`.
-
-## Apple Container Build Workflow (macOS)
-
-Use this sequence before rebuilding `nanoclaw-agent`:
-
-```bash
-cd container
-container system status
-container builder status || container builder start
-container build -t nanoclaw-agent:latest .
-```
-
-If the CLI appears stuck at `Dialing builder`, inspect build activity with:
-
-```bash
-while true; do
-  clear
-  date
-  container logs buildkit | tail -n 60
-  sleep 2
-done
-```
-
-Notes:
-- `container logs buildkit | tail -f` is not a persistent follow stream. Use the loop above.
-- Avoid `--no-cache` unless debugging; it forces slow package install layers repeatedly.
-
-### Builder Recovery (XPC Deadlock)
-
-If `container builder stop` hangs and logs show `Connection invalid [uuid=buildkit]`:
-
-```bash
-container system logs | tail -n 80
-/bin/zsh -lc "launchctl kickstart -k gui/$(id -u)/com.apple.container.container-runtime-linux.buildkit && launchctl kickstart -k gui/$(id -u)/com.apple.container.apiserver"
-container system start
-container builder start
-container builder status
-```
-
-Expected end state: `container system status` reports apiserver running and `container builder status` reports buildkit `RUNNING`.

@@ -100,6 +100,7 @@ describe('updateWorkerRunCompletion stores contract fields', () => {
       branch_name: 'jarvis-feature',
       pr_url: 'https://github.com/org/repo/pull/42',
       commit_sha: 'abc123',
+      files_changed: ['src/a.ts', 'src/b.ts'],
       test_summary: 'all 5 tests pass',
       risk_summary: 'low',
     });
@@ -107,6 +108,7 @@ describe('updateWorkerRunCompletion stores contract fields', () => {
     expect(row?.branch_name).toBe('jarvis-feature');
     expect(row?.pr_url).toBe('https://github.com/org/repo/pull/42');
     expect(row?.commit_sha).toBe('abc123');
+    expect(row?.files_changed).toBe('["src/a.ts","src/b.ts"]');
     expect(row?.test_summary).toBe('all 5 tests pass');
     expect(row?.risk_summary).toBe('low');
   });
@@ -147,10 +149,10 @@ describe('getWorkerRun', () => {
 
 describe('dispatch payload parsing', () => {
   it('extracts run_id from JSON in message content', () => {
-    const content = 'Please work on this: {"run_id": "task-abc", "task_type": "code", "input": "build X"}';
+    const content = 'Please work on this: {"run_id":"task-abc","task_type":"implement","input":"build X","repo":"openclaw-gurusharan/nanoclaw","branch":"jarvis-build-x","acceptance_tests":["npm run build"],"output_contract":{"required_fields":["run_id","branch","commit_sha","files_changed","test_result","risk","pr_url"]}}';
     const payload = parseDispatchPayload(content);
     expect(payload?.run_id).toBe('task-abc');
-    expect(payload?.task_type).toBe('code');
+    expect(payload?.task_type).toBe('implement');
   });
 
   it('returns null when no JSON present', () => {
@@ -162,38 +164,71 @@ describe('dispatch payload parsing', () => {
   });
 
   it('parses standalone JSON object', () => {
-    const payload = parseDispatchPayload('{"run_id": "fix-42-1", "priority": "high"}');
+    const payload = parseDispatchPayload('{"run_id":"fix-42-1","task_type":"fix","input":"fix bug","repo":"openclaw-gurusharan/nanoclaw","branch":"jarvis-fix-42","acceptance_tests":["npm test"],"output_contract":{"required_fields":["run_id","branch","commit_sha","files_changed","test_result","risk","pr_skipped_reason"]},"priority":"high"}');
     expect(payload?.run_id).toBe('fix-42-1');
     expect(payload?.priority).toBe('high');
   });
 });
 
 describe('dispatch payload validation', () => {
-  it('accepts a valid run_id', () => {
-    const { valid, errors } = validateDispatchPayload({ run_id: 'task-20260222-001' });
+  const validPayload = {
+    run_id: 'task-20260222-001',
+    task_type: 'implement' as const,
+    input: 'Implement feature X',
+    repo: 'openclaw-gurusharan/nanoclaw',
+    branch: 'jarvis-feature-x',
+    acceptance_tests: ['npm run build', 'npm test'],
+    output_contract: {
+      required_fields: ['run_id', 'branch', 'commit_sha', 'files_changed', 'test_result', 'risk', 'pr_url'],
+    },
+  };
+
+  it('accepts a valid payload', () => {
+    const { valid, errors } = validateDispatchPayload(validPayload);
     expect(valid).toBe(true);
     expect(errors).toHaveLength(0);
   });
 
   it('rejects empty run_id', () => {
-    const { valid, errors } = validateDispatchPayload({ run_id: '' });
+    const { valid, errors } = validateDispatchPayload({ ...validPayload, run_id: '' });
     expect(valid).toBe(false);
     expect(errors.length).toBeGreaterThan(0);
   });
 
   it('rejects run_id with whitespace', () => {
-    const { valid } = validateDispatchPayload({ run_id: 'has spaces' });
+    const { valid } = validateDispatchPayload({ ...validPayload, run_id: 'has spaces' });
     expect(valid).toBe(false);
   });
 
   it('rejects run_id longer than 64 chars', () => {
-    const { valid } = validateDispatchPayload({ run_id: 'a'.repeat(65) });
+    const { valid } = validateDispatchPayload({ ...validPayload, run_id: 'a'.repeat(65) });
     expect(valid).toBe(false);
   });
 
   it('accepts run_id of exactly 64 chars', () => {
-    const { valid } = validateDispatchPayload({ run_id: 'a'.repeat(64) });
+    const { valid } = validateDispatchPayload({ ...validPayload, run_id: 'a'.repeat(64) });
     expect(valid).toBe(true);
+  });
+
+  it('rejects repo not in owner/repo format', () => {
+    const { valid, errors } = validateDispatchPayload({ ...validPayload, repo: 'bad-format' });
+    expect(valid).toBe(false);
+    expect(errors).toContain('repo must be in owner/repo format');
+  });
+
+  it('rejects non-jarvis branch names', () => {
+    const { valid, errors } = validateDispatchPayload({ ...validPayload, branch: 'feature-x' });
+    expect(valid).toBe(false);
+    expect(errors).toContain('branch must match jarvis-<feature>');
+  });
+
+  it('rejects payload when output contract misses required fields', () => {
+    const { valid, errors } = validateDispatchPayload({
+      ...validPayload,
+      output_contract: { required_fields: ['run_id', 'branch'] },
+    });
+    expect(valid).toBe(false);
+    expect(errors.some((e) => e.includes('output_contract.required_fields missing commit_sha'))).toBe(true);
   });
 });
 
@@ -203,7 +238,9 @@ describe('completion contract parsing', () => {
 Done!
 <completion>
 {
+  "run_id": "task-20260222-001",
   "branch": "jarvis-feat",
+  "files_changed": ["src/a.ts"],
   "pr_url": "https://github.com/org/repo/pull/1",
   "commit_sha": "deadbeef",
   "test_result": "5/5 pass",
@@ -226,7 +263,7 @@ Done!
   });
 
   it('parses contract with pr_skipped_reason instead of pr_url', () => {
-    const output = '<completion>{"branch":"b","pr_skipped_reason":"no changes","test_result":"ok","risk":"none"}</completion>';
+    const output = '<completion>{"run_id":"task-1","branch":"jarvis-b","commit_sha":"abc1234","files_changed":["README.md"],"pr_skipped_reason":"no changes","test_result":"ok","risk":"none"}</completion>';
     const contract = parseCompletionContract(output);
     expect(contract?.pr_skipped_reason).toBe('no changes');
     expect(contract?.pr_url).toBeUndefined();
@@ -236,7 +273,10 @@ Done!
 describe('completion contract validation', () => {
   it('validates a complete contract with pr_url', () => {
     const { valid, missing } = validateCompletionContract({
-      branch: 'feat',
+      run_id: 'task-1',
+      branch: 'jarvis-feat',
+      commit_sha: 'abc1234',
+      files_changed: ['src/a.ts'],
       pr_url: 'https://github.com/...',
       test_result: 'pass',
       risk: 'low',
@@ -247,7 +287,10 @@ describe('completion contract validation', () => {
 
   it('validates a contract with pr_skipped_reason', () => {
     const { valid } = validateCompletionContract({
-      branch: 'feat',
+      run_id: 'task-1',
+      branch: 'jarvis-feat',
+      commit_sha: 'abc1234',
+      files_changed: ['README.md'],
       pr_skipped_reason: 'already open',
       test_result: 'pass',
       risk: 'low',
@@ -257,7 +300,10 @@ describe('completion contract validation', () => {
 
   it('fails when branch is missing', () => {
     const { valid, missing } = validateCompletionContract({
+      run_id: 'task-1',
       branch: '',
+      commit_sha: 'abc1234',
+      files_changed: ['src/a.ts'],
       pr_url: 'url',
       test_result: 'pass',
       risk: 'low',
@@ -268,7 +314,10 @@ describe('completion contract validation', () => {
 
   it('fails when both pr_url and pr_skipped_reason are absent', () => {
     const { valid, missing } = validateCompletionContract({
-      branch: 'feat',
+      run_id: 'task-1',
+      branch: 'jarvis-feat',
+      commit_sha: 'abc1234',
+      files_changed: ['src/a.ts'],
       test_result: 'pass',
       risk: 'low',
     });
@@ -284,13 +333,33 @@ describe('completion contract validation', () => {
 
   it('fails when test_result is missing', () => {
     const { valid, missing } = validateCompletionContract({
-      branch: 'feat',
+      run_id: 'task-1',
+      branch: 'jarvis-feat',
+      commit_sha: 'abc1234',
+      files_changed: ['src/a.ts'],
       pr_url: 'url',
       test_result: '',
       risk: 'low',
     });
     expect(valid).toBe(false);
     expect(missing).toContain('test_result');
+  });
+
+  it('fails when run_id mismatches expected run id', () => {
+    const { valid, missing } = validateCompletionContract(
+      {
+        run_id: 'task-abc',
+        branch: 'jarvis-feat',
+        commit_sha: 'abc1234',
+        files_changed: ['src/a.ts'],
+        pr_url: 'url',
+        test_result: 'pass',
+        risk: 'low',
+      },
+      { expectedRunId: 'task-xyz' },
+    );
+    expect(valid).toBe(false);
+    expect(missing).toContain('run_id mismatch');
   });
 });
 
@@ -311,23 +380,20 @@ describe('usage stats shape', () => {
   });
 });
 
-describe('run_id generation stability', () => {
-  it('same inputs produce same run_id', () => {
-    const { createHash } = require('crypto');
-    const folder = 'jarvis-worker-1';
-    const msgId = 'msg-abc';
-    const content = 'Clone the repo and add tests';
-    const hash1 = createHash('sha256').update(`${folder}:${msgId}:${content}`).digest('hex').slice(0, 16);
-    const hash2 = createHash('sha256').update(`${folder}:${msgId}:${content}`).digest('hex').slice(0, 16);
-    expect(hash1).toBe(hash2);
-  });
-
-  it('different message ids produce different run_ids', () => {
-    const { createHash } = require('crypto');
-    const folder = 'jarvis-worker-1';
-    const content = 'same task';
-    const h1 = createHash('sha256').update(`${folder}:msg-1:${content}`).digest('hex').slice(0, 16);
-    const h2 = createHash('sha256').update(`${folder}:msg-2:${content}`).digest('hex').slice(0, 16);
-    expect(h1).not.toBe(h2);
+describe('run_id contract invariants', () => {
+  it('requires explicit run_id on dispatch payload validation', () => {
+    const { valid, errors } = validateDispatchPayload({
+      run_id: '',
+      task_type: 'implement',
+      input: 'x',
+      repo: 'openclaw-gurusharan/nanoclaw',
+      branch: 'jarvis-x',
+      acceptance_tests: ['npm test'],
+      output_contract: {
+        required_fields: ['run_id', 'branch', 'commit_sha', 'files_changed', 'test_result', 'risk', 'pr_url'],
+      },
+    });
+    expect(valid).toBe(false);
+    expect(errors).toContain('run_id must be a non-empty string with no whitespace');
   });
 });

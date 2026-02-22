@@ -81,7 +81,8 @@ function createSchema(database: Database.Database): void {
       status TEXT NOT NULL,
       started_at TEXT NOT NULL,
       completed_at TEXT,
-      result_summary TEXT
+      result_summary TEXT,
+      files_changed TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_worker_runs_folder ON worker_runs(group_folder, started_at);
   `);
@@ -102,6 +103,7 @@ function createSchema(database: Database.Database): void {
     `ALTER TABLE worker_runs ADD COLUMN branch_name TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN pr_url TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN commit_sha TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN files_changed TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN test_summary TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN risk_summary TEXT`,
   ];
@@ -648,16 +650,18 @@ export function updateWorkerRunCompletion(
     branch_name?: string;
     pr_url?: string;
     commit_sha?: string;
+    files_changed?: string[];
     test_summary?: string;
     risk_summary?: string;
   },
 ): void {
   db.prepare(
-    `UPDATE worker_runs SET branch_name = ?, pr_url = ?, commit_sha = ?, test_summary = ?, risk_summary = ? WHERE run_id = ?`,
+    `UPDATE worker_runs SET branch_name = ?, pr_url = ?, commit_sha = ?, files_changed = ?, test_summary = ?, risk_summary = ? WHERE run_id = ?`,
   ).run(
     data.branch_name ?? null,
     data.pr_url ?? null,
     data.commit_sha ?? null,
+    data.files_changed ? JSON.stringify(data.files_changed) : null,
     data.test_summary ?? null,
     data.risk_summary ?? null,
     runId,
@@ -682,12 +686,13 @@ export function getWorkerRun(runId: string): {
   branch_name: string | null;
   pr_url: string | null;
   commit_sha: string | null;
+  files_changed: string | null;
   test_summary: string | null;
   risk_summary: string | null;
 } | undefined {
   return db
     .prepare(
-      `SELECT run_id, status, retry_count, result_summary, branch_name, pr_url, commit_sha, test_summary, risk_summary FROM worker_runs WHERE run_id = ?`,
+      `SELECT run_id, status, retry_count, result_summary, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary FROM worker_runs WHERE run_id = ?`,
     )
     .get(runId) as ReturnType<typeof getWorkerRun>;
 }

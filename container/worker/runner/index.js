@@ -1,7 +1,7 @@
 /**
  * NanoClaw Worker Runner
- * Single-dispatch: stdin JSON → opencode run → OUTPUT_START/END markers
- * No Claude Agent SDK dependency — uses OpenCode CLI with free models.
+ * Single-dispatch: stdin JSON -> opencode run -> OUTPUT_START/END markers
+ * No Claude Agent SDK dependency - uses OpenCode CLI with free models.
  */
 import { spawnSync } from 'child_process';
 import fs from 'fs';
@@ -14,42 +14,17 @@ const DEFAULT_FALLBACK_MODELS = [
   'opencode/kimi-k2.5-free',
 ];
 
-interface ContainerInput {
-  prompt: string;
-  sessionId?: string;
-  groupFolder: string;
-  chatJid: string;
-  isMain: boolean;
-  isScheduledTask?: boolean;
-  model?: string;
-  runId?: string;
-  secrets?: Record<string, string>;
-}
-
-interface ContainerOutput {
-  status: 'success' | 'error';
-  result: string | null;
-  newSessionId?: string;
-  error?: string;
-  usage?: {
-    input_tokens: number;
-    output_tokens: number;
-    duration_ms: number;
-    peak_rss_mb: number;
-  };
-}
-
-function writeOutput(output: ContainerOutput): void {
+function writeOutput(output) {
   process.stdout.write(OUTPUT_START_MARKER + '\n');
   process.stdout.write(JSON.stringify(output) + '\n');
   process.stdout.write(OUTPUT_END_MARKER + '\n');
 }
 
-function readStdin(): string {
+function readStdin() {
   return fs.readFileSync('/dev/stdin', 'utf8');
 }
 
-function getPeakRss(): number {
+function getPeakRss() {
   try {
     const usage = process.memoryUsage();
     return Math.round(usage.rss / 1024 / 1024);
@@ -58,7 +33,7 @@ function getPeakRss(): number {
   }
 }
 
-function configureGitIdentity(): void {
+function configureGitIdentity() {
   const gitEmail = process.env.WORKER_GIT_EMAIL || 'openclaw-gurusharan@users.noreply.github.com';
   const gitName = process.env.WORKER_GIT_NAME || 'Andy (openclaw-gurusharan)';
 
@@ -70,22 +45,20 @@ function configureGitIdentity(): void {
   }
 }
 
-function parseMaybeJson(raw: string): Record<string, unknown> | null {
+function parseMaybeJson(raw) {
   if (!raw || !raw.trim()) return null;
   try {
     const parsed = JSON.parse(raw.trim());
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
+    if (parsed && typeof parsed === 'object') return parsed;
   } catch {
     // ignore parse errors
   }
   return null;
 }
 
-function parseEventLines(stdout: string): Record<string, unknown>[] {
-  const lines = stdout.split('\n').map((line) => line.trim()).filter(Boolean);
-  const events: Record<string, unknown>[] = [];
+function parseEventLines(stdout) {
+  const lines = (stdout || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  const events = [];
   for (const line of lines) {
     const normalized = line.startsWith('data:') ? line.slice(5).trim() : line;
     const parsed = parseMaybeJson(normalized);
@@ -94,25 +67,29 @@ function parseEventLines(stdout: string): Record<string, unknown>[] {
   return events;
 }
 
-function getPayloadError(payload: Record<string, unknown> | null): string | null {
-  if (!payload) return null;
+function getPayloadError(payload) {
+  if (!payload || typeof payload !== 'object') return null;
   if (payload.type === 'error') {
     if (typeof payload.message === 'string') return payload.message;
-    const error = payload.error as Record<string, unknown> | undefined;
-    if (error && typeof error.message === 'string') return error.message;
-    const data = error?.data as Record<string, unknown> | undefined;
-    if (data && typeof data.message === 'string') return data.message;
+    if (payload.error && typeof payload.error.message === 'string') {
+      return payload.error.message;
+    }
+    if (
+      payload.error &&
+      payload.error.data &&
+      typeof payload.error.data.message === 'string'
+    ) {
+      return payload.error.data.message;
+    }
     return JSON.stringify(payload);
   }
-  const error = payload.error as Record<string, unknown> | undefined;
-  if (error && typeof error.message === 'string') return error.message;
+  if (payload.error && typeof payload.error.message === 'string') {
+    return payload.error.message;
+  }
   return null;
 }
 
-function getOpencodeErrorMessage(
-  events: Record<string, unknown>[],
-  payload: Record<string, unknown> | null,
-): string | null {
+function getOpencodeErrorMessage(events, payload) {
   for (const event of events) {
     const eventError = getPayloadError(event);
     if (eventError) return eventError;
@@ -120,43 +97,41 @@ function getOpencodeErrorMessage(
   return getPayloadError(payload);
 }
 
-function isModelNotFound(message: string): boolean {
-  const text = message.toLowerCase();
+function isModelNotFound(message) {
+  const text = (message || '').toLowerCase();
   return text.includes('model not found') || text.includes('unknown model');
 }
 
-function extractTextFromEvent(event: Record<string, unknown>): string | null {
+function extractTextFromEvent(event) {
+  if (!event || typeof event !== 'object') return null;
   if (event.type === 'text' && typeof event.text === 'string') return event.text;
 
-  const part = event.part as Record<string, unknown> | undefined;
-  if (part) {
-    if (part.type === 'text' && typeof part.text === 'string') return part.text;
-    if (typeof part.text === 'string') return part.text;
+  if (event.part && typeof event.part === 'object') {
+    if (event.part.type === 'text' && typeof event.part.text === 'string') return event.part.text;
+    if (typeof event.part.text === 'string') return event.part.text;
   }
 
-  const props = event.properties as Record<string, unknown> | undefined;
-  const propPart = props?.part as Record<string, unknown> | undefined;
-  if (propPart) {
-    if (propPart.type === 'text' && typeof propPart.text === 'string') return propPart.text;
-    if (typeof propPart.text === 'string') return propPart.text;
+  if (event.properties && typeof event.properties === 'object') {
+    const part = event.properties.part;
+    if (part && typeof part === 'object') {
+      if (part.type === 'text' && typeof part.text === 'string') return part.text;
+      if (typeof part.text === 'string') return part.text;
+    }
   }
 
   return null;
 }
 
-function extractResult(
-  stdout: string,
-  payload: Record<string, unknown> | null,
-  events: Record<string, unknown>[],
-): string {
-  const chunks: string[] = [];
+function extractResult(stdout, payload, events) {
+  const chunks = [];
   for (const event of events) {
     const text = extractTextFromEvent(event);
-    if (text && text.trim()) chunks.push(text);
+    if (typeof text === 'string' && text.trim()) chunks.push(text);
   }
   if (chunks.length > 0) return chunks.join('\n').trim();
 
-  if (payload) {
+  // Defensive: OpenCode JSON schema is not formally stable.
+  if (payload && typeof payload === 'object') {
     if (typeof payload.message === 'string') return payload.message;
     if (typeof payload.content === 'string') return payload.content;
     if (typeof payload.text === 'string') return payload.text;
@@ -167,10 +142,10 @@ function extractResult(
   return stdout.trim();
 }
 
-function buildModelCandidates(requestedModel?: string): string[] {
-  const seen = new Set<string>();
+function buildModelCandidates(requestedModel) {
   const values = [requestedModel, process.env.WORKER_MODEL, ...DEFAULT_FALLBACK_MODELS];
-  const result: string[] = [];
+  const seen = new Set();
+  const result = [];
   for (const value of values) {
     if (!value || seen.has(value)) continue;
     seen.add(value);
@@ -179,21 +154,24 @@ function buildModelCandidates(requestedModel?: string): string[] {
   return result;
 }
 
-function runOpencode(prompt: string, model: string) {
-  const args = ['run', '--model', model, '--format', 'json', prompt];
+function runOpencode(prompt, model) {
+  const args = ['run'];
+  if (model) args.push('--model', model);
+  args.push('--format', 'json');
+  args.push(prompt);
+
   return spawnSync('opencode', args, {
     cwd: '/workspace/group',
     encoding: 'utf8',
-    maxBuffer: 10 * 1024 * 1024, // 10MB
+    maxBuffer: 10 * 1024 * 1024,
     env: { ...process.env },
   });
 }
 
-async function main(): Promise<void> {
+async function main() {
   const startTime = Date.now();
 
-  // Read input
-  let rawInput: string;
+  let rawInput;
   try {
     rawInput = readStdin();
   } catch (err) {
@@ -205,12 +183,15 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  // Clean up temp input file
-  try { fs.unlinkSync('/tmp/input.json'); } catch { /* ignore */ }
-
-  let input: ContainerInput;
   try {
-    input = JSON.parse(rawInput) as ContainerInput;
+    fs.unlinkSync('/tmp/input.json');
+  } catch {
+    // ignore
+  }
+
+  let input;
+  try {
+    input = JSON.parse(rawInput);
   } catch (err) {
     writeOutput({
       status: 'error',
@@ -220,22 +201,16 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  // Inject secrets
   if (input.secrets?.GITHUB_TOKEN) {
     process.env.GITHUB_TOKEN = input.secrets.GITHUB_TOKEN;
     process.env.GH_TOKEN = input.secrets.GITHUB_TOKEN;
-
-    // Configure git identity for authenticated operations
     try {
       configureGitIdentity();
     } catch {
-      // Non-fatal
+      // non-fatal
     }
   }
 
-  // Build prompt — prepend CLAUDE.md if present (belt-and-suspenders;
-  // OpenCode also loads it via instructions config but this ensures it works
-  // even if OpenCode's instruction loading fails)
   let prompt = input.prompt;
   const claudeMdPath = '/workspace/group/CLAUDE.md';
   if (fs.existsSync(claudeMdPath)) {
@@ -243,7 +218,7 @@ async function main(): Promise<void> {
       const claudeMd = fs.readFileSync(claudeMdPath, 'utf8');
       prompt = `<system>\n${claudeMd}\n</system>\n\n${prompt}`;
     } catch {
-      // Non-fatal — proceed without prepending
+      // non-fatal
     }
   }
 
@@ -251,28 +226,29 @@ async function main(): Promise<void> {
   const peak_rss_mb = getPeakRss();
   const candidates = buildModelCandidates(input.model);
   let lastError = '';
-  let extracted: string | null = null;
+  let extracted = null;
 
   for (const model of candidates) {
-    const result = runOpencode(prompt, model);
-    if (result.error) {
-      lastError = `Failed to spawn opencode: ${result.error.message}`;
+    const run = runOpencode(prompt, model);
+
+    if (run.error) {
+      lastError = `Failed to spawn opencode: ${run.error.message}`;
       break;
     }
 
-    const stderr = (result.stderr || '').trim();
-    const stdout = result.stdout || '';
+    const stderr = (run.stderr || '').trim();
+    const stdout = run.stdout || '';
     const events = parseEventLines(stdout);
     const payload = events.length > 0 ? events[events.length - 1] : parseMaybeJson(stdout);
     const payloadError = getOpencodeErrorMessage(events, payload);
 
-    if (result.status !== 0) {
-      const errMsg = stderr.slice(-500) || `exit code ${result.status}`;
+    if (run.status !== 0) {
+      const errMsg = stderr.slice(-500) || `exit code ${run.status}`;
       if (isModelNotFound(errMsg)) {
         lastError = `Model unavailable: ${model}`;
         continue;
       }
-      lastError = `opencode exited with code ${result.status}: ${errMsg}`;
+      lastError = `opencode exited with code ${run.status}: ${errMsg}`;
       break;
     }
 
@@ -302,12 +278,11 @@ async function main(): Promise<void> {
   writeOutput({
     status: 'success',
     result: extracted,
-    // OpenCode doesn't expose per-call token counts in CLI output
     usage: { input_tokens: 0, output_tokens: 0, duration_ms, peak_rss_mb },
   });
 }
 
-main().catch(err => {
+main().catch((err) => {
   writeOutput({
     status: 'error',
     result: null,

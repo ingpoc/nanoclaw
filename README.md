@@ -15,6 +15,9 @@
 
 **New:** First AI assistant to support [Agent Swarms](https://code.claude.com/docs/en/agent-teams). Spin up teams of agents that collaborate in your chat.
 
+Documentation map (classified by folder): [`DOCS.md`](DOCS.md)
+Docs folder index: [`docs/README.md`](docs/README.md)
+
 ## Why I Built This
 
 [OpenClaw](https://github.com/openclaw/openclaw) is an impressive project with a great vision. But I can't sleep well running software I don't understand with access to my life. OpenClaw has 52+ modules, 8 config management files, 45+ dependencies, and abstractions for 15 channel providers. Security is application-level (allowlists, pairing codes) rather than OS isolation. Everything runs in one Node process with shared memory.
@@ -153,7 +156,7 @@ Yes. Docker is the default runtime and works on both macOS and Linux. Just run `
 
 **Is this secure?**
 
-Agents run in containers, not behind application-level permission checks. They can only access explicitly mounted directories. You should still review what you're running, but the codebase is small enough that you actually can. See [docs/SECURITY.md](docs/SECURITY.md) for the full security model.
+Agents run in containers, not behind application-level permission checks. They can only access explicitly mounted directories. You should still review what you're running, but the codebase is small enough that you actually can. See [docs/reference/SECURITY.md](docs/reference/SECURITY.md) for the full security model.
 
 **Why no configuration files?**
 

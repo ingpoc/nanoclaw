@@ -1,4 +1,3 @@
-import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -37,6 +36,7 @@ import {
   updateWorkerRunCompletion,
 } from './db.js';
 import {
+  type DispatchPayload,
   parseDispatchPayload,
   validateDispatchPayload,
   parseCompletionContract,
@@ -124,6 +124,28 @@ export function _setRegisteredGroups(groups: Record<string, RegisteredGroup>): v
   registeredGroups = groups;
 }
 
+function formatWorkerPrompt(payload: DispatchPayload): string {
+  const acceptance = payload.acceptance_tests
+    .map((item) => `- ${item}`)
+    .join('\n');
+  const required = payload.output_contract.required_fields
+    .map((item) => `- ${item}`)
+    .join('\n');
+
+  return [
+    `Run ID: ${payload.run_id}`,
+    `Task Type: ${payload.task_type}`,
+    `Repository: ${payload.repo}`,
+    `Branch: ${payload.branch}`,
+    'Task:',
+    payload.input,
+    'Acceptance Tests (all must pass):',
+    acceptance,
+    'Output Contract (MUST be wrapped in <completion> JSON):',
+    required,
+  ].join('\n\n');
+}
+
 /**
  * Process all pending messages for a group.
  * Called by the GroupQueue when it's this group's turn.
@@ -153,7 +175,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (!hasTrigger) return true;
   }
 
-  const prompt = formatMessages(missedMessages);
+  let prompt = formatMessages(missedMessages);
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
   // these messages. Save the old cursor so we can roll back on error.
@@ -167,30 +189,32 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     'Processing messages',
   );
 
-  // For jarvis-worker groups: parse external run_id from dispatch payload, or
-  // fall back to a hash-based id for plain-text messages.
+  // For jarvis-worker groups: require a strict JSON dispatch payload.
   const isWorkerGroup = group.folder.startsWith('jarvis-worker');
   let runId: string | undefined;
+  let dispatchPayload: DispatchPayload | null = null;
   if (isWorkerGroup) {
     const last = missedMessages[missedMessages.length - 1];
 
-    // Try to extract caller-provided run_id from message content
-    const dispatchPayload = parseDispatchPayload(last.content);
-    let externalRunId: string | undefined;
-    if (dispatchPayload) {
-      const { valid, errors } = validateDispatchPayload(dispatchPayload);
-      if (!valid) {
-        logger.warn({ group: group.name, errors }, 'Invalid dispatch payload, rejecting');
-        await channel.sendMessage(chatJid, `⚠ Invalid dispatch payload: ${errors.join('; ')}`);
-        return true;
-      }
-      externalRunId = dispatchPayload.run_id;
+    dispatchPayload = parseDispatchPayload(last.content);
+    if (!dispatchPayload) {
+      logger.warn({ group: group.name }, 'Worker dispatch missing JSON payload');
+      await channel.sendMessage(
+        chatJid,
+        '⚠ Invalid dispatch payload: worker tasks must be a JSON object with run_id, task_type, input, repo, branch, acceptance_tests, output_contract',
+      );
+      return true;
     }
 
-    runId = externalRunId ?? createHash('sha256')
-      .update(`${group.folder}:${last.id}:${last.content}`)
-      .digest('hex')
-      .slice(0, 16);
+    const { valid, errors } = validateDispatchPayload(dispatchPayload);
+    if (!valid) {
+      logger.warn({ group: group.name, errors }, 'Invalid dispatch payload, rejecting');
+      await channel.sendMessage(chatJid, `⚠ Invalid dispatch payload: ${errors.join('; ')}`);
+      return true;
+    }
+
+    runId = dispatchPayload.run_id;
+    prompt = formatWorkerPrompt(dispatchPayload);
 
     const insertResult = insertWorkerRun(runId, group.folder);
     if (insertResult === 'duplicate') {
@@ -259,12 +283,15 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     } else {
       // Check completion contract from final worker output
       const contract = parseCompletionContract(lastWorkerOutput);
-      const { valid, missing } = validateCompletionContract(contract);
+      const { valid, missing } = validateCompletionContract(contract, {
+        expectedRunId: runId,
+      });
       if (valid && contract) {
         updateWorkerRunCompletion(runId, {
           branch_name: contract.branch,
           pr_url: contract.pr_url,
           commit_sha: contract.commit_sha,
+          files_changed: contract.files_changed,
           test_summary: contract.test_result,
           risk_summary: contract.risk,
         });

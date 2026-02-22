@@ -11,6 +11,44 @@ Both timers fire at the same time, so containers always exit via hard SIGKILL (c
 ### 3. Cursor advanced before agent succeeds
 `processGroupMessages` advances `lastAgentTimestamp` before the agent runs. If the container times out, retries find no messages (cursor already past them). Messages are permanently lost on timeout.
 
+### 4. [FIXED 2026-02-22] Skill sync crash (`ERR_FS_CP_EINVAL`)
+Symptom:
+
+- Group receives messages but does not reply.
+- Log shows:
+  - `Agent error`
+  - `src and dest cannot be the same .../.claude/skills/.docs`
+
+Cause:
+
+- Hidden skill metadata (for example `.docs`) from symlinked skill sources can create copy collisions during per-group skill staging.
+
+Fix:
+
+- Skill staging now skips hidden entries and guards against overlapping source/destination paths in `src/container-runner.ts`.
+- Runtime now copies real skill files into `data/sessions/<group>/.claude/skills` (not symlink mount passthrough).
+
+Verification:
+
+1. `npm run build`
+2. `launchctl kickstart -k gui/$(id -u)/com.nanoclaw`
+3. confirm log shows `Spawning container agent` followed by `Message sent` without repeated `ERR_FS_CP_EINVAL`.
+
+### 5. Claude subscription quota hit (model responds but task does not progress)
+Symptom:
+
+- Group replies with `You've hit your limit ...` (or equivalent quota text).
+
+Cause:
+
+- Upstream Claude account quota exhausted for the model configured in that group.
+
+Action:
+
+1. Verify response in `logs/nanoclaw.log` (`Agent output: You've hit your limit ...`).
+2. Wait for reset or switch that group to an available model/runtime.
+3. For worker execution lane, continue routing bounded tasks to OpenCode workers (`jarvis-worker-*`) via `andy-developer`.
+
 ## Quick Status Check
 
 ```bash

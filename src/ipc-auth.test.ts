@@ -8,7 +8,7 @@ import {
   getTaskById,
   setRegisteredGroup,
 } from './db.js';
-import { processTaskIpc, IpcDeps } from './ipc.js';
+import { canIpcAccessTarget, processTaskIpc, IpcDeps } from './ipc.js';
 import { RegisteredGroup } from './types.js';
 
 // Set up registered groups used across tests
@@ -33,6 +33,20 @@ const THIRD_GROUP: RegisteredGroup = {
   added_at: '2024-01-01T00:00:00.000Z',
 };
 
+const ANDY_DEVELOPER_GROUP: RegisteredGroup = {
+  name: 'Andy Developer',
+  folder: 'andy-developer',
+  trigger: '@Andy',
+  added_at: '2024-01-01T00:00:00.000Z',
+};
+
+const JARVIS_WORKER_GROUP: RegisteredGroup = {
+  name: 'Jarvis Worker 1',
+  folder: 'jarvis-worker-1',
+  trigger: '@jarvis',
+  added_at: '2024-01-01T00:00:00.000Z',
+};
+
 let groups: Record<string, RegisteredGroup>;
 let deps: IpcDeps;
 
@@ -43,12 +57,16 @@ beforeEach(() => {
     'main@g.us': MAIN_GROUP,
     'other@g.us': OTHER_GROUP,
     'third@g.us': THIRD_GROUP,
+    'andy@g.us': ANDY_DEVELOPER_GROUP,
+    'jarvis-1@g.us': JARVIS_WORKER_GROUP,
   };
 
   // Populate DB as well
   setRegisteredGroup('main@g.us', MAIN_GROUP);
   setRegisteredGroup('other@g.us', OTHER_GROUP);
   setRegisteredGroup('third@g.us', THIRD_GROUP);
+  setRegisteredGroup('andy@g.us', ANDY_DEVELOPER_GROUP);
+  setRegisteredGroup('jarvis-1@g.us', JARVIS_WORKER_GROUP);
 
   deps = {
     sendMessage: async () => {},
@@ -124,6 +142,43 @@ describe('schedule_task authorization', () => {
     expect(allTasks.length).toBe(0);
   });
 
+  it('andy-developer can schedule for jarvis-worker group', async () => {
+    await processTaskIpc(
+      {
+        type: 'schedule_task',
+        prompt: 'delegate to worker',
+        schedule_type: 'once',
+        schedule_value: '2025-06-01T00:00:00.000Z',
+        targetJid: 'jarvis-1@g.us',
+      },
+      'andy-developer',
+      false,
+      deps,
+    );
+
+    const allTasks = getAllTasks();
+    expect(allTasks.length).toBe(1);
+    expect(allTasks[0].group_folder).toBe('jarvis-worker-1');
+  });
+
+  it('andy-developer cannot schedule for non-worker group', async () => {
+    await processTaskIpc(
+      {
+        type: 'schedule_task',
+        prompt: 'not allowed',
+        schedule_type: 'once',
+        schedule_value: '2025-06-01T00:00:00.000Z',
+        targetJid: 'other@g.us',
+      },
+      'andy-developer',
+      false,
+      deps,
+    );
+
+    const allTasks = getAllTasks();
+    expect(allTasks.length).toBe(0);
+  });
+
   it('rejects schedule_task for unregistered target JID', async () => {
     await processTaskIpc(
       {
@@ -183,6 +238,24 @@ describe('pause_task authorization', () => {
     expect(getTaskById('task-other')!.status).toBe('paused');
   });
 
+  it('andy-developer can pause jarvis worker task', async () => {
+    createTask({
+      id: 'task-worker',
+      group_folder: 'jarvis-worker-1',
+      chat_jid: 'jarvis-1@g.us',
+      prompt: 'worker task',
+      schedule_type: 'once',
+      schedule_value: '2025-06-01T00:00:00.000Z',
+      context_mode: 'isolated',
+      next_run: '2025-06-01T00:00:00.000Z',
+      status: 'active',
+      created_at: '2024-01-01T00:00:00.000Z',
+    });
+
+    await processTaskIpc({ type: 'pause_task', taskId: 'task-worker' }, 'andy-developer', false, deps);
+    expect(getTaskById('task-worker')!.status).toBe('paused');
+  });
+
   it('non-main group cannot pause another groups task', async () => {
     await processTaskIpc({ type: 'pause_task', taskId: 'task-main' }, 'other-group', false, deps);
     expect(getTaskById('task-main')!.status).toBe('active');
@@ -215,6 +288,24 @@ describe('resume_task authorization', () => {
   it('non-main group can resume its own task', async () => {
     await processTaskIpc({ type: 'resume_task', taskId: 'task-paused' }, 'other-group', false, deps);
     expect(getTaskById('task-paused')!.status).toBe('active');
+  });
+
+  it('andy-developer can resume jarvis worker task', async () => {
+    createTask({
+      id: 'task-worker-paused',
+      group_folder: 'jarvis-worker-1',
+      chat_jid: 'jarvis-1@g.us',
+      prompt: 'worker paused task',
+      schedule_type: 'once',
+      schedule_value: '2025-06-01T00:00:00.000Z',
+      context_mode: 'isolated',
+      next_run: '2025-06-01T00:00:00.000Z',
+      status: 'paused',
+      created_at: '2024-01-01T00:00:00.000Z',
+    });
+
+    await processTaskIpc({ type: 'resume_task', taskId: 'task-worker-paused' }, 'andy-developer', false, deps);
+    expect(getTaskById('task-worker-paused')!.status).toBe('active');
   });
 
   it('non-main group cannot resume another groups task', async () => {
@@ -260,6 +351,24 @@ describe('cancel_task authorization', () => {
 
     await processTaskIpc({ type: 'cancel_task', taskId: 'task-own' }, 'other-group', false, deps);
     expect(getTaskById('task-own')).toBeUndefined();
+  });
+
+  it('andy-developer can cancel jarvis worker task', async () => {
+    createTask({
+      id: 'task-worker-cancel',
+      group_folder: 'jarvis-worker-1',
+      chat_jid: 'jarvis-1@g.us',
+      prompt: 'cancel worker',
+      schedule_type: 'once',
+      schedule_value: '2025-06-01T00:00:00.000Z',
+      context_mode: 'isolated',
+      next_run: null,
+      status: 'active',
+      created_at: '2024-01-01T00:00:00.000Z',
+    });
+
+    await processTaskIpc({ type: 'cancel_task', taskId: 'task-worker-cancel' }, 'andy-developer', false, deps);
+    expect(getTaskById('task-worker-cancel')).toBeUndefined();
   });
 
   it('non-main group cannot cancel another groups task', async () => {
@@ -318,38 +427,41 @@ describe('refresh_groups authorization', () => {
 // The logic: isMain || (targetGroup && targetGroup.folder === sourceGroup)
 
 describe('IPC message authorization', () => {
-  // Replicate the exact check from the IPC watcher
-  function isMessageAuthorized(
-    sourceGroup: string,
-    isMain: boolean,
-    targetChatJid: string,
-    registeredGroups: Record<string, RegisteredGroup>,
-  ): boolean {
-    const targetGroup = registeredGroups[targetChatJid];
-    return isMain || (!!targetGroup && targetGroup.folder === sourceGroup);
+  function isMessageAuthorized(sourceGroup: string, isMain: boolean, targetChatJid: string): boolean {
+    const targetGroup = groups[targetChatJid];
+    return canIpcAccessTarget(sourceGroup, isMain, targetGroup);
   }
 
   it('main group can send to any group', () => {
-    expect(isMessageAuthorized('main', true, 'other@g.us', groups)).toBe(true);
-    expect(isMessageAuthorized('main', true, 'third@g.us', groups)).toBe(true);
+    expect(isMessageAuthorized('main', true, 'other@g.us')).toBe(true);
+    expect(isMessageAuthorized('main', true, 'third@g.us')).toBe(true);
   });
 
   it('non-main group can send to its own chat', () => {
-    expect(isMessageAuthorized('other-group', false, 'other@g.us', groups)).toBe(true);
+    expect(isMessageAuthorized('other-group', false, 'other@g.us')).toBe(true);
   });
 
   it('non-main group cannot send to another groups chat', () => {
-    expect(isMessageAuthorized('other-group', false, 'main@g.us', groups)).toBe(false);
-    expect(isMessageAuthorized('other-group', false, 'third@g.us', groups)).toBe(false);
+    expect(isMessageAuthorized('other-group', false, 'main@g.us')).toBe(false);
+    expect(isMessageAuthorized('other-group', false, 'third@g.us')).toBe(false);
   });
 
   it('non-main group cannot send to unregistered JID', () => {
-    expect(isMessageAuthorized('other-group', false, 'unknown@g.us', groups)).toBe(false);
+    expect(isMessageAuthorized('other-group', false, 'unknown@g.us')).toBe(false);
   });
 
   it('main group can send to unregistered JID', () => {
     // Main is always authorized regardless of target
-    expect(isMessageAuthorized('main', true, 'unknown@g.us', groups)).toBe(true);
+    expect(isMessageAuthorized('main', true, 'unknown@g.us')).toBe(true);
+  });
+
+  it('andy-developer can send to jarvis worker', () => {
+    expect(isMessageAuthorized('andy-developer', false, 'jarvis-1@g.us')).toBe(true);
+  });
+
+  it('andy-developer cannot send to non-worker groups', () => {
+    expect(isMessageAuthorized('andy-developer', false, 'other@g.us')).toBe(false);
+    expect(isMessageAuthorized('andy-developer', false, 'main@g.us')).toBe(false);
   });
 });
 

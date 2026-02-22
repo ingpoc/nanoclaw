@@ -30,6 +30,40 @@ export interface IpcDeps {
 
 let ipcWatcherRunning = false;
 
+function isJarvisWorkerFolder(folder: string): boolean {
+  return folder.startsWith('jarvis-worker');
+}
+
+export function canIpcAccessTarget(
+  sourceGroup: string,
+  isMain: boolean,
+  targetGroup: RegisteredGroup | undefined,
+): boolean {
+  if (isMain) return true;
+  if (!targetGroup) return false;
+  if (targetGroup.folder === sourceGroup) return true;
+
+  // Team-lead lane: andy-developer can delegate to jarvis workers only.
+  if (sourceGroup === 'andy-developer' && isJarvisWorkerFolder(targetGroup.folder)) {
+    return true;
+  }
+
+  return false;
+}
+
+function canIpcAccessTaskGroup(
+  sourceGroup: string,
+  isMain: boolean,
+  taskGroupFolder: string,
+): boolean {
+  if (isMain) return true;
+  if (taskGroupFolder === sourceGroup) return true;
+  if (sourceGroup === 'andy-developer' && isJarvisWorkerFolder(taskGroupFolder)) {
+    return true;
+  }
+  return false;
+}
+
 export function startIpcWatcher(deps: IpcDeps): void {
   if (ipcWatcherRunning) {
     logger.debug('IPC watcher already running, skipping duplicate start');
@@ -74,10 +108,7 @@ export function startIpcWatcher(deps: IpcDeps): void {
               if (data.type === 'message' && data.chatJid && data.text) {
                 // Authorization: verify this group can send to this chatJid
                 const targetGroup = registeredGroups[data.chatJid];
-                if (
-                  isMain ||
-                  (targetGroup && targetGroup.folder === sourceGroup)
-                ) {
+                if (canIpcAccessTarget(sourceGroup, isMain, targetGroup)) {
                   await deps.sendMessage(data.chatJid, data.text);
                   logger.info(
                     { chatJid: data.chatJid, sourceGroup },
@@ -199,7 +230,7 @@ export async function processTaskIpc(
         const targetFolder = targetGroupEntry.folder;
 
         // Authorization: non-main groups can only schedule for themselves
-        if (!isMain && targetFolder !== sourceGroup) {
+        if (!canIpcAccessTarget(sourceGroup, isMain, targetGroupEntry)) {
           logger.warn(
             { sourceGroup, targetFolder },
             'Unauthorized schedule_task attempt blocked',
@@ -272,7 +303,7 @@ export async function processTaskIpc(
     case 'pause_task':
       if (data.taskId) {
         const task = getTaskById(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (task && canIpcAccessTaskGroup(sourceGroup, isMain, task.group_folder)) {
           updateTask(data.taskId, { status: 'paused' });
           logger.info(
             { taskId: data.taskId, sourceGroup },
@@ -290,7 +321,7 @@ export async function processTaskIpc(
     case 'resume_task':
       if (data.taskId) {
         const task = getTaskById(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (task && canIpcAccessTaskGroup(sourceGroup, isMain, task.group_folder)) {
           updateTask(data.taskId, { status: 'active' });
           logger.info(
             { taskId: data.taskId, sourceGroup },
@@ -308,7 +339,7 @@ export async function processTaskIpc(
     case 'cancel_task':
       if (data.taskId) {
         const task = getTaskById(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (task && canIpcAccessTaskGroup(sourceGroup, isMain, task.group_folder)) {
           deleteTask(data.taskId);
           logger.info(
             { taskId: data.taskId, sourceGroup },

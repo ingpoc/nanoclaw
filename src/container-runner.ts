@@ -117,9 +117,9 @@ const WORKER_DEFAULT_OPENCODE_CONFIG = JSON.stringify({
   skills: { paths: ['/home/node/.claude/skills'] },
   mcp: {
     deepwiki: {
-      type: 'remote',
+      type: 'local',
       enabled: true,
-      url: 'https://mcp.deepwiki.com/mcp',
+      command: ['npx', '-y', 'mcp-remote', 'https://mcp.deepwiki.com/mcp', '--transport', 'streamable-http'],
     },
     context7: {
       type: 'local',
@@ -130,11 +130,6 @@ const WORKER_DEFAULT_OPENCODE_CONFIG = JSON.stringify({
       type: 'local',
       enabled: true,
       command: ['node', '/workspace/mcp-servers/token-efficient-mcp/dist/index.js'],
-    },
-    'chrome-devtools': {
-      type: 'local',
-      enabled: true,
-      command: ['npx', '-y', 'chrome-devtools-mcp', '--channel=beta'],
     },
   },
 });
@@ -361,6 +356,27 @@ function buildVolumeMounts(
         },
       }, null, 2) + '\n');
     }
+
+    // Write .mcp.json for Claude Agent SDK MCP servers.
+    // Agent container has chromium at /usr/bin/chromium (Debian package).
+    const mcpJsonFile = path.join(groupSessionsDir, '.mcp.json');
+    const mcpConfig = {
+      mcpServers: {
+        deepwiki: {
+          type: 'url' as const,
+          url: 'https://mcp.deepwiki.com/mcp',
+        },
+        context7: {
+          command: 'npx',
+          args: ['-y', '@upstash/context7-mcp'],
+        },
+        'token-efficient': {
+          command: 'node',
+          args: ['/workspace/mcp-servers/token-efficient-mcp/dist/index.js'],
+        },
+      },
+    };
+    fs.writeFileSync(mcpJsonFile, JSON.stringify(mcpConfig, null, 2) + '\n');
 
     // Sync skills from container/skills/ into each group's .claude/skills/
     const skillsSrc = path.join(process.cwd(), 'container', 'skills');

@@ -34,6 +34,7 @@ import {
   setSession,
   storeChatMetadata,
   storeMessage,
+  storeMessageDirect,
   insertWorkerRun,
   updateWorkerRunStatus,
   updateWorkerRunCompletion,
@@ -65,6 +66,61 @@ let messageLoopRunning = false;
 let whatsapp: WhatsAppChannel;
 const channels: Channel[] = [];
 const queue = new GroupQueue();
+
+function isInternalGroupJid(jid: string): boolean {
+  return jid.endsWith('@nanoclaw');
+}
+
+function getGroupJidByFolder(folder: string): string | undefined {
+  for (const [jid, group] of Object.entries(registeredGroups)) {
+    if (group.folder === folder) return jid;
+  }
+  return undefined;
+}
+
+function resolveWorkerReplyJid(messages: NewMessage[]): string | undefined {
+  const lastSender = messages[messages.length - 1]?.sender || '';
+  const match = lastSender.match(/^([A-Za-z0-9._-]+)@nanoclaw$/);
+  if (match) {
+    const sourceJid = getGroupJidByFolder(match[1]);
+    if (sourceJid) return sourceJid;
+  }
+  return getGroupJidByFolder('andy-developer');
+}
+
+async function dispatchMessageToJid(
+  jid: string,
+  text: string,
+  sourceGroup: string,
+): Promise<void> {
+  if (isInternalGroupJid(jid)) {
+    const targetGroup = registeredGroups[jid];
+    if (!targetGroup) {
+      throw new Error(`Unknown internal group JID: ${jid}`);
+    }
+    const timestamp = new Date().toISOString();
+    const id = `ipc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    storeChatMetadata(jid, timestamp, targetGroup.name, 'nanoclaw', true);
+    storeMessageDirect({
+      id,
+      chat_jid: jid,
+      sender: `${sourceGroup}@nanoclaw`,
+      sender_name: sourceGroup,
+      content: text,
+      timestamp,
+      is_from_me: false,
+      is_bot_message: false,
+    });
+    logger.info({ jid, sourceGroup }, 'Internal message queued');
+    return;
+  }
+
+  const channel = findChannel(channels, jid);
+  if (!channel) {
+    throw new Error(`No channel for JID: ${jid}`);
+  }
+  await channel.sendMessage(jid, text);
+}
 
 function loadState(): void {
   const lastIngest = parseInt(getRouterState('last_ingest_seq') || '0', 10);
@@ -138,8 +194,7 @@ function registerGroup(jid: string, group: RegisteredGroup): void {
 export function getAvailableGroups(): import('./container-runner.js').AvailableGroup[] {
   const chats = getAllChats();
   const registeredJids = new Set(Object.keys(registeredGroups));
-
-  return chats
+  const groups = chats
     .filter((c) => c.jid !== '__group_sync__' && c.is_group)
     .map((c) => ({
       jid: c.jid,
@@ -147,6 +202,21 @@ export function getAvailableGroups(): import('./container-runner.js').AvailableG
       lastActivity: c.last_message_time,
       isRegistered: registeredJids.has(c.jid),
     }));
+
+  const seen = new Set(groups.map((g) => g.jid));
+  for (const [jid, group] of Object.entries(registeredGroups)) {
+    if (jid === '__group_sync__' || seen.has(jid)) continue;
+    groups.push({
+      jid,
+      name: group.name,
+      lastActivity: group.added_at,
+      isRegistered: true,
+    });
+    seen.add(jid);
+  }
+
+  groups.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
+  return groups;
 }
 
 /** @internal - exported for testing */
@@ -184,12 +254,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   const group = registeredGroups[chatJid];
   if (!group) return true;
 
-  const channel = findChannel(channels, chatJid);
-  if (!channel) {
-    console.log(`Warning: no channel owns JID ${chatJid}, skipping messages`);
-    return true;
-  }
-
   const isMainGroup = group.folder === MAIN_GROUP_FOLDER;
 
   const sinceIngestSeq = lastAgentIngestSeq[chatJid] || 0;
@@ -221,6 +285,32 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   // For jarvis-worker groups: require a strict JSON dispatch payload.
   const isWorkerGroup = group.folder.startsWith('jarvis-worker');
+  const replyJid = isWorkerGroup ? resolveWorkerReplyJid(missedMessages) : chatJid;
+
+  const sendReply = async (text: string): Promise<boolean> => {
+    if (!replyJid) {
+      logger.warn({ group: group.name }, 'No reply JID available for message delivery');
+      return false;
+    }
+    const replyChannel = findChannel(channels, replyJid);
+    if (!replyChannel) {
+      logger.warn({ group: group.name, replyJid }, 'No channel owns reply JID');
+      return false;
+    }
+    await replyChannel.sendMessage(replyJid, text);
+    return true;
+  };
+
+  if (!isWorkerGroup) {
+    const replyChannel = replyJid ? findChannel(channels, replyJid) : undefined;
+    if (!replyChannel || !replyJid) {
+      logger.warn({ group: group.name, chatJid }, 'No channel owns JID, skipping messages');
+      return true;
+    }
+  } else if (!replyJid) {
+    logger.warn({ group: group.name, chatJid }, 'Worker group has no reply target; continuing without user notifications');
+  }
+
   let runId: string | undefined;
   let dispatchPayload: DispatchPayload | null = null;
   if (isWorkerGroup) {
@@ -229,8 +319,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     dispatchPayload = parseDispatchPayload(last.content);
     if (!dispatchPayload) {
       logger.warn({ group: group.name }, 'Worker dispatch missing JSON payload');
-      await channel.sendMessage(
-        chatJid,
+      await sendReply(
         '⚠ Invalid dispatch payload: worker tasks must be a JSON object with run_id, task_type, input, repo, branch, acceptance_tests, output_contract',
       );
       return true;
@@ -239,7 +328,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     const { valid, errors } = validateDispatchPayload(dispatchPayload);
     if (!valid) {
       logger.warn({ group: group.name, errors }, 'Invalid dispatch payload, rejecting');
-      await channel.sendMessage(chatJid, `⚠ Invalid dispatch payload: ${errors.join('; ')}`);
+      await sendReply(`⚠ Invalid dispatch payload: ${errors.join('; ')}`);
       return true;
     }
 
@@ -268,7 +357,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }, IDLE_TIMEOUT);
   };
 
-  await channel.setTyping?.(chatJid, true);
+  if (replyJid) {
+    const replyChannel = findChannel(channels, replyJid);
+    await replyChannel?.setTyping?.(replyJid, true);
+  }
   let hadError = false;
   let outputSentToUser = false;
   let lastWorkerOutput = '';
@@ -288,8 +380,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           const u = result.usage;
           finalText += `\n\n<internal>run_id=${runId} tokens=${u.input_tokens}in/${u.output_tokens}out duration=${Math.round(u.duration_ms / 1000)}s rss=${u.peak_rss_mb}MB</internal>`;
         }
-        await channel.sendMessage(chatJid, finalText);
-        outputSentToUser = true;
+        if (await sendReply(finalText)) {
+          outputSentToUser = true;
+        }
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)
       resetIdleTimer();
@@ -304,7 +397,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
   });
 
-  await channel.setTyping?.(chatJid, false);
+  if (replyJid) {
+    const replyChannel = findChannel(channels, replyJid);
+    await replyChannel?.setTyping?.(replyJid, false);
+  }
   if (idleTimer) clearTimeout(idleTimer);
 
   if (isWorkerGroup && runId) {
@@ -334,7 +430,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       } else {
         updateWorkerRunStatus(runId, 'failed_contract');
         logger.warn({ group: group.name, runId, missing }, 'Completion contract missing fields');
-        await channel.sendMessage(chatJid, `⚠ Completion contract missing: ${missing.join(', ')}`);
+        await sendReply(`⚠ Completion contract missing: ${missing.join(', ')}`);
       }
     }
   }
@@ -475,7 +571,8 @@ async function startMessageLoop(): Promise<void> {
           if (!group) continue;
 
           const channel = findChannel(channels, chatJid);
-          if (!channel) {
+          const isInternalChat = isInternalGroupJid(chatJid);
+          if (!channel && !isInternalChat) {
             console.log(`Warning: no channel owns JID ${chatJid}, skipping messages`);
             continue;
           }
@@ -513,7 +610,7 @@ async function startMessageLoop(): Promise<void> {
             lastAgentIngestSeq[chatJid] = lastSeq || (lastAgentIngestSeq[chatJid] || 0);
             saveState();
             // Show typing indicator while the container processes the piped message
-            channel.setTyping?.(chatJid, true)?.catch((err) =>
+            channel?.setTyping?.(chatJid, true)?.catch((err) =>
               logger.warn({ chatJid, err }, 'Failed to set typing indicator'),
             );
           } else {
@@ -588,20 +685,20 @@ async function main(): Promise<void> {
     queue,
     onProcess: (groupJid, proc, containerName, groupFolder) => queue.registerProcess(groupJid, proc, containerName, groupFolder),
     sendMessage: async (jid, rawText) => {
-      const channel = findChannel(channels, jid);
-      if (!channel) {
-        console.log(`Warning: no channel owns JID ${jid}, cannot send message`);
-        return;
-      }
       const text = formatOutbound(rawText);
-      if (text) await channel.sendMessage(jid, text);
+      if (!text) return;
+      try {
+        await dispatchMessageToJid(jid, text, 'scheduler');
+      } catch (err) {
+        logger.warn({ jid, err }, 'Failed to deliver scheduled-task message');
+      }
     },
   });
   startIpcWatcher({
-    sendMessage: (jid, text) => {
-      const channel = findChannel(channels, jid);
-      if (!channel) throw new Error(`No channel for JID: ${jid}`);
-      return channel.sendMessage(jid, text);
+    sendMessage: async (jid, rawText, sourceGroup) => {
+      const text = formatOutbound(rawText);
+      if (!text) return;
+      await dispatchMessageToJid(jid, text, sourceGroup);
     },
     registeredGroups: () => registeredGroups,
     registerGroup,

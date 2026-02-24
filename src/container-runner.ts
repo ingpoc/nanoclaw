@@ -1014,8 +1014,14 @@ export function writeGroupsSnapshot(
   const groupIpcDir = path.join(DATA_DIR, 'ipc', groupFolder);
   fs.mkdirSync(groupIpcDir, { recursive: true });
 
-  // Main sees all groups; others see nothing (they can't activate groups)
-  const visibleGroups = isMain ? groups : [];
+  // Main sees all groups.
+  // Andy-Developer also needs visibility into registered worker lanes for delegation.
+  // Other non-main lanes see no directory listing.
+  const visibleGroups = isMain
+    ? groups
+    : groupFolder === 'andy-developer'
+      ? groups.filter((g) => registeredJids.has(g.jid))
+      : [];
 
   const groupsFile = path.join(groupIpcDir, 'available_groups.json');
   fs.writeFileSync(

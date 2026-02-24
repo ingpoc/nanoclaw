@@ -65,12 +65,12 @@ Required outcome:
 
 ## Dispatch Example
 
-Use `mcp__nanoclaw__send_message`:
+Use `mcp__nanoclaw__send_message` with `target_group_jid`:
 
 ```json
 {
-  "chat_jid": "jarvis-worker-1@nanoclaw",
-  "message": "{\"run_id\":\"task-20260222-001\",\"task_type\":\"implement\",\"input\":\"Implement strict dispatch validation for worker runs\",\"repo\":\"openclaw-gurusharan/nanoclaw\",\"branch\":\"jarvis-dispatch-contract\",\"acceptance_tests\":[\"npm run build\",\"npm test\"],\"output_contract\":{\"required_fields\":[\"run_id\",\"branch\",\"commit_sha\",\"files_changed\",\"test_result\",\"risk\",\"pr_url\"]},\"priority\":\"high\"}"
+  "target_group_jid": "jarvis-worker-1@nanoclaw",
+  "text": "{\"run_id\":\"task-20260222-001\",\"task_type\":\"implement\",\"input\":\"Implement strict dispatch validation for worker runs\",\"repo\":\"openclaw-gurusharan/nanoclaw\",\"branch\":\"jarvis-dispatch-contract\",\"acceptance_tests\":[\"npm run build\",\"npm test\"],\"output_contract\":{\"required_fields\":[\"run_id\",\"branch\",\"commit_sha\",\"files_changed\",\"test_result\",\"risk\",\"pr_url\"]},\"priority\":\"high\"}"
 }
 ```
 

@@ -41,15 +41,17 @@ const server = new McpServer({
 
 server.tool(
   'send_message',
-  "Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times. Note: when running as a scheduled task, your final output is NOT sent to the user — use this tool if you need to communicate with the user or group.",
+  "Send a message immediately while you're still running. Use this for progress updates or multi-part responses. You can call this multiple times. By default it sends to the current chat, but `target_group_jid` can target another registered group (authorization is enforced by the host). Note: when running as a scheduled task, your final output is NOT sent automatically — use this tool to communicate.",
   {
     text: z.string().describe('The message text to send'),
     sender: z.string().optional().describe('Your role/identity name (e.g. "Researcher"). When set, messages appear from a dedicated bot in Telegram.'),
+    target_group_jid: z.string().optional().describe('Optional registered target group JID (for delegation, e.g. jarvis-worker-1@nanoclaw). Defaults to current chat.'),
   },
   async (args) => {
+    const targetJid = args.target_group_jid || chatJid;
     const data: Record<string, string | undefined> = {
       type: 'message',
-      chatJid,
+      chatJid: targetJid,
       text: args.text,
       sender: args.sender || undefined,
       groupFolder,
@@ -58,7 +60,9 @@ server.tool(
 
     writeIpcFile(MESSAGES_DIR, data);
 
-    return { content: [{ type: 'text' as const, text: 'Message sent.' }] };
+    return {
+      content: [{ type: 'text' as const, text: `Message queued for ${targetJid}.` }],
+    };
   },
 );
 
@@ -90,7 +94,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
     schedule_type: z.enum(['cron', 'interval', 'once']).describe('cron=recurring at specific times, interval=recurring every N ms, once=run once at specific time'),
     schedule_value: z.string().describe('cron: "*/5 * * * *" | interval: milliseconds like "300000" | once: local timestamp like "2026-02-01T15:30:00" (no Z suffix!)'),
     context_mode: z.enum(['group', 'isolated']).default('group').describe('group=runs with chat history and memory, isolated=fresh session (include context in prompt)'),
-    target_group_jid: z.string().optional().describe('(Main group only) JID of the group to schedule the task for. Defaults to the current group.'),
+    target_group_jid: z.string().optional().describe('Optional registered target group JID. Defaults to the current group. Authorization is enforced by the host.'),
   },
   async (args) => {
     // Validate schedule_value before writing IPC
@@ -121,8 +125,9 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
       }
     }
 
-    // Non-main groups can only schedule for themselves
-    const targetJid = isMain && args.target_group_jid ? args.target_group_jid : chatJid;
+    // Host-side IPC authorization enforces whether this source group can
+    // target the requested destination.
+    const targetJid = args.target_group_jid || chatJid;
 
     const data = {
       type: 'schedule_task',

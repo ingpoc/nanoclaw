@@ -16,7 +16,7 @@ import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
 
 export interface IpcDeps {
-  sendMessage: (jid: string, text: string) => Promise<void>;
+  sendMessage: (jid: string, text: string, sourceGroup: string) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroupMetadata: (force: boolean) => Promise<void>;
@@ -65,11 +65,26 @@ function canIpcAccessTaskGroup(
   return false;
 }
 
-function validateAndyWorkerDispatchMessage(
+export function validateAndyWorkerDispatchMessage(
   sourceGroup: string,
   targetGroup: RegisteredGroup | undefined,
   text: string,
 ): { valid: boolean; reason?: string } {
+  const parsed = parseDispatchPayload(text);
+
+  // Guardrail: prevent accidental raw dispatch contracts from being posted
+  // back into the Andy-Developer WhatsApp chat.
+  if (
+    sourceGroup === 'andy-developer'
+    && targetGroup?.folder === 'andy-developer'
+    && parsed
+  ) {
+    return {
+      valid: false,
+      reason: 'dispatch payload to andy-developer chat blocked; set target_group_jid to jarvis-worker-*',
+    };
+  }
+
   // For andy-developer -> jarvis-worker messages, enforce strict dispatch contract.
   if (
     sourceGroup !== 'andy-developer'
@@ -79,7 +94,6 @@ function validateAndyWorkerDispatchMessage(
     return { valid: true };
   }
 
-  const parsed = parseDispatchPayload(text);
   if (!parsed) {
     return { valid: false, reason: 'andy-developer -> jarvis-worker message must be strict JSON dispatch payload' };
   }
@@ -144,7 +158,7 @@ export function startIpcWatcher(deps: IpcDeps): void {
                 );
 
                 if (canAccessTarget && dispatchValidation.valid) {
-                  await deps.sendMessage(data.chatJid, data.text);
+                  await deps.sendMessage(data.chatJid, data.text, sourceGroup);
                   logger.info(
                     { chatJid: data.chatJid, sourceGroup },
                     'IPC message sent',

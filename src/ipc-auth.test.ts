@@ -8,7 +8,12 @@ import {
   getTaskById,
   setRegisteredGroup,
 } from './db.js';
-import { canIpcAccessTarget, processTaskIpc, IpcDeps } from './ipc.js';
+import {
+  canIpcAccessTarget,
+  processTaskIpc,
+  IpcDeps,
+  validateAndyWorkerDispatchMessage,
+} from './ipc.js';
 import { RegisteredGroup } from './types.js';
 
 // Set up registered groups used across tests
@@ -89,7 +94,7 @@ beforeEach(() => {
   setRegisteredGroup('jarvis-1@g.us', JARVIS_WORKER_GROUP);
 
   deps = {
-    sendMessage: async () => {},
+    sendMessage: async (_jid, _text, _sourceGroup) => {},
     registeredGroups: () => groups,
     registerGroup: (jid, group) => {
       groups[jid] = group;
@@ -500,6 +505,39 @@ describe('IPC message authorization', () => {
   it('andy-developer cannot send to non-worker groups', () => {
     expect(isMessageAuthorized('andy-developer', false, 'other@g.us')).toBe(false);
     expect(isMessageAuthorized('andy-developer', false, 'main@g.us')).toBe(false);
+  });
+});
+
+describe('andy worker dispatch payload guardrails', () => {
+  it('blocks worker-style JSON dispatch accidentally targeted to andy-developer chat', () => {
+    const result = validateAndyWorkerDispatchMessage(
+      'andy-developer',
+      groups['andy@g.us'],
+      VALID_WORKER_DISPATCH_PROMPT,
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('dispatch payload to andy-developer chat blocked');
+  });
+
+  it('allows andy-developer plain status messages to its own chat', () => {
+    const result = validateAndyWorkerDispatchMessage(
+      'andy-developer',
+      groups['andy@g.us'],
+      'Jarvis workers are running; I will report status shortly.',
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it('allows valid strict dispatch JSON when target is jarvis-worker group', () => {
+    const result = validateAndyWorkerDispatchMessage(
+      'andy-developer',
+      groups['jarvis-1@g.us'],
+      VALID_WORKER_DISPATCH_PROMPT,
+    );
+
+    expect(result.valid).toBe(true);
   });
 });
 

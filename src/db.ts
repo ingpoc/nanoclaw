@@ -3,6 +3,8 @@ import fs from 'fs';
 import path from 'path';
 
 import { ASSISTANT_NAME, DATA_DIR, STORE_DIR } from './config.js';
+import { isValidGroupFolder } from './group-folder.js';
+import { logger } from './logger.js';
 import { NewMessage, RegisteredGroup, ScheduledTask, TaskRunLog } from './types.js';
 
 let db: Database.Database;
@@ -108,7 +110,11 @@ function createSchema(database: Database.Database): void {
     `ALTER TABLE worker_runs ADD COLUMN risk_summary TEXT`,
   ];
   for (const sql of workerRunsMigrations) {
-    try { database.exec(sql); } catch { /* column already exists */ }
+    try {
+      database.exec(sql);
+    } catch {
+      /* column already exists */
+    }
   }
 
   // Add is_bot_message column if it doesn't exist (migration for existing DBs)
@@ -263,17 +269,7 @@ export function setLastGroupSync(): void {
  */
 export function storeMessage(msg: NewMessage): void {
   db.prepare(
-    `
-    INSERT INTO messages (id, chat_jid, sender, sender_name, content, timestamp, is_from_me, is_bot_message)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id, chat_jid) DO UPDATE SET
-      sender = excluded.sender,
-      sender_name = excluded.sender_name,
-      content = excluded.content,
-      timestamp = excluded.timestamp,
-      is_from_me = excluded.is_from_me,
-      is_bot_message = excluded.is_bot_message
-  `,
+    `INSERT OR REPLACE INTO messages (id, chat_jid, sender, sender_name, content, timestamp, is_from_me, is_bot_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     msg.id,
     msg.chat_jid,
@@ -300,17 +296,7 @@ export function storeMessageDirect(msg: {
   is_bot_message?: boolean;
 }): void {
   db.prepare(
-    `
-    INSERT INTO messages (id, chat_jid, sender, sender_name, content, timestamp, is_from_me, is_bot_message)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id, chat_jid) DO UPDATE SET
-      sender = excluded.sender,
-      sender_name = excluded.sender_name,
-      content = excluded.content,
-      timestamp = excluded.timestamp,
-      is_from_me = excluded.is_from_me,
-      is_bot_message = excluded.is_bot_message
-  `,
+    `INSERT OR REPLACE INTO messages (id, chat_jid, sender, sender_name, content, timestamp, is_from_me, is_bot_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     msg.id,
     msg.chat_jid,
@@ -325,81 +311,53 @@ export function storeMessageDirect(msg: {
 
 export function getNewMessages(
   jids: string[],
-  lastIngestSeq: number,
+  lastTimestamp: string,
   botPrefix: string,
-): { messages: NewMessage[]; newIngestSeq: number } {
-  if (jids.length === 0) return { messages: [], newIngestSeq: lastIngestSeq };
+): { messages: NewMessage[]; newTimestamp: string } {
+  if (jids.length === 0) return { messages: [], newTimestamp: lastTimestamp };
 
   const placeholders = jids.map(() => '?').join(',');
   // Filter bot messages using both the is_bot_message flag AND the content
   // prefix as a backstop for messages written before the migration ran.
   const sql = `
-    SELECT rowid AS ingest_seq, id, chat_jid, sender, sender_name, content, timestamp
+    SELECT id, chat_jid, sender, sender_name, content, timestamp
     FROM messages
-    WHERE rowid > ? AND chat_jid IN (${placeholders})
+    WHERE timestamp > ? AND chat_jid IN (${placeholders})
       AND is_bot_message = 0 AND content NOT LIKE ?
-    ORDER BY rowid
+      AND content != '' AND content IS NOT NULL
+    ORDER BY timestamp
   `;
 
   const rows = db
     .prepare(sql)
-    .all(lastIngestSeq, ...jids, `${botPrefix}:%`) as NewMessage[];
+    .all(lastTimestamp, ...jids, `${botPrefix}:%`) as NewMessage[];
 
-  const newIngestSeq = rows.length > 0
-    ? (rows[rows.length - 1].ingest_seq || lastIngestSeq)
-    : lastIngestSeq;
+  let newTimestamp = lastTimestamp;
+  for (const row of rows) {
+    if (row.timestamp > newTimestamp) newTimestamp = row.timestamp;
+  }
 
-  return { messages: rows, newIngestSeq };
+  return { messages: rows, newTimestamp };
 }
 
 export function getMessagesSince(
   chatJid: string,
-  sinceIngestSeq: number,
+  sinceTimestamp: string,
   botPrefix: string,
 ): NewMessage[] {
   // Filter bot messages using both the is_bot_message flag AND the content
   // prefix as a backstop for messages written before the migration ran.
   const sql = `
-    SELECT rowid AS ingest_seq, id, chat_jid, sender, sender_name, content, timestamp
+    SELECT id, chat_jid, sender, sender_name, content, timestamp
     FROM messages
-    WHERE chat_jid = ? AND rowid > ?
+    WHERE chat_jid = ? AND timestamp > ?
       AND is_bot_message = 0 AND content NOT LIKE ?
-    ORDER BY rowid
+      AND content != '' AND content IS NOT NULL
+    ORDER BY timestamp
   `;
   return db
     .prepare(sql)
-    .all(chatJid, sinceIngestSeq, `${botPrefix}:%`) as NewMessage[];
-}
-
-export function getIngestSeqAtOrBeforeTimestamp(timestamp: string): number {
-  if (!timestamp) return 0;
-  const row = db
-    .prepare(
-      `
-      SELECT COALESCE(MAX(rowid), 0) AS ingest_seq
-      FROM messages
-      WHERE timestamp <= ?
-    `,
-    )
-    .get(timestamp) as { ingest_seq: number } | undefined;
-  return row?.ingest_seq || 0;
-}
-
-export function getChatIngestSeqAtOrBeforeTimestamp(
-  chatJid: string,
-  timestamp: string,
-): number {
-  if (!timestamp) return 0;
-  const row = db
-    .prepare(
-      `
-      SELECT COALESCE(MAX(rowid), 0) AS ingest_seq
-      FROM messages
-      WHERE chat_jid = ? AND timestamp <= ?
-    `,
-    )
-    .get(chatJid, timestamp) as { ingest_seq: number } | undefined;
-  return row?.ingest_seq || 0;
+    .all(chatJid, sinceTimestamp, `${botPrefix}:%`) as NewMessage[];
 }
 
 export function createTask(
@@ -595,6 +553,13 @@ export function getRegisteredGroup(
       }
     | undefined;
   if (!row) return undefined;
+  if (!isValidGroupFolder(row.folder)) {
+    logger.warn(
+      { jid: row.jid, folder: row.folder },
+      'Skipping registered group with invalid folder',
+    );
+    return undefined;
+  }
   return {
     jid: row.jid,
     name: row.name,
@@ -612,6 +577,9 @@ export function setRegisteredGroup(
   jid: string,
   group: RegisteredGroup,
 ): void {
+  if (!isValidGroupFolder(group.folder)) {
+    throw new Error(`Invalid group folder "${group.folder}" for JID ${jid}`);
+  }
   db.prepare(
     `INSERT OR REPLACE INTO registered_groups (jid, name, folder, trigger_pattern, added_at, container_config, requires_trigger)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -640,6 +608,13 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
   }>;
   const result: Record<string, RegisteredGroup> = {};
   for (const row of rows) {
+    if (!isValidGroupFolder(row.folder)) {
+      logger.warn(
+        { jid: row.jid, folder: row.folder },
+        'Skipping registered group with invalid folder',
+      );
+      continue;
+    }
     result[row.jid] = {
       name: row.name,
       folder: row.folder,
@@ -657,16 +632,23 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
 // --- Worker run deduplication ---
 
 export type WorkerRunStatus =
-  | 'queued' | 'running' | 'review_requested'
-  | 'failed_contract' | 'done' | 'failed';
+  | 'queued'
+  | 'running'
+  | 'review_requested'
+  | 'failed_contract'
+  | 'done'
+  | 'failed';
 
 /**
  * Insert a worker run record.
- * - 'new': run_id not seen before — inserted with status 'queued'
- * - 'retry': run_id exists with status 'failed' or 'failed_contract' — retry_count incremented, reset to 'queued'
- * - 'duplicate': run_id exists with any other status — caller should skip execution
+ * - 'new': run_id not seen before, inserted with status 'queued'
+ * - 'retry': run_id exists with status 'failed' or 'failed_contract'
+ * - 'duplicate': run_id exists with any other status
  */
-export function insertWorkerRun(runId: string, groupFolder: string): 'new' | 'retry' | 'duplicate' {
+export function insertWorkerRun(
+  runId: string,
+  groupFolder: string,
+): 'new' | 'retry' | 'duplicate' {
   const existing = getWorkerRun(runId);
   if (existing) {
     if (existing.status === 'failed' || existing.status === 'failed_contract') {
@@ -677,6 +659,7 @@ export function insertWorkerRun(runId: string, groupFolder: string): 'new' | 're
     }
     return 'duplicate';
   }
+
   db.prepare(
     `INSERT INTO worker_runs (run_id, group_folder, status, started_at, retry_count) VALUES (?, ?, 'queued', ?, 0)`,
   ).run(runId, groupFolder, new Date().toISOString());
@@ -684,7 +667,11 @@ export function insertWorkerRun(runId: string, groupFolder: string): 'new' | 're
 }
 
 export function updateWorkerRunStatus(runId: string, status: WorkerRunStatus): void {
-  const terminal = status === 'done' || status === 'failed' || status === 'failed_contract' || status === 'review_requested';
+  const terminal =
+    status === 'done'
+    || status === 'failed'
+    || status === 'failed_contract'
+    || status === 'review_requested';
   if (terminal) {
     db.prepare(
       `UPDATE worker_runs SET status = ?, completed_at = ? WHERE run_id = ?`,
@@ -766,19 +753,8 @@ function migrateJsonState(): void {
   const routerState = migrateFile('router_state.json') as {
     last_timestamp?: string;
     last_agent_timestamp?: Record<string, string>;
-    last_ingest_seq?: number;
-    last_agent_ingest_seq?: Record<string, number>;
   } | null;
   if (routerState) {
-    if (routerState.last_ingest_seq !== undefined) {
-      setRouterState('last_ingest_seq', String(routerState.last_ingest_seq));
-    }
-    if (routerState.last_agent_ingest_seq) {
-      setRouterState(
-        'last_agent_ingest_seq',
-        JSON.stringify(routerState.last_agent_ingest_seq),
-      );
-    }
     if (routerState.last_timestamp) {
       setRouterState('last_timestamp', routerState.last_timestamp);
     }
@@ -808,7 +784,14 @@ function migrateJsonState(): void {
   > | null;
   if (groups) {
     for (const [jid, group] of Object.entries(groups)) {
-      setRegisteredGroup(jid, group);
+      try {
+        setRegisteredGroup(jid, group);
+      } catch (err) {
+        logger.warn(
+          { jid, folder: group.folder, err },
+          'Skipping migrated registered group with invalid folder',
+        );
+      }
     }
   }
 }

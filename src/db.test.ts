@@ -53,7 +53,7 @@ describe('storeMessage', () => {
       timestamp: '2024-01-01T00:00:01.000Z',
     });
 
-    const messages = getMessagesSince('group@g.us', 0, 'Andy');
+    const messages = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Andy');
     expect(messages).toHaveLength(1);
     expect(messages[0].id).toBe('msg-1');
     expect(messages[0].sender).toBe('123@s.whatsapp.net');
@@ -61,7 +61,7 @@ describe('storeMessage', () => {
     expect(messages[0].content).toBe('hello world');
   });
 
-  it('stores empty content', () => {
+  it('filters out empty content', () => {
     storeChatMetadata('group@g.us', '2024-01-01T00:00:00.000Z');
 
     store({
@@ -73,9 +73,8 @@ describe('storeMessage', () => {
       timestamp: '2024-01-01T00:00:04.000Z',
     });
 
-    const messages = getMessagesSince('group@g.us', 0, 'Andy');
-    expect(messages).toHaveLength(1);
-    expect(messages[0].content).toBe('');
+    const messages = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Andy');
+    expect(messages).toHaveLength(0);
   });
 
   it('stores is_from_me flag', () => {
@@ -92,7 +91,7 @@ describe('storeMessage', () => {
     });
 
     // Message is stored (we can retrieve it — is_from_me doesn't affect retrieval)
-    const messages = getMessagesSince('group@g.us', 0, 'Andy');
+    const messages = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Andy');
     expect(messages).toHaveLength(1);
   });
 
@@ -117,7 +116,7 @@ describe('storeMessage', () => {
       timestamp: '2024-01-01T00:00:01.000Z',
     });
 
-    const messages = getMessagesSince('group@g.us', 0, 'Andy');
+    const messages = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Andy');
     expect(messages).toHaveLength(1);
     expect(messages[0].content).toBe('updated');
   });
@@ -148,23 +147,21 @@ describe('getMessagesSince', () => {
     });
   });
 
-  it('returns messages after the given ingest sequence cursor', () => {
-    const all = getMessagesSince('group@g.us', 0, 'Andy');
-    const cursor = all.find((m) => m.id === 'm2')!.ingest_seq!;
-    const msgs = getMessagesSince('group@g.us', cursor, 'Andy');
-    // Should exclude m1, m2 (at/before cursor), m3 (bot message)
+  it('returns messages after the given timestamp', () => {
+    const msgs = getMessagesSince('group@g.us', '2024-01-01T00:00:02.000Z', 'Andy');
+    // Should exclude m1, m2 (before/at timestamp), m3 (bot message)
     expect(msgs).toHaveLength(1);
     expect(msgs[0].content).toBe('third');
   });
 
   it('excludes bot messages via is_bot_message flag', () => {
-    const msgs = getMessagesSince('group@g.us', 0, 'Andy');
+    const msgs = getMessagesSince('group@g.us', '2024-01-01T00:00:00.000Z', 'Andy');
     const botMsgs = msgs.filter((m) => m.content === 'bot reply');
     expect(botMsgs).toHaveLength(0);
   });
 
-  it('returns all non-bot messages when cursor is zero', () => {
-    const msgs = getMessagesSince('group@g.us', 0, 'Andy');
+  it('returns all non-bot messages when sinceTimestamp is empty', () => {
+    const msgs = getMessagesSince('group@g.us', '', 'Andy');
     // 3 user messages (bot message excluded)
     expect(msgs).toHaveLength(3);
   });
@@ -176,9 +173,7 @@ describe('getMessagesSince', () => {
       sender_name: 'Bot', content: 'Andy: old bot reply',
       timestamp: '2024-01-01T00:00:05.000Z',
     });
-    const all = getMessagesSince('group@g.us', 0, 'Andy');
-    const cursor = all[all.length - 1].ingest_seq!;
-    const msgs = getMessagesSince('group@g.us', cursor, 'Andy');
+    const msgs = getMessagesSince('group@g.us', '2024-01-01T00:00:04.000Z', 'Andy');
     expect(msgs).toHaveLength(0);
   });
 });
@@ -210,59 +205,31 @@ describe('getNewMessages', () => {
   });
 
   it('returns new messages across multiple groups', () => {
-    const { messages, newIngestSeq } = getNewMessages(
+    const { messages, newTimestamp } = getNewMessages(
       ['group1@g.us', 'group2@g.us'],
-      0,
+      '2024-01-01T00:00:00.000Z',
       'Andy',
     );
     // Excludes bot message, returns 3 user messages
     expect(messages).toHaveLength(3);
-    expect(newIngestSeq).toBeGreaterThan(0);
+    expect(newTimestamp).toBe('2024-01-01T00:00:04.000Z');
   });
 
-  it('filters by ingest sequence cursor', () => {
-    const first = getNewMessages(
-      ['group1@g.us', 'group2@g.us'],
-      0,
-      'Andy',
-    );
-    const cursor = first.messages[1].ingest_seq!;
+  it('filters by timestamp', () => {
     const { messages } = getNewMessages(
       ['group1@g.us', 'group2@g.us'],
-      cursor,
+      '2024-01-01T00:00:02.000Z',
       'Andy',
     );
-    // Only g1 msg2 (after cursor, not bot)
+    // Only g1 msg2 (after ts, not bot)
     expect(messages).toHaveLength(1);
     expect(messages[0].content).toBe('g1 msg2');
   });
 
   it('returns empty for no registered groups', () => {
-    const { messages, newIngestSeq } = getNewMessages([], 0, 'Andy');
+    const { messages, newTimestamp } = getNewMessages([], '', 'Andy');
     expect(messages).toHaveLength(0);
-    expect(newIngestSeq).toBe(0);
-  });
-
-  it('does not miss same-timestamp arrivals when using ingest sequence cursor', () => {
-    store({
-      id: 'same-1', chat_jid: 'group1@g.us', sender: 'user@s.whatsapp.net',
-      sender_name: 'User', content: 'same-second-1', timestamp: '2024-01-01T00:00:10.000Z',
-    });
-    store({
-      id: 'same-2', chat_jid: 'group1@g.us', sender: 'user@s.whatsapp.net',
-      sender_name: 'User', content: 'same-second-2', timestamp: '2024-01-01T00:00:10.000Z',
-    });
-
-    const first = getNewMessages(['group1@g.us'], 0, 'Andy');
-    const lastSeq = first.messages[first.messages.length - 1].ingest_seq!;
-
-    store({
-      id: 'same-3', chat_jid: 'group1@g.us', sender: 'user@s.whatsapp.net',
-      sender_name: 'User', content: 'same-second-3', timestamp: '2024-01-01T00:00:10.000Z',
-    });
-
-    const next = getNewMessages(['group1@g.us'], lastSeq, 'Andy');
-    expect(next.messages.map((m) => m.id)).toContain('same-3');
+    expect(newTimestamp).toBe('');
   });
 });
 

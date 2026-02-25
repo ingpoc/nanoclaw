@@ -26,7 +26,7 @@ interface ContainerInput {
   chatJid: string;
   isMain: boolean;
   isScheduledTask?: boolean;
-  model?: string;
+  assistantName?: string;
   secrets?: Record<string, string>;
 }
 
@@ -35,12 +35,6 @@ interface ContainerOutput {
   result: string | null;
   newSessionId?: string;
   error?: string;
-  usage?: {
-    input_tokens: number;
-    output_tokens: number;
-    duration_ms: number;
-    peak_rss_mb: number;
-  };
 }
 
 interface SessionEntry {
@@ -149,7 +143,7 @@ function getSessionSummary(sessionId: string, transcriptPath: string): string | 
 /**
  * Archive the full transcript to conversations/ before compaction.
  */
-function createPreCompactHook(): HookCallback {
+function createPreCompactHook(assistantName?: string): HookCallback {
   return async (input, _toolUseId, _context) => {
     const preCompact = input as PreCompactHookInput;
     const transcriptPath = preCompact.transcript_path;
@@ -179,7 +173,7 @@ function createPreCompactHook(): HookCallback {
       const filename = `${date}-${name}.md`;
       const filePath = path.join(conversationsDir, filename);
 
-      const markdown = formatTranscriptMarkdown(messages, summary);
+      const markdown = formatTranscriptMarkdown(messages, summary, assistantName);
       fs.writeFileSync(filePath, markdown);
 
       log(`Archived conversation to ${filePath}`);
@@ -259,7 +253,7 @@ function parseTranscript(content: string): ParsedMessage[] {
   return messages;
 }
 
-function formatTranscriptMarkdown(messages: ParsedMessage[], title?: string | null): string {
+function formatTranscriptMarkdown(messages: ParsedMessage[], title?: string | null, assistantName?: string): string {
   const now = new Date();
   const formatDateTime = (d: Date) => d.toLocaleString('en-US', {
     month: 'short',
@@ -278,7 +272,7 @@ function formatTranscriptMarkdown(messages: ParsedMessage[], title?: string | nu
   lines.push('');
 
   for (const msg of messages) {
-    const sender = msg.role === 'user' ? 'User' : 'Andy';
+    const sender = msg.role === 'user' ? 'User' : (assistantName || 'Assistant');
     const content = msg.content.length > 2000
       ? msg.content.slice(0, 2000) + '...'
       : msg.content;
@@ -368,13 +362,6 @@ async function runQuery(
   sdkEnv: Record<string, string | undefined>,
   resumeAt?: string,
 ): Promise<{ newSessionId?: string; lastAssistantUuid?: string; closedDuringQuery: boolean }> {
-  const queryStartMs = Date.now();
-  let peakRssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
-  const rssInterval = setInterval(() => {
-    const rss = Math.round(process.memoryUsage().rss / 1024 / 1024);
-    if (rss > peakRssMb) peakRssMb = rss;
-  }, 2000);
-
   const stream = new MessageStream();
   stream.push(prompt);
 
@@ -431,7 +418,6 @@ async function runQuery(
     prompt: stream,
     options: {
       cwd: '/workspace/group',
-      model: containerInput.model,
       additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
       resume: sessionId,
       resumeSessionAt: resumeAt,
@@ -446,11 +432,7 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*',
-        'mcp__deepwiki__*',
-        'mcp__context7__*',
-        'mcp__token-efficient__*',
-        'mcp__chrome-devtools__*',
+        'mcp__nanoclaw__*'
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -466,32 +448,9 @@ async function runQuery(
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
           },
         },
-        deepwiki: {
-          type: 'http',
-          url: 'https://mcp.deepwiki.com/mcp',
-        },
-        context7: {
-          command: 'context7-mcp',
-          args: [],
-        },
-        'token-efficient': {
-          command: 'node',
-          args: ['/workspace/mcp-servers/token-efficient-mcp/dist/index.js'],
-        },
-        'chrome-devtools': {
-          command: 'chrome-devtools-mcp',
-          args: [
-            '--headless',
-            '--isolated',
-            '--executablePath',
-            '/usr/bin/chromium',
-            '--chromeArg=--disable-dev-shm-usage',
-            '--chromeArg=--no-sandbox',
-          ],
-        },
       },
       hooks: {
-        PreCompact: [{ hooks: [createPreCompactHook()] }],
+        PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
         PreToolUse: [{ matcher: 'Bash', hooks: [createSanitizeBashHook()] }],
       },
     }
@@ -517,26 +476,15 @@ async function runQuery(
     if (message.type === 'result') {
       resultCount++;
       const textResult = 'result' in message ? (message as { result?: string }).result : null;
-      const msgUsage = (message as { usage?: { input_tokens?: number; output_tokens?: number } }).usage;
-      const durationMs = Date.now() - queryStartMs;
-      clearInterval(rssInterval);
-      const usage = {
-        input_tokens: msgUsage?.input_tokens ?? 0,
-        output_tokens: msgUsage?.output_tokens ?? 0,
-        duration_ms: durationMs,
-        peak_rss_mb: peakRssMb,
-      };
-      log(`Result #${resultCount}: subtype=${message.subtype} usage=${JSON.stringify(usage)}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
+      log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
       writeOutput({
         status: 'success',
         result: textResult || null,
-        newSessionId,
-        usage,
+        newSessionId
       });
     }
   }
 
-  clearInterval(rssInterval);
   ipcPolling = false;
   log(`Query done. Messages: ${messageCount}, results: ${resultCount}, lastAssistantUuid: ${lastAssistantUuid || 'none'}, closedDuringQuery: ${closedDuringQuery}`);
   return { newSessionId, lastAssistantUuid, closedDuringQuery };
@@ -561,33 +509,10 @@ async function main(): Promise<void> {
   }
 
   // Build SDK env: merge secrets into process.env for the SDK only.
+  // Secrets never touch process.env itself, so Bash subprocesses can't see them.
   const sdkEnv: Record<string, string | undefined> = { ...process.env };
   for (const [key, value] of Object.entries(containerInput.secrets || {})) {
     sdkEnv[key] = value;
-  }
-
-  // GITHUB_TOKEN must be in process.env so bash subprocesses (git, gh) can use it.
-  // Safe inside a container: isolated, single-group, ephemeral.
-  if (containerInput.secrets?.GITHUB_TOKEN) {
-    const token = containerInput.secrets.GITHUB_TOKEN;
-    process.env.GITHUB_TOKEN = token;
-    // Auto-configure git identity and credentials so the agent doesn't need to run setup commands.
-    // gh CLI picks up GITHUB_TOKEN automatically via GH_TOKEN env alias.
-    process.env.GH_TOKEN = token;
-    try {
-      fs.writeFileSync(
-        `${process.env.HOME}/.git-credentials`,
-        `https://openclaw-gurusharan:${token}@github.com\n`,
-        { mode: 0o600 },
-      );
-      const { execSync } = await import('child_process');
-      execSync('git config --global credential.helper store', { stdio: 'ignore' });
-      execSync('git config --global user.email "openclaw-gurusharan@users.noreply.github.com"', { stdio: 'ignore' });
-      execSync('git config --global user.name "Andy (openclaw-gurusharan)"', { stdio: 'ignore' });
-      execSync('git config --global init.defaultBranch main', { stdio: 'ignore' });
-    } catch {
-      // Non-fatal: git config may fail in some environments
-    }
   }
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));

@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
-import { spawn } from 'child_process';
 
 // Sentinel markers must match container-runner.ts
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
@@ -9,21 +8,13 @@ const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
 
 // Mock config
 vi.mock('./config.js', () => ({
-  CONTAINER_CPU_LIMIT: '2',
   CONTAINER_IMAGE: 'nanoclaw-agent:latest',
-  CONTAINER_MEMORY_LIMIT: '4096M',
   CONTAINER_MAX_OUTPUT_SIZE: 10485760,
   CONTAINER_TIMEOUT: 1800000, // 30min
   DATA_DIR: '/tmp/nanoclaw-test-data',
   GROUPS_DIR: '/tmp/nanoclaw-test-groups',
   IDLE_TIMEOUT: 1800000, // 30min
-  MAIN_GROUP_FOLDER: 'main',
-  WORKER_CONTAINER_IMAGE: 'nanoclaw-worker:latest',
-}));
-
-// Mock env reader used for secret injection
-vi.mock('./env.js', () => ({
-  readEnvFile: vi.fn(() => ({})),
+  TIMEZONE: 'America/Los_Angeles',
 }));
 
 // Mock logger
@@ -59,24 +50,6 @@ vi.mock('./mount-security.js', () => ({
   validateAdditionalMounts: vi.fn(() => []),
 }));
 
-// Mock container-runtime helpers used by container-runner
-vi.mock('./container-runtime.js', () => ({
-  CONTAINER_RUNTIME_BIN: 'container',
-  readonlyMountArgs: (hostPath: string, containerPath: string) => [
-    '--mount',
-    `type=bind,source=${hostPath},target=${containerPath},readonly`,
-  ],
-  stopRunningContainersByPrefix: vi.fn(() => ({
-    matched: [],
-    stopped: [],
-    failures: [],
-  })),
-  stopContainerWithVerification: vi.fn(() => ({
-    stopped: true,
-    attempts: ['ok: container stop test'],
-  })),
-}));
-
 // Create a controllable fake ChildProcess
 function createFakeProcess() {
   const proc = new EventEmitter() as EventEmitter & {
@@ -102,11 +75,14 @@ vi.mock('child_process', async () => {
   return {
     ...actual,
     spawn: vi.fn(() => fakeProc),
+    exec: vi.fn((_cmd: string, _opts: unknown, cb?: (err: Error | null) => void) => {
+      if (cb) cb(null);
+      return new EventEmitter();
+    }),
   };
 });
 
 import { runContainerAgent, ContainerOutput } from './container-runner.js';
-import { readEnvFile } from './env.js';
 import type { RegisteredGroup } from './types.js';
 
 const testGroup: RegisteredGroup = {
@@ -223,110 +199,5 @@ describe('container-runner timeout behavior', () => {
     const result = await resultPromise;
     expect(result.status).toBe('success');
     expect(result.newSessionId).toBe('session-456');
-  });
-
-  it('applies CPU and memory limits to container run args', async () => {
-    const onOutput = vi.fn(async () => {});
-    const resultPromise = runContainerAgent(
-      testGroup,
-      testInput,
-      () => {},
-      onOutput,
-    );
-
-    emitOutputMarker(fakeProc, {
-      status: 'success',
-      result: 'Done',
-    });
-    await vi.advanceTimersByTimeAsync(10);
-    fakeProc.emit('close', 0);
-    await vi.advanceTimersByTimeAsync(10);
-    await resultPromise;
-
-    const spawnMock = vi.mocked(spawn);
-    expect(spawnMock).toHaveBeenCalled();
-    const args = spawnMock.mock.calls.at(-1)?.[1] as string[];
-    expect(args).toContain('--cpus');
-    expect(args).toContain('2');
-    expect(args).toContain('--memory');
-    expect(args).toContain('4096M');
-  });
-});
-
-describe('container-runner role-based github token selection', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    fakeProc = createFakeProcess();
-    vi.mocked(readEnvFile).mockReturnValue({});
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  async function runAndCaptureInput(group: RegisteredGroup): Promise<Record<string, unknown>> {
-    let stdinPayload = '';
-    fakeProc.stdin.on('data', (chunk) => {
-      stdinPayload += chunk.toString();
-    });
-
-    const resultPromise = runContainerAgent(group, testInput, () => {});
-    emitOutputMarker(fakeProc, { status: 'success', result: 'ok' });
-    await vi.advanceTimersByTimeAsync(10);
-    fakeProc.emit('close', 0);
-    await vi.advanceTimersByTimeAsync(10);
-    await resultPromise;
-
-    return JSON.parse(stdinPayload) as Record<string, unknown>;
-  }
-
-  it('uses worker token for jarvis workers', async () => {
-    vi.mocked(readEnvFile).mockReturnValue({
-      GITHUB_TOKEN_WORKER: 'worker-token',
-      GITHUB_TOKEN: 'fallback-token',
-    });
-
-    const input = await runAndCaptureInput({
-      ...testGroup,
-      folder: 'jarvis-worker-1',
-    });
-    const secrets = input.secrets as Record<string, string>;
-
-    expect(secrets.GITHUB_TOKEN).toBe('worker-token');
-    expect(secrets.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
-    expect(secrets.ANTHROPIC_API_KEY).toBeUndefined();
-  });
-
-  it('uses andy-developer token and includes claude secrets', async () => {
-    vi.mocked(readEnvFile).mockReturnValue({
-      GITHUB_TOKEN_ANDY_DEVELOPER: 'andy-dev-token',
-      GITHUB_TOKEN: 'fallback-token',
-      CLAUDE_CODE_OAUTH_TOKEN: 'claude-oauth',
-      ANTHROPIC_API_KEY: 'anthropic-key',
-    });
-
-    const input = await runAndCaptureInput({
-      ...testGroup,
-      folder: 'andy-developer',
-    });
-    const secrets = input.secrets as Record<string, string>;
-
-    expect(secrets.GITHUB_TOKEN).toBe('andy-dev-token');
-    expect(secrets.CLAUDE_CODE_OAUTH_TOKEN).toBe('claude-oauth');
-    expect(secrets.ANTHROPIC_API_KEY).toBe('anthropic-key');
-  });
-
-  it('falls back to shared token for andy-bot if role token is missing', async () => {
-    vi.mocked(readEnvFile).mockReturnValue({
-      GITHUB_TOKEN: 'fallback-token',
-    });
-
-    const input = await runAndCaptureInput({
-      ...testGroup,
-      folder: 'andy-bot',
-    });
-    const secrets = input.secrets as Record<string, string>;
-
-    expect(secrets.GITHUB_TOKEN).toBe('fallback-token');
   });
 });

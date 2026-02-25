@@ -240,9 +240,20 @@ The token can be extracted from `~/.claude/.credentials.json` if you're logged i
 ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
-If both are set, NanoClaw agent lanes (`main`, `andy-developer`) use OAuth first and automatically retry with API key when OAuth returns subscription/limit errors. Jarvis worker lanes are unaffected (they run via OpenCode worker runtime).
+For NanoClaw agent lanes (`main`, `andy-developer`), lane selection is controlled by `OAUTH_API_FALLBACK_ENABLED`:
+- `true`: force API-key lane (`ANTHROPIC_API_KEY` + optional `ANTHROPIC_BASE_URL`, e.g. OpenRouter)
+- `false`: force OAuth lane (`CLAUDE_CODE_OAUTH_TOKEN`)
 
-Only the authentication variables (`CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY`) are extracted from `.env` and written to `data/env/env`, then mounted into the container at `/workspace/env-dir/env` and sourced by the entrypoint script. This ensures other environment variables in `.env` are not exposed to the agent. This workaround is needed because some container runtimes lose `-e` environment variables when using `-i` (interactive mode with piped stdin).
+When OAuth lane is selected and both OAuth + API key are available, NanoClaw can still retry with API key if OAuth returns subscription/limit errors. Jarvis worker lanes are unaffected (they run via OpenCode worker runtime).
+
+You can toggle OAuth->API fallback without code changes:
+```bash
+OAUTH_API_FALLBACK_ENABLED=true   # default when omitted
+# or
+OAUTH_API_FALLBACK_ENABLED=false  # disables fallback
+```
+
+Only the authentication/fallback variables (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `OAUTH_API_FALLBACK_ENABLED`) are extracted from `.env` and written to `data/env/env`, then mounted into the container at `/workspace/env-dir/env` and sourced by the entrypoint script. This ensures other environment variables in `.env` are not exposed to the agent. This workaround is needed because some container runtimes lose `-e` environment variables when using `-i` (interactive mode with piped stdin).
 
 ### Changing the Assistant Name
 

@@ -241,10 +241,10 @@ ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
 For NanoClaw agent lanes (`main`, `andy-developer`), lane selection is controlled by `OAUTH_API_FALLBACK_ENABLED`:
-- `true`: force API-key lane (`ANTHROPIC_API_KEY` + optional `ANTHROPIC_BASE_URL`, e.g. OpenRouter)
+- `true`: force API-key lane (`ANTHROPIC_API_KEY` + optional `ANTHROPIC_BASE_URL`)
 - `false`: force OAuth lane (`CLAUDE_CODE_OAUTH_TOKEN`)
 
-When OAuth lane is selected and both OAuth + API key are available, NanoClaw can still retry with API key if OAuth returns subscription/limit errors. Jarvis worker lanes are unaffected (they run via OpenCode worker runtime).
+When OAuth lane is selected and both OAuth + API key are available, NanoClaw can retry with API key if OAuth returns subscription/limit errors. Jarvis worker lanes are unaffected (they run via OpenCode worker runtime).
 
 You can toggle OAuth->API fallback without code changes:
 ```bash
@@ -254,6 +254,11 @@ OAUTH_API_FALLBACK_ENABLED=false  # disables fallback
 ```
 
 Only the authentication/fallback variables (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `OAUTH_API_FALLBACK_ENABLED`) are extracted from `.env` and written to `data/env/env`, then mounted into the container at `/workspace/env-dir/env` and sourced by the entrypoint script. This ensures other environment variables in `.env` are not exposed to the agent. This workaround is needed because some container runtimes lose `-e` environment variables when using `-i` (interactive mode with piped stdin).
+
+If API-key lane is active, NanoClaw can pin the model using:
+```bash
+ANTHROPIC_DEFAULT_SONNET_MODEL=MiniMax-M2.5
+```
 
 ### Changing the Assistant Name
 

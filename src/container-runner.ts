@@ -14,6 +14,7 @@ import {
   GROUPS_DIR,
   IDLE_TIMEOUT,
   TIMEZONE,
+  WORKER_CONTAINER_IMAGE,
 } from './config.js';
 import { readEnvFile } from './env.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -231,10 +232,15 @@ function readSecrets(): Record<string, string> {
     'ANTHROPIC_API_KEY',
     'ANTHROPIC_BASE_URL',
     'OAUTH_API_FALLBACK_ENABLED',
+    'ANTHROPIC_DEFAULT_SONNET_MODEL',
   ]);
 }
 
-function buildContainerArgs(mounts: VolumeMount[], containerName: string): string[] {
+function buildContainerArgs(
+  mounts: VolumeMount[],
+  containerName: string,
+  image: string,
+): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
   // Pass host timezone so container's local time matches the user's
@@ -265,7 +271,7 @@ function buildContainerArgs(mounts: VolumeMount[], containerName: string): strin
     }
   }
 
-  args.push(CONTAINER_IMAGE);
+  args.push(image);
 
   return args;
 }
@@ -284,7 +290,10 @@ export async function runContainerAgent(
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
-  const containerArgs = buildContainerArgs(mounts, containerName);
+  const image = group.folder.startsWith('jarvis-worker')
+    ? WORKER_CONTAINER_IMAGE
+    : CONTAINER_IMAGE;
+  const containerArgs = buildContainerArgs(mounts, containerName, image);
 
   logger.debug(
     {

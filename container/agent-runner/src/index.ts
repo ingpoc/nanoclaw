@@ -180,7 +180,6 @@ function buildSdkEnv(
 
   if (authMode === 'oauth') {
     if (oauth) env.CLAUDE_CODE_OAUTH_TOKEN = oauth;
-    if (anthropicBaseUrl) env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
     return env;
   }
 
@@ -194,6 +193,16 @@ function buildSdkEnv(
   if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
   if (anthropicBaseUrl) env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
   return env;
+}
+
+function selectModelForQuery(
+  secrets: Record<string, string>,
+  authMode: AuthMode,
+): string | undefined {
+  if (authMode !== 'apiKey') return undefined;
+  const model = secrets.ANTHROPIC_DEFAULT_SONNET_MODEL?.trim();
+  if (!model) return undefined;
+  return model;
 }
 
 function log(message: string): void {
@@ -443,6 +452,7 @@ async function runQuery(
   containerInput: ContainerInput,
   sdkEnv: Record<string, string | undefined>,
   authMode: AuthMode,
+  model: string | undefined,
   allowApiFallback: boolean,
   resumeAt?: string,
 ): Promise<{
@@ -503,6 +513,9 @@ async function runQuery(
   if (extraDirs.length > 0) {
     log(`Additional directories: ${extraDirs.join(', ')}`);
   }
+  if (model) {
+    log(`Using model: ${model}`);
+  }
 
   for await (const message of query({
     prompt: stream,
@@ -543,6 +556,7 @@ async function runQuery(
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
         PreToolUse: [{ matcher: 'Bash', hooks: [createSanitizeBashHook()] }],
       },
+      ...(model ? { model } : {}),
     }
   })) {
     messageCount++;
@@ -619,6 +633,7 @@ async function main(): Promise<void> {
     && !!secrets.ANTHROPIC_API_KEY;
   let authMode = selectInitialAuthMode(containerInput.groupFolder, secrets);
   let sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+  let model = selectModelForQuery(secrets, authMode);
   log(`Auth mode: ${authMode}${authFallbackAvailable ? ' (API fallback enabled)' : ''}`);
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -656,6 +671,7 @@ async function main(): Promise<void> {
           containerInput,
           sdkEnv,
           authMode,
+          model,
           authFallbackAvailable,
           resumeAt,
         );
@@ -665,6 +681,7 @@ async function main(): Promise<void> {
           log('OAuth query error indicates limit reached, switching to API key fallback');
           authMode = 'apiKey';
           sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+          model = selectModelForQuery(secrets, authMode);
           sessionId = undefined;
           resumeAt = undefined;
           continue;
@@ -675,6 +692,7 @@ async function main(): Promise<void> {
       if (queryResult.fallbackRequested && authFallbackAvailable && authMode === 'oauth') {
         authMode = 'apiKey';
         sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+        model = selectModelForQuery(secrets, authMode);
         sessionId = undefined;
         resumeAt = undefined;
         log('Retrying prompt with API key fallback after OAuth limit signal');

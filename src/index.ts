@@ -17,7 +17,11 @@ import {
   writeWorkerRunsSnapshot,
   WorkerRunsSnapshot,
 } from './container-runner.js';
-import { cleanupOrphans, ensureContainerRuntimeRunning } from './container-runtime.js';
+import {
+  cleanupOrphans,
+  ensureContainerRuntimeRunning,
+  hasRunningContainerWithPrefix,
+} from './container-runtime.js';
 import {
   completeWorkerRun,
   getAllChats,
@@ -67,6 +71,8 @@ const channels: Channel[] = [];
 const queue = new GroupQueue();
 const ANDY_DEVELOPER_FOLDER = 'andy-developer';
 const ACTIVE_WORKER_RUN_STATUSES = ['queued', 'running', 'review_requested'] as const;
+const WORKER_RUN_STALE_MS = 2 * 60 * 60 * 1000;
+const WORKER_NO_CONTAINER_GRACE_MS = 5 * 60 * 1000;
 
 interface WorkerRunContext {
   runId: string;
@@ -208,6 +214,80 @@ function isActiveOrTerminalWorkerStatus(status: string): boolean {
   return status === 'running' || status === 'review_requested' || status === 'done';
 }
 
+function reconcileStaleWorkerRuns(): void {
+  const now = Date.now();
+  const activeRuns = getWorkerRuns({
+    groupFolderLike: 'jarvis-worker-%',
+    statuses: ['running', 'queued'],
+    limit: 200,
+  });
+
+  for (const run of activeRuns) {
+    // Invariant violation: active status should not have completed_at.
+    if (run.completed_at) {
+      completeWorkerRun(
+        run.run_id,
+        'failed',
+        'Auto-reconciled inconsistent worker run state',
+        JSON.stringify({
+          reason: 'active_status_with_completed_at',
+          status: run.status,
+          started_at: run.started_at,
+          completed_at: run.completed_at,
+        }),
+      );
+      logger.warn(
+        { runId: run.run_id, status: run.status },
+        'Reconciled worker run with active status and completed_at',
+      );
+      continue;
+    }
+
+    const started = Date.parse(run.started_at);
+    if (!Number.isFinite(started)) continue;
+    const ageMs = now - started;
+    if (run.status === 'running' && ageMs > WORKER_NO_CONTAINER_GRACE_MS) {
+      const prefix = `nanoclaw-${run.group_folder}-`;
+      if (!hasRunningContainerWithPrefix(prefix)) {
+        completeWorkerRun(
+          run.run_id,
+          'failed',
+          'Auto-failed worker run with no active container',
+          JSON.stringify({
+            reason: 'running_without_container',
+            status: run.status,
+            started_at: run.started_at,
+            stale_ms: ageMs,
+          }),
+        );
+        logger.warn(
+          { runId: run.run_id, group: run.group_folder, startedAt: run.started_at },
+          'Auto-failed running worker run with no container',
+        );
+        continue;
+      }
+    }
+
+    if (ageMs <= WORKER_RUN_STALE_MS) continue;
+
+    completeWorkerRun(
+      run.run_id,
+      'failed',
+      'Auto-failed stale worker run watchdog timeout',
+      JSON.stringify({
+        reason: 'stale_worker_run_watchdog',
+        status: run.status,
+        started_at: run.started_at,
+        stale_ms: now - started,
+      }),
+    );
+    logger.warn(
+      { runId: run.run_id, status: run.status, startedAt: run.started_at },
+      'Auto-failed stale worker run',
+    );
+  }
+}
+
 function loadState(): void {
   lastTimestamp = getRouterState('last_timestamp') || '';
   const agentTs = getRouterState('last_agent_timestamp');
@@ -219,6 +299,7 @@ function loadState(): void {
   }
   sessions = getAllSessions();
   registeredGroups = getAllRegisteredGroups();
+  reconcileStaleWorkerRuns();
   logger.info(
     { groupCount: Object.keys(registeredGroups).length },
     'State loaded',
@@ -597,6 +678,7 @@ async function startMessageLoop(): Promise<void> {
 
   while (true) {
     try {
+      reconcileStaleWorkerRuns();
       const jids = Object.keys(registeredGroups);
       const { messages, newTimestamp } = getNewMessages(jids, lastTimestamp, ASSISTANT_NAME);
 

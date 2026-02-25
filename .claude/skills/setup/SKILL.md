@@ -80,6 +80,7 @@ If HAS_ENV=true from step 2, read `.env` and check for `CLAUDE_CODE_OAUTH_TOKEN`
 AskUserQuestion: Claude subscription (Pro/Max) vs Anthropic API key?
 
 **Subscription:** Tell user to run `claude setup-token` in another terminal, copy the token, add `CLAUDE_CODE_OAUTH_TOKEN=<token>` to `.env`. Do NOT collect the token in chat.
+Then ask if they also want API-key fallback for control lanes (`main`, `andy-developer`). If yes, add `ANTHROPIC_API_KEY=<key>` too.
 
 **API key:** Tell user to add `ANTHROPIC_API_KEY=<key>` to `.env`.
 

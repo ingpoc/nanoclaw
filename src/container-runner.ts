@@ -516,6 +516,9 @@ export async function runContainerAgent(
           `=== Input ===`,
           JSON.stringify(input, null, 2),
           ``,
+          `=== Container Image ===`,
+          image,
+          ``,
           `=== Container Args ===`,
           containerArgs.join(' '),
           ``,
@@ -538,6 +541,7 @@ export async function runContainerAgent(
           `=== Input Summary ===`,
           `Prompt length: ${input.prompt.length} chars`,
           `Session ID: ${input.sessionId || 'new'}`,
+          `Container Image: ${image}`,
           ``,
           `=== Mounts ===`,
           mounts

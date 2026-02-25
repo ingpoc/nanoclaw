@@ -73,6 +73,7 @@ const ANDY_DEVELOPER_FOLDER = 'andy-developer';
 const ACTIVE_WORKER_RUN_STATUSES = ['queued', 'running', 'review_requested'] as const;
 const WORKER_RUN_STALE_MS = 2 * 60 * 60 * 1000;
 const WORKER_NO_CONTAINER_GRACE_MS = 5 * 60 * 1000;
+const WORKER_SNAPSHOT_REFRESH_INTERVAL_MS = 15_000;
 
 interface WorkerRunContext {
   runId: string;
@@ -189,6 +190,24 @@ function buildAndyPromptWorkerContext(snapshot: WorkerRunsSnapshot): string {
   ].join('\n');
 }
 
+function refreshWorkerRunSnapshotsForGroups(folders?: string[]): void {
+  const seen = new Set<string>();
+  const targets: RegisteredGroup[] = [];
+
+  for (const group of Object.values(registeredGroups)) {
+    if (seen.has(group.folder)) continue;
+    seen.add(group.folder);
+    targets.push(group);
+  }
+
+  for (const group of targets) {
+    if (folders && !folders.includes(group.folder)) continue;
+    const isMain = group.folder === MAIN_GROUP_FOLDER;
+    const snapshot = buildWorkerRunsSnapshot(group, isMain);
+    writeWorkerRunsSnapshot(group.folder, snapshot);
+  }
+}
+
 function extractWorkerRunContext(
   group: RegisteredGroup,
   messages: NewMessage[],
@@ -214,8 +233,13 @@ function isActiveOrTerminalWorkerStatus(status: string): boolean {
   return status === 'running' || status === 'review_requested' || status === 'done';
 }
 
+function shouldAllowNoCodeCompletion(runId: string): boolean {
+  return /^(ping|smoke|health|sync)-/i.test(runId);
+}
+
 function reconcileStaleWorkerRuns(): void {
   const now = Date.now();
+  let changed = false;
   const activeRuns = getWorkerRuns({
     groupFolderLike: 'jarvis-worker-%',
     statuses: ['running', 'queued'],
@@ -240,6 +264,7 @@ function reconcileStaleWorkerRuns(): void {
         { runId: run.run_id, status: run.status },
         'Reconciled worker run with active status and completed_at',
       );
+      changed = true;
       continue;
     }
 
@@ -264,6 +289,7 @@ function reconcileStaleWorkerRuns(): void {
           { runId: run.run_id, group: run.group_folder, startedAt: run.started_at },
           'Auto-failed running worker run with no container',
         );
+        changed = true;
         continue;
       }
     }
@@ -285,6 +311,11 @@ function reconcileStaleWorkerRuns(): void {
       { runId: run.run_id, status: run.status, startedAt: run.started_at },
       'Auto-failed stale worker run',
     );
+    changed = true;
+  }
+
+  if (changed) {
+    refreshWorkerRunSnapshotsForGroups();
   }
 }
 
@@ -431,6 +462,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
 
     updateWorkerRunStatus(workerRun.runId, 'running');
+    refreshWorkerRunSnapshotsForGroups();
   }
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
@@ -499,6 +531,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       expectedRunId: workerRun.runId,
       requiredFields: workerRun.requiredFields,
       browserEvidenceRequired: workerRun.browserEvidenceRequired,
+      allowNoCodeChanges: shouldAllowNoCodeCompletion(workerRun.runId),
     });
 
     if (completion && completionCheck.valid) {
@@ -511,6 +544,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         risk_summary: completion.risk,
       });
       updateWorkerRunStatus(workerRun.runId, 'review_requested');
+      refreshWorkerRunSnapshotsForGroups();
       logger.info(
         { runId: workerRun.runId, group: group.name },
         'Worker completion contract accepted',
@@ -539,6 +573,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         },
         'Worker run marked failed',
       );
+      refreshWorkerRunSnapshotsForGroups();
     } else {
       const missingSummary = completionCheck.missing.join(', ');
       completeWorkerRun(
@@ -561,6 +596,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         },
         'Worker run marked failed_contract',
       );
+      refreshWorkerRunSnapshotsForGroups();
     }
   }
 
@@ -675,10 +711,16 @@ async function startMessageLoop(): Promise<void> {
   messageLoopRunning = true;
 
   logger.info(`NanoClaw running (trigger: @${ASSISTANT_NAME})`);
+  let lastWorkerSnapshotRefresh = 0;
 
   while (true) {
     try {
       reconcileStaleWorkerRuns();
+      const now = Date.now();
+      if (now - lastWorkerSnapshotRefresh >= WORKER_SNAPSHOT_REFRESH_INTERVAL_MS) {
+        refreshWorkerRunSnapshotsForGroups();
+        lastWorkerSnapshotRefresh = now;
+      }
       const jids = Object.keys(registeredGroups);
       const { messages, newTimestamp } = getNewMessages(jids, lastTimestamp, ASSISTANT_NAME);
 

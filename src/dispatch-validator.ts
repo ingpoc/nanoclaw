@@ -201,16 +201,37 @@ export function requiresBrowserEvidence(payload: DispatchPayload): boolean {
  * Returns typed contract or null if no valid block found.
  */
 export function parseCompletionContract(output: string): CompletionContract | null {
-  const match = output.match(/<completion>([\s\S]*?)<\/completion>/);
-  if (!match) return null;
-  try {
-    const obj = JSON.parse(match[1].trim());
-    if (obj && typeof obj === 'object') {
-      return obj as CompletionContract;
+  const parseObject = (raw: string): CompletionContract | null => {
+    try {
+      const obj = JSON.parse(raw.trim());
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        return obj as CompletionContract;
+      }
+    } catch {
+      // ignore parse errors
     }
-  } catch {
-    // invalid JSON inside completion block
+    return null;
+  };
+
+  const match = output.match(/<completion>([\s\S]*?)<\/completion>/);
+  if (match) {
+    const parsed = parseObject(match[1]);
+    if (parsed) return parsed;
   }
+
+  const trimmed = output.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const directCandidate = fenced ? fenced[1].trim() : trimmed;
+  const direct = parseObject(directCandidate);
+  if (direct) return direct;
+
+  const firstBrace = directCandidate.indexOf('{');
+  const lastBrace = directCandidate.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const wrapped = parseObject(directCandidate.slice(firstBrace, lastBrace + 1));
+    if (wrapped) return wrapped;
+  }
+
   return null;
 }
 
@@ -220,6 +241,7 @@ export function validateCompletionContract(
     expectedRunId?: string;
     requiredFields?: string[];
     browserEvidenceRequired?: boolean;
+    allowNoCodeChanges?: boolean;
   },
 ): { valid: boolean; missing: string[] } {
   if (!contract) return { valid: false, missing: ['completion block'] };
@@ -234,17 +256,39 @@ export function validateCompletionContract(
     missing.push('run_id mismatch');
   }
 
-  if (!contract.branch || !BRANCH_PATTERN.test(contract.branch)) missing.push('branch');
-  if (!contract.commit_sha || !COMMIT_SHA_PATTERN.test(contract.commit_sha)) missing.push('commit_sha');
+  const requiredFields = options?.requiredFields ?? COMPLETION_REQUIRED_FIELDS;
+  const requireBranch = requiredFields.includes('branch');
+  const requireCommitSha = requiredFields.includes('commit_sha');
+  const requireFilesChanged = requiredFields.includes('files_changed');
 
-  if (!Array.isArray(contract.files_changed) || contract.files_changed.length === 0) {
-    missing.push('files_changed');
-  } else if (
-    contract.files_changed.some(
-      (item) => typeof item !== 'string' || !item.trim(),
-    )
-  ) {
-    missing.push('files_changed format');
+  if (requireBranch && (!contract.branch || !BRANCH_PATTERN.test(contract.branch))) {
+    missing.push('branch');
+  }
+
+  if (requireCommitSha) {
+    const commitSha = contract.commit_sha?.trim();
+    const allowNoCodeChanges = options?.allowNoCodeChanges === true;
+    const isNoCodeCommitPlaceholder = allowNoCodeChanges
+      && !!commitSha
+      && /^(n\/a|na|none)$/i.test(commitSha);
+    if (!commitSha || (!COMMIT_SHA_PATTERN.test(commitSha) && !isNoCodeCommitPlaceholder)) {
+      missing.push('commit_sha');
+    }
+  }
+
+  if (requireFilesChanged) {
+    const allowNoCodeChanges = options?.allowNoCodeChanges === true;
+    if (!Array.isArray(contract.files_changed)) {
+      missing.push('files_changed');
+    } else if (contract.files_changed.length === 0) {
+      if (!allowNoCodeChanges) missing.push('files_changed');
+    } else if (
+      contract.files_changed.some(
+        (item) => typeof item !== 'string' || !item.trim(),
+      )
+    ) {
+      missing.push('files_changed format');
+    }
   }
 
   if (!contract.test_result || !contract.test_result.trim()) missing.push('test_result');

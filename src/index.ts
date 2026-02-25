@@ -3,7 +3,6 @@ import path from 'path';
 
 import {
   ASSISTANT_NAME,
-  DATA_DIR,
   IDLE_TIMEOUT,
   MAIN_GROUP_FOLDER,
   POLL_INTERVAL,
@@ -18,31 +17,33 @@ import {
 } from './container-runner.js';
 import { cleanupOrphans, ensureContainerRuntimeRunning } from './container-runtime.js';
 import {
+  completeWorkerRun,
   getAllChats,
   getAllRegisteredGroups,
   getAllSessions,
   getAllTasks,
   getMessagesSince,
   getNewMessages,
+  getWorkerRun,
   getRouterState,
   initDatabase,
+  insertWorkerRun,
   setRegisteredGroup,
   setRouterState,
   setSession,
   storeChatMetadata,
   storeMessage,
-  insertWorkerRun,
-  updateWorkerRunStatus,
   updateWorkerRunCompletion,
+  updateWorkerRunStatus,
 } from './db.js';
 import {
-  type DispatchPayload,
+  parseCompletionContract,
   parseDispatchPayload,
   validateDispatchPayload,
-  parseCompletionContract,
   validateCompletionContract,
 } from './dispatch-validator.js';
 import { GroupQueue } from './group-queue.js';
+import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
 import { startSchedulerLoop } from './task-scheduler.js';
@@ -61,6 +62,41 @@ let messageLoopRunning = false;
 let whatsapp: WhatsAppChannel;
 const channels: Channel[] = [];
 const queue = new GroupQueue();
+
+interface WorkerRunContext {
+  runId: string;
+  requiredFields: string[];
+  browserEvidenceRequired?: boolean;
+}
+
+function isJarvisWorkerGroup(folder: string): boolean {
+  return folder.startsWith('jarvis-worker');
+}
+
+function extractWorkerRunContext(
+  group: RegisteredGroup,
+  messages: NewMessage[],
+): WorkerRunContext | null {
+  if (!isJarvisWorkerGroup(group.folder)) return null;
+
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const payload = parseDispatchPayload(messages[i].content);
+    if (!payload) continue;
+    const validity = validateDispatchPayload(payload);
+    if (!validity.valid) continue;
+    return {
+      runId: payload.run_id,
+      requiredFields: payload.output_contract.required_fields,
+      browserEvidenceRequired: payload.output_contract.browser_evidence_required,
+    };
+  }
+
+  return null;
+}
+
+function isActiveOrTerminalWorkerStatus(status: string): boolean {
+  return status === 'running' || status === 'review_requested' || status === 'done';
+}
 
 function loadState(): void {
   lastTimestamp = getRouterState('last_timestamp') || '';
@@ -88,11 +124,21 @@ function saveState(): void {
 }
 
 function registerGroup(jid: string, group: RegisteredGroup): void {
+  let groupDir: string;
+  try {
+    groupDir = resolveGroupFolderPath(group.folder);
+  } catch (err) {
+    logger.warn(
+      { jid, folder: group.folder, err },
+      'Rejecting group registration with invalid folder',
+    );
+    return;
+  }
+
   registeredGroups[jid] = group;
   setRegisteredGroup(jid, group);
 
   // Create group folder
-  const groupDir = path.join(DATA_DIR, '..', 'groups', group.folder);
   fs.mkdirSync(path.join(groupDir, 'logs'), { recursive: true });
 
   logger.info(
@@ -124,28 +170,6 @@ export function _setRegisteredGroups(groups: Record<string, RegisteredGroup>): v
   registeredGroups = groups;
 }
 
-function formatWorkerPrompt(payload: DispatchPayload): string {
-  const acceptance = payload.acceptance_tests
-    .map((item) => `- ${item}`)
-    .join('\n');
-  const required = payload.output_contract.required_fields
-    .map((item) => `- ${item}`)
-    .join('\n');
-
-  return [
-    `Run ID: ${payload.run_id}`,
-    `Task Type: ${payload.task_type}`,
-    `Repository: ${payload.repo}`,
-    `Branch: ${payload.branch}`,
-    'Task:',
-    payload.input,
-    'Acceptance Tests (all must pass):',
-    acceptance,
-    'Output Contract (MUST be wrapped in <completion> JSON):',
-    required,
-  ].join('\n\n');
-}
-
 /**
  * Process all pending messages for a group.
  * Called by the GroupQueue when it's this group's turn.
@@ -175,7 +199,47 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (!hasTrigger) return true;
   }
 
-  let prompt = formatMessages(missedMessages);
+  const prompt = formatMessages(missedMessages);
+  const workerRun = extractWorkerRunContext(group, missedMessages);
+  let workerOutputBuffer = '';
+
+  if (workerRun) {
+    const existingRun = getWorkerRun(workerRun.runId);
+    if (existingRun && isActiveOrTerminalWorkerStatus(existingRun.status)) {
+      lastAgentTimestamp[chatJid] =
+        missedMessages[missedMessages.length - 1].timestamp;
+      saveState();
+      logger.warn(
+        {
+          runId: workerRun.runId,
+          status: existingRun.status,
+          group: group.name,
+        },
+        'Skipping duplicate worker run execution',
+      );
+      return true;
+    }
+
+    if (!existingRun || existingRun.status === 'failed' || existingRun.status === 'failed_contract') {
+      const insertState = insertWorkerRun(workerRun.runId, group.folder);
+      if (insertState === 'duplicate') {
+        lastAgentTimestamp[chatJid] =
+          missedMessages[missedMessages.length - 1].timestamp;
+        saveState();
+        logger.warn(
+          { runId: workerRun.runId, group: group.name },
+          'Duplicate worker run blocked before execution',
+        );
+        return true;
+      }
+      logger.info(
+        { runId: workerRun.runId, queueState: insertState, group: group.name },
+        'Worker run queued from worker chat context',
+      );
+    }
+
+    updateWorkerRunStatus(workerRun.runId, 'running');
+  }
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
   // these messages. Save the old cursor so we can roll back on error.
@@ -188,44 +252,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     { group: group.name, messageCount: missedMessages.length },
     'Processing messages',
   );
-
-  // For jarvis-worker groups: require a strict JSON dispatch payload.
-  const isWorkerGroup = group.folder.startsWith('jarvis-worker');
-  let runId: string | undefined;
-  let dispatchPayload: DispatchPayload | null = null;
-  if (isWorkerGroup) {
-    const last = missedMessages[missedMessages.length - 1];
-
-    dispatchPayload = parseDispatchPayload(last.content);
-    if (!dispatchPayload) {
-      logger.warn({ group: group.name }, 'Worker dispatch missing JSON payload');
-      await channel.sendMessage(
-        chatJid,
-        '⚠ Invalid dispatch payload: worker tasks must be a JSON object with run_id, task_type, input, repo, branch, acceptance_tests, output_contract',
-      );
-      return true;
-    }
-
-    const { valid, errors } = validateDispatchPayload(dispatchPayload);
-    if (!valid) {
-      logger.warn({ group: group.name, errors }, 'Invalid dispatch payload, rejecting');
-      await channel.sendMessage(chatJid, `⚠ Invalid dispatch payload: ${errors.join('; ')}`);
-      return true;
-    }
-
-    runId = dispatchPayload.run_id;
-    prompt = formatWorkerPrompt(dispatchPayload);
-
-    const insertResult = insertWorkerRun(runId, group.folder);
-    if (insertResult === 'duplicate') {
-      logger.warn({ group: group.name, runId }, 'Duplicate run_id, skipping execution');
-      return true;
-    }
-    logger.info({ group: group.name, runId, insertResult }, 'Worker run accepted');
-
-    // Mark running before container starts
-    updateWorkerRunStatus(runId, 'running');
-  }
 
   // Track idle timer for closing stdin when agent is idle
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -241,24 +267,19 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   await channel.setTyping?.(chatJid, true);
   let hadError = false;
   let outputSentToUser = false;
-  let lastWorkerOutput = '';
 
-  const output = await runAgent(group, prompt, chatJid, runId, async (result) => {
+  const output = await runAgent(group, prompt, chatJid, async (result) => {
     // Streaming output callback — called for each agent result
     if (result.result) {
       const raw = typeof result.result === 'string' ? result.result : JSON.stringify(result.result);
-      if (isWorkerGroup) lastWorkerOutput = raw;
+      if (workerRun) {
+        workerOutputBuffer += `${raw}\n`;
+      }
       // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
       const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
       logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
       if (text) {
-        // For worker groups, append usage stats to final response so Andy can see cost
-        let finalText = text;
-        if (isWorkerGroup && result.usage) {
-          const u = result.usage;
-          finalText += `\n\n<internal>run_id=${runId} tokens=${u.input_tokens}in/${u.output_tokens}out duration=${Math.round(u.duration_ms / 1000)}s rss=${u.peak_rss_mb}MB</internal>`;
-        }
-        await channel.sendMessage(chatJid, finalText);
+        await channel.sendMessage(chatJid, text);
         outputSentToUser = true;
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)
@@ -277,31 +298,56 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   await channel.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
 
-  if (isWorkerGroup && runId) {
-    if (output === 'error' || hadError) {
-      updateWorkerRunStatus(runId, 'failed');
-    } else {
-      // Check completion contract from final worker output
-      const contract = parseCompletionContract(lastWorkerOutput);
-      const { valid, missing } = validateCompletionContract(contract, {
-        expectedRunId: runId,
+  if (workerRun) {
+    const completion = parseCompletionContract(workerOutputBuffer);
+    const completionCheck = validateCompletionContract(completion, {
+      expectedRunId: workerRun.runId,
+      requiredFields: workerRun.requiredFields,
+      browserEvidenceRequired: workerRun.browserEvidenceRequired,
+    });
+
+    if (completion && completionCheck.valid) {
+      updateWorkerRunCompletion(workerRun.runId, {
+        branch_name: completion.branch,
+        pr_url: completion.pr_url,
+        commit_sha: completion.commit_sha,
+        files_changed: completion.files_changed,
+        test_summary: completion.test_result,
+        risk_summary: completion.risk,
       });
-      if (valid && contract) {
-        updateWorkerRunCompletion(runId, {
-          branch_name: contract.branch,
-          pr_url: contract.pr_url,
-          commit_sha: contract.commit_sha,
-          files_changed: contract.files_changed,
-          test_summary: contract.test_result,
-          risk_summary: contract.risk,
-        });
-        updateWorkerRunStatus(runId, 'review_requested');
-        logger.info({ group: group.name, runId }, 'Contract satisfied → review_requested');
-      } else {
-        updateWorkerRunStatus(runId, 'failed_contract');
-        logger.warn({ group: group.name, runId, missing }, 'Completion contract missing fields');
-        await channel.sendMessage(chatJid, `⚠ Completion contract missing: ${missing.join(', ')}`);
-      }
+      updateWorkerRunStatus(workerRun.runId, 'review_requested');
+      logger.info(
+        { runId: workerRun.runId, group: group.name },
+        'Worker completion contract accepted',
+      );
+    } else if (output === 'error' || hadError) {
+      completeWorkerRun(
+        workerRun.runId,
+        'failed',
+        completionCheck.missing.join(', ') || 'worker execution failed',
+      );
+      logger.warn(
+        {
+          runId: workerRun.runId,
+          group: group.name,
+          missing: completionCheck.missing,
+        },
+        'Worker run marked failed',
+      );
+    } else {
+      completeWorkerRun(
+        workerRun.runId,
+        'failed_contract',
+        completionCheck.missing.join(', ') || 'invalid completion contract',
+      );
+      logger.warn(
+        {
+          runId: workerRun.runId,
+          group: group.name,
+          missing: completionCheck.missing,
+        },
+        'Worker run marked failed_contract',
+      );
     }
   }
 
@@ -326,7 +372,6 @@ async function runAgent(
   group: RegisteredGroup,
   prompt: string,
   chatJid: string,
-  runId: string | undefined,
   onOutput?: (output: ContainerOutput) => Promise<void>,
 ): Promise<'success' | 'error'> {
   const isMain = group.folder === MAIN_GROUP_FOLDER;
@@ -377,8 +422,7 @@ async function runAgent(
         groupFolder: group.folder,
         chatJid,
         isMain,
-        model: group.containerConfig?.model,
-        runId,
+        assistantName: ASSISTANT_NAME,
       },
       (proc, containerName) => queue.registerProcess(chatJid, proc, containerName, group.folder),
       wrappedOnOutput,

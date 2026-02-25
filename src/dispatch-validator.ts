@@ -1,5 +1,6 @@
 export interface DispatchOutputContract {
   required_fields: string[];
+  browser_evidence_required?: boolean;
 }
 
 export type DispatchTaskType =
@@ -21,6 +22,13 @@ export interface DispatchPayload {
   acceptance_tests: string[];
   output_contract: DispatchOutputContract;
   priority?: 'low' | 'normal' | 'high';
+  ui_impacting?: boolean;
+}
+
+export interface BrowserEvidence {
+  base_url: string;
+  tools_listed: string[];
+  execute_tool_evidence: string[];
 }
 
 export interface CompletionContract {
@@ -32,6 +40,7 @@ export interface CompletionContract {
   risk: string;
   pr_url?: string;
   pr_skipped_reason?: string;
+  browser_evidence?: BrowserEvidence;
 }
 
 const RUN_ID_MAX_LENGTH = 64;
@@ -48,6 +57,9 @@ const ALLOWED_TASK_TYPES: Set<DispatchTaskType> = new Set([
   'research',
   'code',
 ]);
+const UI_HINT_PATTERN = /\b(ui|frontend|dashboard|page|component|layout|css|style|browser|webmcp|chrome-devtools|visual|route|navigation)\b/i;
+const LOCAL_BASE_URL_PATTERN = /^https?:\/\/127\.0\.0\.1(?::\d+)?(?:\/|$)/i;
+const SCREENSHOT_PATTERN = /\b(screenshot|screen[\s-]?shot|take_screenshot|browser_take_screenshot|comet_screenshot|image analysis|analyze screenshot)\b/i;
 const COMPLETION_REQUIRED_FIELDS = [
   'run_id',
   'branch',
@@ -67,6 +79,10 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
     // ignore parse errors
   }
   return null;
+}
+
+function hasScreenshotDirective(text: string): boolean {
+  return SCREENSHOT_PATTERN.test(text);
 }
 
 /**
@@ -95,6 +111,13 @@ export function parseDispatchPayload(content: string): DispatchPayload | null {
 export function validateDispatchPayload(payload: DispatchPayload): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
+  if (
+    payload.ui_impacting !== undefined
+    && typeof payload.ui_impacting !== 'boolean'
+  ) {
+    errors.push('ui_impacting must be a boolean when provided');
+  }
+
   if (!payload.run_id || /\s/.test(payload.run_id)) {
     errors.push('run_id must be a non-empty string with no whitespace');
   } else if (payload.run_id.length > RUN_ID_MAX_LENGTH) {
@@ -107,6 +130,8 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
 
   if (!payload.input || !payload.input.trim()) {
     errors.push('input is required');
+  } else if (hasScreenshotDirective(payload.input)) {
+    errors.push('input must not request screenshot capture/analysis; use text-based browser evidence');
   }
 
   if (!payload.repo || !REPO_PATTERN.test(payload.repo)) {
@@ -121,11 +146,20 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
     errors.push('acceptance_tests must be a non-empty array');
   } else if (payload.acceptance_tests.some((test) => typeof test !== 'string' || !test.trim())) {
     errors.push('acceptance_tests entries must be non-empty strings');
+  } else if (payload.acceptance_tests.some((test) => hasScreenshotDirective(test))) {
+    errors.push('acceptance_tests must not include screenshot commands; use text-based checks');
   }
 
   if (!payload.output_contract || typeof payload.output_contract !== 'object') {
     errors.push('output_contract is required');
   } else {
+    if (
+      payload.output_contract.browser_evidence_required !== undefined
+      && typeof payload.output_contract.browser_evidence_required !== 'boolean'
+    ) {
+      errors.push('output_contract.browser_evidence_required must be a boolean when provided');
+    }
+
     const fields = payload.output_contract.required_fields;
     if (!Array.isArray(fields) || fields.length === 0) {
       errors.push('output_contract.required_fields must be a non-empty array');
@@ -140,10 +174,26 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
       if (!hasPrUrl && !hasPrSkipped) {
         errors.push('output_contract.required_fields must include pr_url or pr_skipped_reason');
       }
+
+      if (requiresBrowserEvidence(payload) && !fields.includes('browser_evidence')) {
+        errors.push('output_contract.required_fields must include browser_evidence for UI-impacting tasks');
+      }
     }
   }
 
   return { valid: errors.length === 0, errors };
+}
+
+export function requiresBrowserEvidence(payload: DispatchPayload): boolean {
+  if (payload.output_contract?.browser_evidence_required === true) return true;
+  if (payload.output_contract?.browser_evidence_required === false) return false;
+  if (payload.ui_impacting !== undefined) return payload.ui_impacting;
+
+  const acceptance = Array.isArray(payload.acceptance_tests)
+    ? payload.acceptance_tests.join('\n')
+    : '';
+  const haystack = `${payload.input ?? ''}\n${acceptance}`;
+  return UI_HINT_PATTERN.test(haystack);
 }
 
 /**
@@ -166,7 +216,11 @@ export function parseCompletionContract(output: string): CompletionContract | nu
 
 export function validateCompletionContract(
   contract: CompletionContract | null,
-  options?: { expectedRunId?: string },
+  options?: {
+    expectedRunId?: string;
+    requiredFields?: string[];
+    browserEvidenceRequired?: boolean;
+  },
 ): { valid: boolean; missing: string[] } {
   if (!contract) return { valid: false, missing: ['completion block'] };
 
@@ -196,6 +250,41 @@ export function validateCompletionContract(
   if (!contract.test_result || !contract.test_result.trim()) missing.push('test_result');
   if (!contract.risk || !contract.risk.trim()) missing.push('risk');
   if (!contract.pr_url && !contract.pr_skipped_reason) missing.push('pr_url or pr_skipped_reason');
+
+  const browserEvidenceRequired = options?.browserEvidenceRequired
+    ?? options?.requiredFields?.includes('browser_evidence')
+    ?? false;
+  if (browserEvidenceRequired) {
+    const evidence = contract.browser_evidence;
+    if (!evidence || typeof evidence !== 'object') {
+      missing.push('browser_evidence');
+    } else {
+      if (!evidence.base_url || !LOCAL_BASE_URL_PATTERN.test(evidence.base_url)) {
+        missing.push('browser_evidence.base_url');
+      }
+      if (
+        !Array.isArray(evidence.tools_listed)
+        || evidence.tools_listed.length === 0
+        || evidence.tools_listed.some((item) => typeof item !== 'string' || !item.trim())
+      ) {
+        missing.push('browser_evidence.tools_listed');
+      }
+      if (
+        !Array.isArray(evidence.execute_tool_evidence)
+        || evidence.execute_tool_evidence.length === 0
+        || evidence.execute_tool_evidence.some(
+          (item) => typeof item !== 'string' || !item.trim(),
+        )
+      ) {
+        missing.push('browser_evidence.execute_tool_evidence');
+      } else if (evidence.execute_tool_evidence.some((item) => hasScreenshotDirective(item))) {
+        missing.push('browser_evidence.no_screenshots');
+      }
+      if (evidence.tools_listed.some((item) => hasScreenshotDirective(item))) {
+        missing.push('browser_evidence.no_screenshots');
+      }
+    }
+  }
 
   return { valid: missing.length === 0, missing };
 }

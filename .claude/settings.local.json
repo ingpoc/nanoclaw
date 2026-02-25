@@ -15,7 +15,25 @@
       "Bash(# Test without --user, with -i\necho '{}' | container run -i --rm nanoclaw-agent:latest echo test 2>&1)",
       "Bash(grep:*)",
       "Bash(head:*)",
-      "Bash(sqlite3:*)"
+      "Bash(sqlite3:*)",
+      "Bash(container system:*)",
+      "Bash(container builder:*)",
+      "Bash(container images:*)",
+      "Bash(tail:*)",
+      "Bash(container stop buildkit 2>&1 && sleep 2 && container rm buildkit 2>&1)",
+      "Bash(pkill:*)",
+      "Bash(container ls:*)",
+      "Bash(container rm:*)",
+      "Bash(python3:*)",
+      "WebFetch(domain:opencode.ai)",
+      "WebFetch(domain:deepwiki.com)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "token-efficient",
+    "context-graph",
+    "context7",
+    "exa"
+  ]
 }

@@ -7,9 +7,11 @@ Runtime contract for OpenCode-based worker containers.
 - Default image: `nanoclaw-worker:latest` (`WORKER_CONTAINER_IMAGE`)
 - Built from: `container/worker/Dockerfile`
 - Runtime: OpenCode CLI (`opencode-ai`) with pinned free-model defaults and runtime fallback handling
-- Build path is network-minimal in buildkit:
+- Browser runtime: in-container Chromium (`/usr/bin/chromium`) for local browser testing
+- Build path:
   - `container/worker/build.sh` prepares `container/worker/vendor/opencode-ai-node_modules.tgz` via `container run`
-  - Docker build then uses local bundle only (no apt/npm registry dependency inside buildkit)
+  - bundle includes `opencode-ai`, `chrome-devtools-mcp`, `context7-mcp`, and `mcp-remote`
+  - Docker build installs Chromium with retry logic for Apple Container network variance
 
 ## OpenCode Runtime Config
 
@@ -18,6 +20,11 @@ Runtime contract for OpenCode-based worker containers.
 - model: `opencode/minimax-m2.5-free`
 - instructions: `/workspace/group/CLAUDE.md`
 - skills path: `/home/node/.claude/skills`
+- default MCP servers:
+  - `deepwiki` (local: `mcp-remote https://mcp.deepwiki.com/mcp --transport streamable-http`)
+  - `context7` (local: `context7-mcp`)
+  - `token-efficient` (local: `/workspace/mcp-servers/token-efficient-mcp/dist/index.js`)
+  - `chrome-devtools` (local: `chrome-devtools-mcp --executablePath /usr/bin/chromium`)
 
 Model can be overridden per-group via `containerConfig.model`.
 
@@ -80,9 +87,11 @@ Andy-bot rules include:
 
 ## Secrets and Identity
 
-- Worker receives only `GITHUB_TOKEN` from host env loading.
+- Worker receives `GITHUB_TOKEN_WORKER` (fallback: `GITHUB_TOKEN`).
 - Worker sets `GH_TOKEN = GITHUB_TOKEN` for CLI compatibility.
-- `andy-bot` and `andy-developer` both receive `GITHUB_TOKEN`/`GH_TOKEN` for `openclaw-gurusharan` GitHub activity.
+- `andy-developer` receives `GITHUB_TOKEN_ANDY_DEVELOPER` (fallback: `GITHUB_TOKEN`).
+- `andy-bot` receives `GITHUB_TOKEN_ANDY_BOT` (fallback: `GITHUB_TOKEN`).
+- Resolved token is exposed in-container as `GITHUB_TOKEN`/`GH_TOKEN` for CLI compatibility.
 - `andy-bot` GitHub usage scope: research, repository inspection, and reporting (not worker dispatch control).
 - Git identity defaults:
   - `WORKER_GIT_NAME=Andy (openclaw-gurusharan)`
@@ -97,6 +106,32 @@ Worker runner communicates with NanoClaw host using marker-framed JSON:
 - `---NANOCLAW_OUTPUT_END---`
 
 This is shared with the host parser and supports robust extraction from stdout.
+
+## Container Lifecycle Safety
+
+As of 2026-02-23, container lifecycle adds hard guards against duplicate-running
+group containers and stuck orphan cleanup:
+
+1. Startup orphan cleanup (`src/index.ts` -> `cleanupOrphans()`)
+   - On service start, NanoClaw scans running `nanoclaw-*` containers.
+   - Each stop is verified; stop escalation order is:
+     - `container stop <name>`
+     - `container stop -s SIGKILL -t 1 <name>`
+     - `container kill <name>`
+
+2. Pre-launch same-group cleanup (`src/container-runner.ts`)
+   - Before spawning `nanoclaw-<group>-<timestamp>`, NanoClaw stops any already-running
+     container with prefix `nanoclaw-<group>-`.
+   - This prevents two active containers for the same group lane.
+
+3. Timeout cleanup with verification (`src/container-runner.ts`)
+   - Timeout shutdown uses the same verified stop escalation instead of a single blind stop.
+   - Failed attempts are logged with full command history for debugging.
+
+Operational logs:
+- Success: `Stopped orphaned containers`
+- Pre-launch cleanup: `Stopped stale running containers before launch`
+- Failure with attempts: `Failed to stop some orphaned containers`
 
 ## Usage Stats
 

@@ -26,7 +26,7 @@ interface ContainerInput {
   chatJid: string;
   isMain: boolean;
   isScheduledTask?: boolean;
-  model?: string;
+  assistantName?: string;
   secrets?: Record<string, string>;
 }
 
@@ -35,13 +35,9 @@ interface ContainerOutput {
   result: string | null;
   newSessionId?: string;
   error?: string;
-  usage?: {
-    input_tokens: number;
-    output_tokens: number;
-    duration_ms: number;
-    peak_rss_mb: number;
-  };
 }
+
+type AuthMode = 'oauth' | 'apiKey' | 'auto';
 
 interface SessionEntry {
   sessionId: string;
@@ -64,6 +60,15 @@ interface SDKUserMessage {
 const IPC_INPUT_DIR = '/workspace/ipc/input';
 const IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
 const IPC_POLL_MS = 500;
+const OAUTH_FALLBACK_GROUPS = new Set(['main', 'andy-developer']);
+const OAUTH_LIMIT_PATTERNS = [
+  /you['’]?ve hit your limit/i,
+  /\bmonthly usage limit\b/i,
+  /\bupgrade to (pro|max)\b/i,
+  /\bsubscription limit\b/i,
+  /\brate limit\b/i,
+  /\btoo many requests\b/i,
+];
 
 /**
  * Push-based async iterable for streaming user messages to the SDK.
@@ -120,6 +125,58 @@ function writeOutput(output: ContainerOutput): void {
   console.log(OUTPUT_END_MARKER);
 }
 
+function canUseApiFallback(groupFolder: string): boolean {
+  // Jarvis worker lanes run via OpenCode and must never use Anthropic API fallback.
+  if (groupFolder.startsWith('jarvis-worker')) return false;
+  return OAUTH_FALLBACK_GROUPS.has(groupFolder);
+}
+
+function isOAuthLimitMessage(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) return false;
+  return OAUTH_LIMIT_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function selectInitialAuthMode(
+  secrets: Record<string, string>,
+  allowFallback: boolean,
+): AuthMode {
+  const hasOauth = !!secrets.CLAUDE_CODE_OAUTH_TOKEN;
+  const hasApiKey = !!secrets.ANTHROPIC_API_KEY;
+
+  if (hasOauth && hasApiKey && allowFallback) return 'oauth';
+  if (hasOauth) return 'oauth';
+  if (hasApiKey) return 'apiKey';
+  return 'auto';
+}
+
+function buildSdkEnv(
+  baseEnv: NodeJS.ProcessEnv,
+  secrets: Record<string, string>,
+  authMode: AuthMode,
+): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...baseEnv };
+  delete env.CLAUDE_CODE_OAUTH_TOKEN;
+  delete env.ANTHROPIC_API_KEY;
+
+  const oauth = secrets.CLAUDE_CODE_OAUTH_TOKEN;
+  const apiKey = secrets.ANTHROPIC_API_KEY;
+
+  if (authMode === 'oauth') {
+    if (oauth) env.CLAUDE_CODE_OAUTH_TOKEN = oauth;
+    return env;
+  }
+
+  if (authMode === 'apiKey') {
+    if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
+    return env;
+  }
+
+  if (oauth) env.CLAUDE_CODE_OAUTH_TOKEN = oauth;
+  if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
+  return env;
+}
+
 function log(message: string): void {
   console.error(`[agent-runner] ${message}`);
 }
@@ -149,7 +206,7 @@ function getSessionSummary(sessionId: string, transcriptPath: string): string | 
 /**
  * Archive the full transcript to conversations/ before compaction.
  */
-function createPreCompactHook(): HookCallback {
+function createPreCompactHook(assistantName?: string): HookCallback {
   return async (input, _toolUseId, _context) => {
     const preCompact = input as PreCompactHookInput;
     const transcriptPath = preCompact.transcript_path;
@@ -179,7 +236,7 @@ function createPreCompactHook(): HookCallback {
       const filename = `${date}-${name}.md`;
       const filePath = path.join(conversationsDir, filename);
 
-      const markdown = formatTranscriptMarkdown(messages, summary);
+      const markdown = formatTranscriptMarkdown(messages, summary, assistantName);
       fs.writeFileSync(filePath, markdown);
 
       log(`Archived conversation to ${filePath}`);
@@ -259,7 +316,7 @@ function parseTranscript(content: string): ParsedMessage[] {
   return messages;
 }
 
-function formatTranscriptMarkdown(messages: ParsedMessage[], title?: string | null): string {
+function formatTranscriptMarkdown(messages: ParsedMessage[], title?: string | null, assistantName?: string): string {
   const now = new Date();
   const formatDateTime = (d: Date) => d.toLocaleString('en-US', {
     month: 'short',
@@ -278,7 +335,7 @@ function formatTranscriptMarkdown(messages: ParsedMessage[], title?: string | nu
   lines.push('');
 
   for (const msg of messages) {
-    const sender = msg.role === 'user' ? 'User' : 'Andy';
+    const sender = msg.role === 'user' ? 'User' : (assistantName || 'Assistant');
     const content = msg.content.length > 2000
       ? msg.content.slice(0, 2000) + '...'
       : msg.content;
@@ -366,15 +423,15 @@ async function runQuery(
   mcpServerPath: string,
   containerInput: ContainerInput,
   sdkEnv: Record<string, string | undefined>,
+  authMode: AuthMode,
+  allowApiFallback: boolean,
   resumeAt?: string,
-): Promise<{ newSessionId?: string; lastAssistantUuid?: string; closedDuringQuery: boolean }> {
-  const queryStartMs = Date.now();
-  let peakRssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
-  const rssInterval = setInterval(() => {
-    const rss = Math.round(process.memoryUsage().rss / 1024 / 1024);
-    if (rss > peakRssMb) peakRssMb = rss;
-  }, 2000);
-
+): Promise<{
+  newSessionId?: string;
+  lastAssistantUuid?: string;
+  closedDuringQuery: boolean;
+  fallbackRequested: boolean;
+}> {
   const stream = new MessageStream();
   stream.push(prompt);
 
@@ -403,6 +460,7 @@ async function runQuery(
   let lastAssistantUuid: string | undefined;
   let messageCount = 0;
   let resultCount = 0;
+  let fallbackRequested = false;
 
   // Load global CLAUDE.md as additional system context (shared across all groups)
   const globalClaudeMdPath = '/workspace/global/CLAUDE.md';
@@ -431,7 +489,6 @@ async function runQuery(
     prompt: stream,
     options: {
       cwd: '/workspace/group',
-      model: containerInput.model,
       additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
       resume: sessionId,
       resumeSessionAt: resumeAt,
@@ -464,7 +521,7 @@ async function runQuery(
         },
       },
       hooks: {
-        PreCompact: [{ hooks: [createPreCompactHook()] }],
+        PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
         PreToolUse: [{ matcher: 'Bash', hooks: [createSanitizeBashHook()] }],
       },
     }
@@ -490,29 +547,28 @@ async function runQuery(
     if (message.type === 'result') {
       resultCount++;
       const textResult = 'result' in message ? (message as { result?: string }).result : null;
-      const msgUsage = (message as { usage?: { input_tokens?: number; output_tokens?: number } }).usage;
-      const durationMs = Date.now() - queryStartMs;
-      clearInterval(rssInterval);
-      const usage = {
-        input_tokens: msgUsage?.input_tokens ?? 0,
-        output_tokens: msgUsage?.output_tokens ?? 0,
-        duration_ms: durationMs,
-        peak_rss_mb: peakRssMb,
-      };
-      log(`Result #${resultCount}: subtype=${message.subtype} usage=${JSON.stringify(usage)}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
+      log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
+      if (
+        allowApiFallback
+        && authMode === 'oauth'
+        && textResult
+        && isOAuthLimitMessage(textResult)
+      ) {
+        fallbackRequested = true;
+        log('OAuth limit detected in result output, suppressing result and switching to API key fallback');
+        continue;
+      }
       writeOutput({
         status: 'success',
         result: textResult || null,
-        newSessionId,
-        usage,
+        newSessionId
       });
     }
   }
 
-  clearInterval(rssInterval);
   ipcPolling = false;
   log(`Query done. Messages: ${messageCount}, results: ${resultCount}, lastAssistantUuid: ${lastAssistantUuid || 'none'}, closedDuringQuery: ${closedDuringQuery}`);
-  return { newSessionId, lastAssistantUuid, closedDuringQuery };
+  return { newSessionId, lastAssistantUuid, closedDuringQuery, fallbackRequested };
 }
 
 async function main(): Promise<void> {
@@ -533,35 +589,16 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Build SDK env: merge secrets into process.env for the SDK only.
-  const sdkEnv: Record<string, string | undefined> = { ...process.env };
-  for (const [key, value] of Object.entries(containerInput.secrets || {})) {
-    sdkEnv[key] = value;
-  }
-
-  // GITHUB_TOKEN must be in process.env so bash subprocesses (git, gh) can use it.
-  // Safe inside a container: isolated, single-group, ephemeral.
-  if (containerInput.secrets?.GITHUB_TOKEN) {
-    const token = containerInput.secrets.GITHUB_TOKEN;
-    process.env.GITHUB_TOKEN = token;
-    // Auto-configure git identity and credentials so the agent doesn't need to run setup commands.
-    // gh CLI picks up GITHUB_TOKEN automatically via GH_TOKEN env alias.
-    process.env.GH_TOKEN = token;
-    try {
-      fs.writeFileSync(
-        `${process.env.HOME}/.git-credentials`,
-        `https://openclaw-gurusharan:${token}@github.com\n`,
-        { mode: 0o600 },
-      );
-      const { execSync } = await import('child_process');
-      execSync('git config --global credential.helper store', { stdio: 'ignore' });
-      execSync('git config --global user.email "openclaw-gurusharan@users.noreply.github.com"', { stdio: 'ignore' });
-      execSync('git config --global user.name "Andy (openclaw-gurusharan)"', { stdio: 'ignore' });
-      execSync('git config --global init.defaultBranch main', { stdio: 'ignore' });
-    } catch {
-      // Non-fatal: git config may fail in some environments
-    }
-  }
+  // Build SDK env: keep secrets SDK-only (not process.env), and allow
+  // OAuth->API fallback for selected control lanes.
+  const secrets = containerInput.secrets || {};
+  const fallbackEnabledForGroup = canUseApiFallback(containerInput.groupFolder);
+  const authFallbackAvailable = fallbackEnabledForGroup
+    && !!secrets.CLAUDE_CODE_OAUTH_TOKEN
+    && !!secrets.ANTHROPIC_API_KEY;
+  let authMode = selectInitialAuthMode(secrets, fallbackEnabledForGroup);
+  let sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+  log(`Auth mode: ${authMode}${authFallbackAvailable ? ' (API fallback enabled)' : ''}`);
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const mcpServerPath = path.join(__dirname, 'ipc-mcp-stdio.js');
@@ -589,7 +626,40 @@ async function main(): Promise<void> {
     while (true) {
       log(`Starting query (session: ${sessionId || 'new'}, resumeAt: ${resumeAt || 'latest'})...`);
 
-      const queryResult = await runQuery(prompt, sessionId, mcpServerPath, containerInput, sdkEnv, resumeAt);
+      let queryResult;
+      try {
+        queryResult = await runQuery(
+          prompt,
+          sessionId,
+          mcpServerPath,
+          containerInput,
+          sdkEnv,
+          authMode,
+          authFallbackAvailable,
+          resumeAt,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (authFallbackAvailable && authMode === 'oauth' && isOAuthLimitMessage(message)) {
+          log('OAuth query error indicates limit reached, switching to API key fallback');
+          authMode = 'apiKey';
+          sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+          sessionId = undefined;
+          resumeAt = undefined;
+          continue;
+        }
+        throw err;
+      }
+
+      if (queryResult.fallbackRequested && authFallbackAvailable && authMode === 'oauth') {
+        authMode = 'apiKey';
+        sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+        sessionId = undefined;
+        resumeAt = undefined;
+        log('Retrying prompt with API key fallback after OAuth limit signal');
+        continue;
+      }
+
       if (queryResult.newSessionId) {
         sessionId = queryResult.newSessionId;
       }

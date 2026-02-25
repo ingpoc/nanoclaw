@@ -36,6 +36,10 @@ vi.mock('fs', async () => {
       ...actual,
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => '[]'),
+      writeFileSync: vi.fn(),
+      renameSync: vi.fn(),
+      unlinkSync: vi.fn(),
     },
   };
 });
@@ -84,6 +88,7 @@ vi.mock('@whiskeysockets/baileys', () => {
       timedOut: 408,
       restartRequired: 515,
     },
+    fetchLatestWaWebVersion: vi.fn().mockResolvedValue({ version: [2, 3000, 0] }),
     makeCacheableSignalKeyStore: vi.fn((keys: unknown) => keys),
     useMultiFileAuthState: vi.fn().mockResolvedValue({
       state: {
@@ -159,6 +164,31 @@ describe('WhatsAppChannel', () => {
     return p;
   }
 
+  // --- Version fetch ---
+
+  describe('version fetch', () => {
+    it('connects with fetched version', async () => {
+      const opts = createTestOpts();
+      const channel = new WhatsAppChannel(opts);
+      await connectChannel(channel);
+
+      const { fetchLatestWaWebVersion } = await import('@whiskeysockets/baileys');
+      expect(fetchLatestWaWebVersion).toHaveBeenCalledWith({});
+    });
+
+    it('falls back gracefully when version fetch fails', async () => {
+      const { fetchLatestWaWebVersion } = await import('@whiskeysockets/baileys');
+      vi.mocked(fetchLatestWaWebVersion).mockRejectedValueOnce(new Error('network error'));
+
+      const opts = createTestOpts();
+      const channel = new WhatsAppChannel(opts);
+      await connectChannel(channel);
+
+      // Should still connect successfully despite fetch failure
+      expect(channel.isConnected()).toBe(true);
+    });
+  });
+
   // --- Connection lifecycle ---
 
   describe('connection lifecycle', () => {
@@ -204,6 +234,52 @@ describe('WhatsAppChannel', () => {
         'test@g.us',
         { text: 'Andy: Queued message' },
       );
+    });
+
+    it('loads persisted outgoing queue from disk and flushes on connect', async () => {
+      const fs = await import('fs');
+      vi.mocked(fs.default.readFileSync).mockReturnValueOnce(
+        JSON.stringify([{ jid: 'persisted@g.us', text: 'Andy: Persisted' }]),
+      );
+
+      const opts = createTestOpts();
+      const channel = new WhatsAppChannel(opts);
+
+      await connectChannel(channel);
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(fakeSocket.sendMessage).toHaveBeenCalledWith(
+        'persisted@g.us',
+        { text: 'Andy: Persisted' },
+      );
+    });
+
+    it('keeps queued messages when flush send fails', async () => {
+      const fs = await import('fs');
+      vi.mocked(fs.default.readFileSync).mockReturnValueOnce('[]');
+
+      const opts = createTestOpts();
+      const channel = new WhatsAppChannel(opts);
+      await connectChannel(channel);
+
+      // Queue while disconnected
+      (channel as any).connected = false;
+      await channel.sendMessage('retry@g.us', 'Retry me');
+      expect((channel as any).outgoingQueue).toHaveLength(1);
+
+      // First flush fails; queued item must remain for later retry
+      fakeSocket.sendMessage.mockClear();
+      fakeSocket.sendMessage.mockRejectedValueOnce(new Error('send failed'));
+      (channel as any).connected = true;
+      await (channel as any).flushOutgoingQueue();
+      expect((channel as any).outgoingQueue).toHaveLength(1);
+
+      // Second flush succeeds and drains queue
+      fakeSocket.sendMessage.mockResolvedValue(undefined);
+      await (channel as any).flushOutgoingQueue();
+      expect((channel as any).outgoingQueue).toHaveLength(0);
+
+      expect(fs.default.writeFileSync).toHaveBeenCalled();
     });
 
     it('disconnects cleanly', async () => {

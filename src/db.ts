@@ -3,6 +3,8 @@ import fs from 'fs';
 import path from 'path';
 
 import { ASSISTANT_NAME, DATA_DIR, STORE_DIR } from './config.js';
+import { isValidGroupFolder } from './group-folder.js';
+import { logger } from './logger.js';
 import { NewMessage, RegisteredGroup, ScheduledTask, TaskRunLog } from './types.js';
 
 let db: Database.Database;
@@ -108,7 +110,11 @@ function createSchema(database: Database.Database): void {
     `ALTER TABLE worker_runs ADD COLUMN risk_summary TEXT`,
   ];
   for (const sql of workerRunsMigrations) {
-    try { database.exec(sql); } catch { /* column already exists */ }
+    try {
+      database.exec(sql);
+    } catch {
+      /* column already exists */
+    }
   }
 
   // Add is_bot_message column if it doesn't exist (migration for existing DBs)
@@ -318,6 +324,7 @@ export function getNewMessages(
     FROM messages
     WHERE timestamp > ? AND chat_jid IN (${placeholders})
       AND is_bot_message = 0 AND content NOT LIKE ?
+      AND content != '' AND content IS NOT NULL
     ORDER BY timestamp
   `;
 
@@ -345,6 +352,7 @@ export function getMessagesSince(
     FROM messages
     WHERE chat_jid = ? AND timestamp > ?
       AND is_bot_message = 0 AND content NOT LIKE ?
+      AND content != '' AND content IS NOT NULL
     ORDER BY timestamp
   `;
   return db
@@ -545,6 +553,13 @@ export function getRegisteredGroup(
       }
     | undefined;
   if (!row) return undefined;
+  if (!isValidGroupFolder(row.folder)) {
+    logger.warn(
+      { jid: row.jid, folder: row.folder },
+      'Skipping registered group with invalid folder',
+    );
+    return undefined;
+  }
   return {
     jid: row.jid,
     name: row.name,
@@ -562,6 +577,9 @@ export function setRegisteredGroup(
   jid: string,
   group: RegisteredGroup,
 ): void {
+  if (!isValidGroupFolder(group.folder)) {
+    throw new Error(`Invalid group folder "${group.folder}" for JID ${jid}`);
+  }
   db.prepare(
     `INSERT OR REPLACE INTO registered_groups (jid, name, folder, trigger_pattern, added_at, container_config, requires_trigger)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -590,6 +608,13 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
   }>;
   const result: Record<string, RegisteredGroup> = {};
   for (const row of rows) {
+    if (!isValidGroupFolder(row.folder)) {
+      logger.warn(
+        { jid: row.jid, folder: row.folder },
+        'Skipping registered group with invalid folder',
+      );
+      continue;
+    }
     result[row.jid] = {
       name: row.name,
       folder: row.folder,
@@ -607,16 +632,23 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
 // --- Worker run deduplication ---
 
 export type WorkerRunStatus =
-  | 'queued' | 'running' | 'review_requested'
-  | 'failed_contract' | 'done' | 'failed';
+  | 'queued'
+  | 'running'
+  | 'review_requested'
+  | 'failed_contract'
+  | 'done'
+  | 'failed';
 
 /**
  * Insert a worker run record.
- * - 'new': run_id not seen before — inserted with status 'queued'
- * - 'retry': run_id exists with status 'failed' or 'failed_contract' — retry_count incremented, reset to 'queued'
- * - 'duplicate': run_id exists with any other status — caller should skip execution
+ * - 'new': run_id not seen before, inserted with status 'queued'
+ * - 'retry': run_id exists with status 'failed' or 'failed_contract'
+ * - 'duplicate': run_id exists with any other status
  */
-export function insertWorkerRun(runId: string, groupFolder: string): 'new' | 'retry' | 'duplicate' {
+export function insertWorkerRun(
+  runId: string,
+  groupFolder: string,
+): 'new' | 'retry' | 'duplicate' {
   const existing = getWorkerRun(runId);
   if (existing) {
     if (existing.status === 'failed' || existing.status === 'failed_contract') {
@@ -627,6 +659,7 @@ export function insertWorkerRun(runId: string, groupFolder: string): 'new' | 're
     }
     return 'duplicate';
   }
+
   db.prepare(
     `INSERT INTO worker_runs (run_id, group_folder, status, started_at, retry_count) VALUES (?, ?, 'queued', ?, 0)`,
   ).run(runId, groupFolder, new Date().toISOString());
@@ -634,7 +667,11 @@ export function insertWorkerRun(runId: string, groupFolder: string): 'new' | 're
 }
 
 export function updateWorkerRunStatus(runId: string, status: WorkerRunStatus): void {
-  const terminal = status === 'done' || status === 'failed' || status === 'failed_contract' || status === 'review_requested';
+  const terminal =
+    status === 'done'
+    || status === 'failed'
+    || status === 'failed_contract'
+    || status === 'review_requested';
   if (terminal) {
     db.prepare(
       `UPDATE worker_runs SET status = ?, completed_at = ? WHERE run_id = ?`,
@@ -747,7 +784,14 @@ function migrateJsonState(): void {
   > | null;
   if (groups) {
     for (const [jid, group] of Object.entries(groups)) {
-      setRegisteredGroup(jid, group);
+      try {
+        setRegisteredGroup(jid, group);
+      } catch (err) {
+        logger.warn(
+          { jid, folder: group.folder, err },
+          'Skipping migrated registered group with invalid folder',
+        );
+      }
     }
   }
 }

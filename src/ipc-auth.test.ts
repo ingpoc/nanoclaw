@@ -5,10 +5,18 @@ import {
   createTask,
   getAllTasks,
   getRegisteredGroup,
+  getWorkerRun,
   getTaskById,
   setRegisteredGroup,
+  updateWorkerRunStatus,
 } from './db.js';
-import { canIpcAccessTarget, processTaskIpc, IpcDeps } from './ipc.js';
+import {
+  canIpcAccessTarget,
+  processTaskIpc,
+  IpcDeps,
+  queueAndyWorkerDispatchRun,
+  validateAndyWorkerDispatchMessage,
+} from './ipc.js';
 import { RegisteredGroup } from './types.js';
 
 // Set up registered groups used across tests
@@ -50,6 +58,26 @@ const JARVIS_WORKER_GROUP: RegisteredGroup = {
 let groups: Record<string, RegisteredGroup>;
 let deps: IpcDeps;
 
+const VALID_WORKER_DISPATCH_PROMPT = JSON.stringify({
+  run_id: 'run-20260223-001',
+  task_type: 'implement',
+  input: 'Implement and validate the requested feature',
+  repo: 'openclaw-gurusharan/nanoclaw',
+  branch: 'jarvis-feature-dispatch-contract',
+  acceptance_tests: ['npm run build', 'npm test'],
+  output_contract: {
+    required_fields: [
+      'run_id',
+      'branch',
+      'commit_sha',
+      'files_changed',
+      'test_result',
+      'risk',
+      'pr_skipped_reason',
+    ],
+  },
+});
+
 beforeEach(() => {
   _initTestDatabase();
 
@@ -69,7 +97,7 @@ beforeEach(() => {
   setRegisteredGroup('jarvis-1@g.us', JARVIS_WORKER_GROUP);
 
   deps = {
-    sendMessage: async () => {},
+    sendMessage: async (_jid, _text, _sourceGroup) => {},
     registeredGroups: () => groups,
     registerGroup: (jid, group) => {
       groups[jid] = group;
@@ -146,7 +174,7 @@ describe('schedule_task authorization', () => {
     await processTaskIpc(
       {
         type: 'schedule_task',
-        prompt: 'delegate to worker',
+        prompt: VALID_WORKER_DISPATCH_PROMPT,
         schedule_type: 'once',
         schedule_value: '2025-06-01T00:00:00.000Z',
         targetJid: 'jarvis-1@g.us',
@@ -159,6 +187,24 @@ describe('schedule_task authorization', () => {
     const allTasks = getAllTasks();
     expect(allTasks.length).toBe(1);
     expect(allTasks[0].group_folder).toBe('jarvis-worker-1');
+  });
+
+  it('andy-developer cannot schedule worker task with invalid dispatch payload', async () => {
+    await processTaskIpc(
+      {
+        type: 'schedule_task',
+        prompt: 'delegate to worker',
+        schedule_type: 'once',
+        schedule_value: '2025-06-01T00:00:00.000Z',
+        targetJid: 'jarvis-1@g.us',
+      },
+      'andy-developer',
+      false,
+      deps,
+    );
+
+    const allTasks = getAllTasks();
+    expect(allTasks.length).toBe(0);
   });
 
   it('andy-developer cannot schedule for non-worker group', async () => {
@@ -410,6 +456,23 @@ describe('register_group authorization', () => {
     // registeredGroups should not have changed
     expect(groups['new@g.us']).toBeUndefined();
   });
+
+  it('main group cannot register with unsafe folder path', async () => {
+    await processTaskIpc(
+      {
+        type: 'register_group',
+        jid: 'new@g.us',
+        name: 'New Group',
+        folder: '../../outside',
+        trigger: '@Andy',
+      },
+      'main',
+      true,
+      deps,
+    );
+
+    expect(groups['new@g.us']).toBeUndefined();
+  });
 });
 
 // --- refresh_groups authorization ---
@@ -462,6 +525,92 @@ describe('IPC message authorization', () => {
   it('andy-developer cannot send to non-worker groups', () => {
     expect(isMessageAuthorized('andy-developer', false, 'other@g.us')).toBe(false);
     expect(isMessageAuthorized('andy-developer', false, 'main@g.us')).toBe(false);
+  });
+});
+
+describe('andy worker dispatch payload guardrails', () => {
+  it('blocks worker-style JSON dispatch accidentally targeted to andy-developer chat', () => {
+    const result = validateAndyWorkerDispatchMessage(
+      'andy-developer',
+      groups['andy@g.us'],
+      VALID_WORKER_DISPATCH_PROMPT,
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('dispatch payload to andy-developer chat blocked');
+  });
+
+  it('allows andy-developer plain status messages to its own chat', () => {
+    const result = validateAndyWorkerDispatchMessage(
+      'andy-developer',
+      groups['andy@g.us'],
+      'Jarvis workers are running; I will report status shortly.',
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it('allows valid strict dispatch JSON when target is jarvis-worker group', () => {
+    const result = validateAndyWorkerDispatchMessage(
+      'andy-developer',
+      groups['jarvis-1@g.us'],
+      VALID_WORKER_DISPATCH_PROMPT,
+    );
+
+    expect(result.valid).toBe(true);
+  });
+});
+
+describe('andy worker dispatch run queueing', () => {
+  it('queues a new worker run when dispatch is valid', () => {
+    const decision = queueAndyWorkerDispatchRun(
+      'andy-developer',
+      groups['jarvis-1@g.us'],
+      VALID_WORKER_DISPATCH_PROMPT,
+    );
+
+    expect(decision.allowSend).toBe(true);
+    expect(decision.queueState).toBe('new');
+    expect(decision.runId).toBe('run-20260223-001');
+    expect(getWorkerRun('run-20260223-001')?.status).toBe('queued');
+  });
+
+  it('blocks duplicate run_id dispatch', () => {
+    const first = queueAndyWorkerDispatchRun(
+      'andy-developer',
+      groups['jarvis-1@g.us'],
+      VALID_WORKER_DISPATCH_PROMPT,
+    );
+    const second = queueAndyWorkerDispatchRun(
+      'andy-developer',
+      groups['jarvis-1@g.us'],
+      VALID_WORKER_DISPATCH_PROMPT,
+    );
+
+    expect(first.allowSend).toBe(true);
+    expect(second.allowSend).toBe(false);
+    expect(second.reason).toContain('duplicate run_id');
+  });
+
+  it('allows retry for failed_contract run_id', () => {
+    queueAndyWorkerDispatchRun(
+      'andy-developer',
+      groups['jarvis-1@g.us'],
+      VALID_WORKER_DISPATCH_PROMPT,
+    );
+    updateWorkerRunStatus('run-20260223-001', 'failed_contract');
+
+    const retry = queueAndyWorkerDispatchRun(
+      'andy-developer',
+      groups['jarvis-1@g.us'],
+      VALID_WORKER_DISPATCH_PROMPT,
+    );
+
+    const row = getWorkerRun('run-20260223-001');
+    expect(retry.allowSend).toBe(true);
+    expect(retry.queueState).toBe('retry');
+    expect(row?.status).toBe('queued');
+    expect(row?.retry_count).toBe(1);
   });
 });
 

@@ -14,6 +14,7 @@ Canonical classification for repository docs.
 - `docs/architecture/nanoclaw-system-architecture.md`: canonical system architecture and runtime tiers
 - `docs/architecture/nanoclaw-jarvis.md`: Jarvis-on-NanoClaw architecture, delegation model, lifecycle
 - `docs/architecture/harness-engineering-alignment.md`: harness-engineering principles mapped to this repo
+- `docs/architecture/nanoclaw-architecture-optimization-plan.md`: prioritized Apple-Container-first optimization backlog (`P0`/`P1`/`P2`) with expected benefits
 
 ## `docs/workflow/`
 

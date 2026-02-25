@@ -16,9 +16,18 @@ docs/
 ## Start Points
 
 - Architecture first: `docs/architecture/nanoclaw-system-architecture.md`
+- Architecture optimization plan: `docs/architecture/nanoclaw-architecture-optimization-plan.md`
 - Workflow contract: `docs/workflow/nanoclaw-jarvis-dispatch-contract.md`
 - Runtime behavior: `docs/workflow/nanoclaw-jarvis-worker-runtime.md`
+- GitHub control-plane: `docs/workflow/nanoclaw-github-control-plane.md`
+- User review readiness gate: `docs/workflow/nanoclaw-github-control-plane.md` (QA handoff section) + `docs/troubleshooting/DEBUG_CHECKLIST.md` (runtime recovery)
 - Operational ownership: `docs/operations/roles-classification.md`
+- Workflow setup + update ownership: `docs/operations/workflow-setup-responsibility-map.md`
+- Skills-vs-docs decision boundary: `docs/operations/skills-vs-docs-map.md`
+- Upstream daily sync policy: `docs/operations/upstream-sync-policy.md`
+- Skill source-of-truth (global symlinked skills for testing/browser-testing): `docs/operations/roles-classification.md` + `docs/operations/workflow-setup-responsibility-map.md`
+- Agreement-driven auto-sync discipline: `docs/operations/agreement-sync-protocol.md`
+- Runtime vs prebaked boundary: `docs/operations/runtime-vs-prebaked-boundary.md`
 - Change impact: `docs/operations/update-requirements-matrix.md`
 - Debug loop: `docs/troubleshooting/DEBUG_CHECKLIST.md`
 

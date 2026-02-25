@@ -9,13 +9,22 @@ import {
   MAIN_GROUP_FOLDER,
   TIMEZONE,
 } from './config.js';
+import { parseDispatchPayload, validateDispatchPayload } from './dispatch-validator.js';
 import { AvailableGroup } from './container-runner.js';
-import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
+import {
+  completeWorkerRun,
+  createTask,
+  deleteTask,
+  getTaskById,
+  insertWorkerRun,
+  updateTask,
+} from './db.js';
+import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
 
 export interface IpcDeps {
-  sendMessage: (jid: string, text: string) => Promise<void>;
+  sendMessage: (jid: string, text: string, sourceGroup: string) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroupMetadata: (force: boolean) => Promise<void>;
@@ -64,6 +73,86 @@ function canIpcAccessTaskGroup(
   return false;
 }
 
+export function validateAndyWorkerDispatchMessage(
+  sourceGroup: string,
+  targetGroup: RegisteredGroup | undefined,
+  text: string,
+): { valid: boolean; reason?: string } {
+  const parsed = parseDispatchPayload(text);
+
+  // Guardrail: prevent accidental raw dispatch contracts from being posted
+  // back into the Andy-Developer WhatsApp chat.
+  if (
+    sourceGroup === 'andy-developer'
+    && targetGroup?.folder === 'andy-developer'
+    && parsed
+  ) {
+    return {
+      valid: false,
+      reason: 'dispatch payload to andy-developer chat blocked; set target_group_jid to jarvis-worker-*',
+    };
+  }
+
+  // For andy-developer -> jarvis-worker messages, enforce strict dispatch contract.
+  if (
+    sourceGroup !== 'andy-developer'
+    || !targetGroup
+    || !isJarvisWorkerFolder(targetGroup.folder)
+  ) {
+    return { valid: true };
+  }
+
+  if (!parsed) {
+    return { valid: false, reason: 'andy-developer -> jarvis-worker message must be strict JSON dispatch payload' };
+  }
+
+  const { valid, errors } = validateDispatchPayload(parsed);
+  if (!valid) {
+    return { valid: false, reason: `invalid dispatch payload: ${errors.join('; ')}` };
+  }
+
+  return { valid: true };
+}
+
+export interface WorkerDispatchQueueDecision {
+  allowSend: boolean;
+  runId?: string;
+  queueState?: 'new' | 'retry';
+  reason?: string;
+}
+
+export function queueAndyWorkerDispatchRun(
+  sourceGroup: string,
+  targetGroup: RegisteredGroup | undefined,
+  text: string,
+): WorkerDispatchQueueDecision {
+  if (
+    sourceGroup !== 'andy-developer'
+    || !targetGroup
+    || !isJarvisWorkerFolder(targetGroup.folder)
+  ) {
+    return { allowSend: true };
+  }
+
+  const parsed = parseDispatchPayload(text);
+  if (!parsed) return { allowSend: true };
+
+  const queueState = insertWorkerRun(parsed.run_id, targetGroup.folder);
+  if (queueState === 'duplicate') {
+    return {
+      allowSend: false,
+      runId: parsed.run_id,
+      reason: `duplicate run_id blocked: ${parsed.run_id}`,
+    };
+  }
+
+  return {
+    allowSend: true,
+    runId: parsed.run_id,
+    queueState,
+  };
+}
+
 export function startIpcWatcher(deps: IpcDeps): void {
   if (ipcWatcherRunning) {
     logger.debug('IPC watcher already running, skipping duplicate start');
@@ -108,21 +197,69 @@ export function startIpcWatcher(deps: IpcDeps): void {
               if (data.type === 'message' && data.chatJid && data.text) {
                 // Authorization: verify this group can send to this chatJid
                 const targetGroup = registeredGroups[data.chatJid];
-                if (canIpcAccessTarget(sourceGroup, isMain, targetGroup)) {
-                  await deps.sendMessage(data.chatJid, data.text);
+                const canAccessTarget = canIpcAccessTarget(sourceGroup, isMain, targetGroup);
+                const dispatchValidation = validateAndyWorkerDispatchMessage(
+                  sourceGroup,
+                  targetGroup,
+                  data.text,
+                );
+                const queueDecision = (
+                  canAccessTarget && dispatchValidation.valid
+                )
+                  ? queueAndyWorkerDispatchRun(sourceGroup, targetGroup, data.text)
+                  : { allowSend: true };
+
+                if (canAccessTarget && dispatchValidation.valid && queueDecision.allowSend) {
+                  await deps.sendMessage(data.chatJid, data.text, sourceGroup);
+                  if (queueDecision.runId && queueDecision.queueState) {
+                    logger.info(
+                      {
+                        runId: queueDecision.runId,
+                        queueState: queueDecision.queueState,
+                        sourceGroup,
+                        targetFolder: targetGroup?.folder,
+                      },
+                      'Worker dispatch queued',
+                    );
+                  }
                   logger.info(
                     { chatJid: data.chatJid, sourceGroup },
                     'IPC message sent',
                   );
                 } else {
                   logger.warn(
-                    { chatJid: data.chatJid, sourceGroup },
+                    {
+                      chatJid: data.chatJid,
+                      sourceGroup,
+                      reason: !canAccessTarget
+                        ? 'target authorization failed'
+                        : !dispatchValidation.valid
+                          ? dispatchValidation.reason
+                          : queueDecision.reason,
+                    },
                     'Unauthorized IPC message attempt blocked',
                   );
                 }
               }
               fs.unlinkSync(filePath);
             } catch (err) {
+              const queuedDispatch = (() => {
+                try {
+                  const parsed = parseDispatchPayload(
+                    JSON.parse(fs.readFileSync(filePath, 'utf-8')).text || '',
+                  );
+                  return parsed?.run_id;
+                } catch {
+                  return undefined;
+                }
+              })();
+              if (queuedDispatch) {
+                completeWorkerRun(
+                  queuedDispatch,
+                  'failed',
+                  `dispatch delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
               logger.error(
                 { file, sourceGroup, err },
                 'Error processing IPC message',
@@ -236,6 +373,28 @@ export async function processTaskIpc(
             'Unauthorized schedule_task attempt blocked',
           );
           break;
+        }
+
+        if (
+          sourceGroup === 'andy-developer'
+          && isJarvisWorkerFolder(targetFolder)
+        ) {
+          const parsed = parseDispatchPayload(data.prompt);
+          if (!parsed) {
+            logger.warn(
+              { sourceGroup, targetFolder },
+              'Blocked schedule_task: andy-developer worker prompt must be strict dispatch JSON',
+            );
+            break;
+          }
+          const { valid, errors } = validateDispatchPayload(parsed);
+          if (!valid) {
+            logger.warn(
+              { sourceGroup, targetFolder, errors },
+              'Blocked schedule_task: invalid worker dispatch payload',
+            );
+            break;
+          }
         }
 
         const scheduleType = data.schedule_type as 'cron' | 'interval' | 'once';
@@ -388,6 +547,13 @@ export async function processTaskIpc(
         break;
       }
       if (data.jid && data.name && data.folder && data.trigger) {
+        if (!isValidGroupFolder(data.folder)) {
+          logger.warn(
+            { sourceGroup, folder: data.folder },
+            'Invalid register_group request - unsafe folder name',
+          );
+          break;
+        }
         deps.registerGroup(data.jid, {
           name: data.name,
           folder: data.folder,

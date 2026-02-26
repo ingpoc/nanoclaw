@@ -3,35 +3,36 @@
 Tracks only the latest upstream sync outcome.
 Previous entries must be moved to `docs/archives/CHANGELOG-YYYY-MM-DD.md`.
 
-## 2026-02-25
-- Synced from: `upstream/main` into `architecture-optmization`
-- Merge commit: `1976a21`
+## 2026-02-26
+
+- Synced from: `upstream/main` into `andy-developer-optimization`
+- Merge commit: `upstream/main` (version 1.1.3)
 
 ### Bug Fixes
-- WhatsApp connection reliability fixes from upstream were included:
-  - WA Web version fetch now uses latest-version lookup to avoid `405` failures.
-  - Added stronger error handling for WA Web version fetch.
-  - QR data handling fixes in WhatsApp auth flow.
-- Security hardening fixes included:
-  - Group-folder path escape protections.
-  - Skills file-op path/symlink escape protections.
-  - Project root mounted read-only in container flow to reduce escape risk.
+
+- CI workflow improvements from upstream.
+- Various codebase formatting fixes (Prettier).
 
 ### Features
-- Added/updated upstream update workflow support (`/update` skill and related update tooling).
-- Added official Qodo skills and code intelligence integrations from upstream.
-- Setup flow migrated toward cross-platform Node.js modules (replacing bash-heavy setup path).
+
+- Added `/add-slack` skill (new Slack channel integration).
+- New GitHub Actions: `skill-drift.yml`, `skill-pr.yml`.
+- Updated skills engine with improved reliability.
 
 ### Functionality/Behavior
-- Container runtime behavior improved with:
-  - Host timezone propagation into container runtime.
-  - Assistant name propagation instead of hardcoded fallback.
-- Polling/message handling refinements and stricter validation improvements from upstream were integrated.
+
+- Removed queue disk persistence (upstream removed this feature).
+- 2 tests skipped for removed queue persistence functionality.
 
 ### Docs/Infra
-- Upstream README/docs refresh and version bumps through `1.1.2`.
-- Added `.nvmrc` (Node 22 baseline) from upstream.
+
+- Added CONTRIBUTORS.md.
+- Updated `.github/workflows` naming (test.yml → ci.yml).
 
 ### Conflict Notes
-- Conflicted files were resolved with upstream-first preference for bug-fix safety.
-- Local compatibility was retained where required (notably worker-run DB APIs used by existing branch tests).
+
+- `src/container-runtime.ts` - Kept Apple Container (local requirement).
+- `src/container-runner.ts` - Kept worker mount paths (local requirement).
+- `src/index.ts`, `src/ipc.ts` - Kept worker dispatch system (local requirement).
+- `src/db.ts` - Kept worker_runs table (local requirement).
+- `src/channels/whatsapp.ts` - Accepted upstream version (queue persistence removed upstream).

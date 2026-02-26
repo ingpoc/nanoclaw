@@ -6,6 +6,7 @@ cd "$ROOT_DIR"
 
 SKIP_BUILD=0
 KEEP_LOG=0
+SMOKE_ARGS=()
 
 usage() {
   cat <<'EOF'
@@ -13,6 +14,7 @@ Usage: scripts/jarvis-smoke.sh [options]
 
 Options:
   --skip-build  Skip worker image rebuild.
+  --isolated-db Run smoke against in-memory DB instead of store/messages.db.
   --keep-log    Keep smoke output log file.
   -h, --help    Show this help.
 EOF
@@ -22,6 +24,10 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --skip-build)
       SKIP_BUILD=1
+      shift
+      ;;
+    --isolated-db)
+      SMOKE_ARGS=("--isolated-db")
       shift
       ;;
     --keep-log)
@@ -61,7 +67,7 @@ fi
 
 echo "[STEP] run worker e2e smoke"
 set +e
-npx tsx scripts/test-worker-e2e.ts 2>&1 | tee "$log_file"
+npx tsx scripts/test-worker-e2e.ts "${SMOKE_ARGS[@]}" 2>&1 | tee "$log_file"
 smoke_rc=${PIPESTATUS[0]}
 set -e
 
@@ -87,4 +93,3 @@ else
   echo "[INFO] preserved log: $log_file"
   exit "$smoke_rc"
 fi
-

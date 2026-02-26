@@ -429,6 +429,26 @@ Done!
     expect(contract?.run_id).toBe('task-2');
     expect(contract?.branch).toBe('jarvis-c');
   });
+
+  it('parses completion when step_finish event appears before completion block', () => {
+    const output = [
+      '{"type":"step_finish","part":{"type":"step-finish","reason":"tool-calls"}}',
+      '<completion>{"run_id":"task-3","branch":"jarvis-d","commit_sha":"deadbeef","files_changed":["a.ts"],"test_result":"pass","risk":"low","pr_skipped_reason":"n/a"}</completion>',
+    ].join('\n');
+    const contract = parseCompletionContract(output);
+    expect(contract?.run_id).toBe('task-3');
+    expect(contract?.branch).toBe('jarvis-d');
+  });
+
+  it('parses completion when step_finish appears after completion block', () => {
+    const output = [
+      '<completion>{"run_id":"task-4","branch":"jarvis-e","commit_sha":"deadbeef","files_changed":["b.ts"],"test_result":"pass","risk":"low","pr_skipped_reason":"n/a"}</completion>',
+      '{"type":"step_finish","part":{"type":"step-finish","reason":"tool-calls"}}',
+    ].join('\n');
+    const contract = parseCompletionContract(output);
+    expect(contract?.run_id).toBe('task-4');
+    expect(contract?.branch).toBe('jarvis-e');
+  });
 });
 
 describe('completion contract validation', () => {
@@ -500,6 +520,51 @@ describe('completion contract validation', () => {
     expect(missing).toContain('pr_url or pr_skipped_reason');
   });
 
+  it('fails when files_changed is a number', () => {
+    const { valid, missing } = validateCompletionContract({
+      run_id: 'task-1',
+      branch: 'jarvis-feat',
+      commit_sha: 'abc1234',
+      files_changed: 1 as unknown as string[],
+      pr_skipped_reason: 'test',
+      test_result: 'pass',
+      risk: 'low',
+    });
+    expect(valid).toBe(false);
+    expect(missing).toContain('files_changed');
+  });
+
+  it('fails for placeholder commit_sha on non-health run', () => {
+    const { valid, missing } = validateCompletionContract({
+      run_id: 'task-1',
+      branch: 'jarvis-feat',
+      commit_sha: 'none',
+      files_changed: ['src/a.ts'],
+      pr_skipped_reason: 'test',
+      test_result: 'pass',
+      risk: 'low',
+    });
+    expect(valid).toBe(false);
+    expect(missing).toContain('commit_sha format');
+  });
+
+  it('allows placeholder commit_sha on health run when no-code mode is enabled', () => {
+    const { valid, missing } = validateCompletionContract(
+      {
+        run_id: 'health-check-1',
+        branch: 'jarvis-health-check',
+        commit_sha: 'none',
+        files_changed: [],
+        pr_skipped_reason: 'health check',
+        test_result: 'pass',
+        risk: 'low',
+      },
+      { allowNoCodeChanges: true },
+    );
+    expect(valid).toBe(true);
+    expect(missing).toHaveLength(0);
+  });
+
   it('fails when contract is null', () => {
     const { valid, missing } = validateCompletionContract(null);
     expect(valid).toBe(false);
@@ -535,6 +600,23 @@ describe('completion contract validation', () => {
     );
     expect(valid).toBe(false);
     expect(missing).toContain('run_id mismatch');
+  });
+
+  it('fails when branch mismatches expected branch', () => {
+    const { valid, missing } = validateCompletionContract(
+      {
+        run_id: 'task-xyz',
+        branch: 'jarvis-wrong-branch',
+        commit_sha: 'abc1234',
+        files_changed: ['src/a.ts'],
+        pr_url: 'url',
+        test_result: 'pass',
+        risk: 'low',
+      },
+      { expectedRunId: 'task-xyz', expectedBranch: 'jarvis-expected-branch' },
+    );
+    expect(valid).toBe(false);
+    expect(missing).toContain('branch mismatch');
   });
 
   it('fails when browser evidence is required but missing', () => {

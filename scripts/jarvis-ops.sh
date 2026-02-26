@@ -9,6 +9,8 @@ Usage: scripts/jarvis-ops.sh <command> [args]
 
 Commands:
   preflight   Run runtime/auth/db health checks.
+  status      Show lane health summary and failure reasons from worker_runs.
+  probe       Dispatch health probes to jarvis-worker lanes.
   recover     Run container/runtime recovery and preflight.
   smoke       Rebuild worker image and run worker e2e smoke.
   watch       Show log summary and follow categorized events.
@@ -24,6 +26,12 @@ fi
 case "$command_name" in
   preflight)
     exec "$SCRIPT_DIR/jarvis-preflight.sh" "$@"
+    ;;
+  status)
+    exec "$SCRIPT_DIR/jarvis-status.sh" "$@"
+    ;;
+  probe)
+    exec "$SCRIPT_DIR/jarvis-worker-probe.sh" "$@"
     ;;
   recover)
     exec "$SCRIPT_DIR/jarvis-recover.sh" "$@"
@@ -43,4 +51,3 @@ case "$command_name" in
     exit 1
     ;;
 esac
-

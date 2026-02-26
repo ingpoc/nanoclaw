@@ -281,6 +281,7 @@ export function validateCompletionContract(
   contract: CompletionContract | null,
   options?: {
     expectedRunId?: string;
+    expectedBranch?: string;
     requiredFields?: string[];
     browserEvidenceRequired?: boolean;
     allowNoCodeChanges?: boolean;
@@ -305,6 +306,12 @@ export function validateCompletionContract(
 
   if (requireBranch && (!contract.branch || !BRANCH_PATTERN.test(contract.branch))) {
     missing.push('branch');
+  } else if (
+    requireBranch
+    && options?.expectedBranch
+    && contract.branch !== options.expectedBranch
+  ) {
+    missing.push('branch mismatch');
   }
 
   if (requireCommitSha) {

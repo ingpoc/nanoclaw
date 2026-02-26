@@ -163,10 +163,16 @@ For repeatable operator checks, use:
 
 ```bash
 bash scripts/jarvis-ops.sh preflight
+bash scripts/jarvis-ops.sh status
+bash scripts/jarvis-ops.sh probe
 bash scripts/jarvis-ops.sh recover
 bash scripts/jarvis-ops.sh smoke
 bash scripts/jarvis-ops.sh watch --lines 120
 ```
+
+Notes:
+- `smoke` uses the live `store/messages.db` path by default.
+- Use `bash scripts/jarvis-ops.sh smoke --isolated-db` only when you explicitly want isolated in-memory validation.
 
 **Why isn't the setup working for me?**
 

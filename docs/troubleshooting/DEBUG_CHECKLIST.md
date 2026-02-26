@@ -131,11 +131,20 @@ Use the script dispatcher for consistent debug/recovery/smoke flow:
 # Health checks (runtime + auth + DB queue)
 bash scripts/jarvis-ops.sh preflight
 
+# Current lane health and recent failure reasons
+bash scripts/jarvis-ops.sh status
+
+# Active worker-lane probe dispatch (jarvis-worker-*)
+bash scripts/jarvis-ops.sh probe
+
 # Runtime/builder recovery and service restart
 bash scripts/jarvis-ops.sh recover
 
-# Worker image rebuild + end-to-end smoke gate
+# Worker image rebuild + end-to-end smoke gate (live DB by default)
 bash scripts/jarvis-ops.sh smoke
+
+# Isolated smoke mode (in-memory DB)
+bash scripts/jarvis-ops.sh smoke --isolated-db
 
 # Log summary and categorized live watch
 bash scripts/jarvis-ops.sh watch --lines 120

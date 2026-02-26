@@ -161,6 +161,39 @@ function buildWorkerRunsSnapshot(group: RegisteredGroup, isMain: boolean): Worke
 }
 
 function buildAndyPromptWorkerContext(snapshot: WorkerRunsSnapshot): string {
+  const nowMs = Date.now();
+  const currentWindowMs = 60 * 60 * 1000;
+  const currentWindowRuns = snapshot.recent.filter((r) => {
+    const startedMs = Date.parse(r.started_at);
+    return Number.isFinite(startedMs) && (nowMs - startedMs) <= currentWindowMs;
+  });
+  const currentFailures = snapshot.recent.filter((r) => {
+    if (r.status !== 'failed' && r.status !== 'failed_contract') return false;
+    const startedMs = Date.parse(r.started_at);
+    return Number.isFinite(startedMs) && (nowMs - startedMs) <= currentWindowMs;
+  }).length;
+  const currentPasses = snapshot.recent.filter((r) => {
+    if (r.status !== 'review_requested' && r.status !== 'done') return false;
+    const startedMs = Date.parse(r.started_at);
+    return Number.isFinite(startedMs) && (nowMs - startedMs) <= currentWindowMs;
+  }).length;
+  const workerLaneNames = Array.from(
+    new Set(
+      snapshot.recent
+        .map((r) => r.group_folder)
+        .filter((folder) => isJarvisWorkerGroup(folder)),
+    ),
+  ).sort();
+  const laneSummaryLines = workerLaneNames.length > 0
+    ? workerLaneNames.map((lane) => {
+      const laneRuns = currentWindowRuns.filter((r) => r.group_folder === lane);
+      const pass = laneRuns.filter((r) => r.status === 'review_requested' || r.status === 'done').length;
+      const fail = laneRuns.filter((r) => r.status === 'failed' || r.status === 'failed_contract').length;
+      const active = laneRuns.filter((r) => r.status === 'queued' || r.status === 'running').length;
+      return `- ${lane}: pass=${pass}, fail=${fail}, active=${active}, runs=${laneRuns.length}`;
+    }).join('\n')
+    : '- none';
+
   const activeLines = snapshot.active.length > 0
     ? snapshot.active
       .slice(0, 8)
@@ -182,7 +215,14 @@ function buildAndyPromptWorkerContext(snapshot: WorkerRunsSnapshot): string {
   return [
     '<worker_status_source_of_truth>',
     `generated_at: ${snapshot.generated_at}`,
+    `now: ${new Date(nowMs).toISOString()}`,
     'Use this DB snapshot as the single source of truth when answering status/queue questions.',
+    'Classify issues older than 60 minutes as historical unless there are fresh failures in the current window.',
+    `Current-window (last 60m): passes=${currentPasses}, failures=${currentFailures}`,
+    'Do not claim a specific worker lane is broken without at least one failure in that lane in the last 60 minutes.',
+    'If a worker lane has no runs in the current window, report it as unknown/no recent evidence.',
+    'Current-window worker lane summary:',
+    laneSummaryLines,
     'Do not rely on memory for queued/running/completed worker state.',
     'Active worker runs:',
     activeLines,
@@ -265,6 +305,8 @@ function buildWorkerDispatchPrompt(payload: DispatchPayload): string {
     '- Execute commands from /workspace/group only; do not use /workspace/extra or other external directories.',
     `- completion.run_id must exactly equal "${payload.run_id}".`,
     `- completion.branch must exactly equal "${payload.branch}".`,
+    '- completion.commit_sha must be a real 6-40 char git SHA from the checked-out branch.',
+    '- Only no-code runs with run_id prefix ping-/smoke-/health-/sync- may use commit_sha placeholder n/a/none and empty files_changed.',
     '- files_changed must be a JSON array of changed file paths.',
     '',
     'Required completion fields:',
@@ -274,6 +316,7 @@ function buildWorkerDispatchPrompt(payload: DispatchPayload): string {
 
 function buildWorkerCompletionRepairPrompt(
   runId: string,
+  expectedBranch: string,
   requiredFields: string[],
   missingFields: string[],
   outputBuffer: string,
@@ -300,6 +343,8 @@ function buildWorkerCompletionRepairPrompt(
     '- Do not run commands.',
     '- Do not include analysis or prose before/after the completion block.',
     '- completion.run_id must exactly match the run ID above.',
+    `- completion.branch must exactly equal "${expectedBranch}".`,
+    '- completion.commit_sha must be a valid 6-40 char hex SHA (or n/a/none only for ping-/smoke-/health-/sync- no-code runs).',
     '- files_changed must be a JSON array of strings.',
     '',
     'Previous output excerpt (for correction only):',
@@ -668,6 +713,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     let completion = parseCompletionContract(workerOutputBuffer);
     let completionCheck = validateCompletionContract(completion, {
       expectedRunId: workerRun.runId,
+      expectedBranch: workerRun.dispatchPayload.branch,
       requiredFields: workerRun.requiredFields,
       browserEvidenceRequired: workerRun.browserEvidenceRequired,
       allowNoCodeChanges: shouldAllowNoCodeCompletion(workerRun.runId),
@@ -676,6 +722,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (!completionCheck.valid && output !== 'error' && !hadError) {
       const repairPrompt = buildWorkerCompletionRepairPrompt(
         workerRun.runId,
+        workerRun.dispatchPayload.branch,
         workerRun.requiredFields,
         completionCheck.missing,
         workerOutputBuffer,
@@ -704,6 +751,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         completion = parseCompletionContract(workerOutputBuffer);
         completionCheck = validateCompletionContract(completion, {
           expectedRunId: workerRun.runId,
+          expectedBranch: workerRun.dispatchPayload.branch,
           requiredFields: workerRun.requiredFields,
           browserEvidenceRequired: workerRun.browserEvidenceRequired,
           allowNoCodeChanges: shouldAllowNoCodeCompletion(workerRun.runId),

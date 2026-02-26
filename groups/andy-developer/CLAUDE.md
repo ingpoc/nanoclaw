@@ -48,7 +48,12 @@ BEFORE declaring work "ready for user review" → read /workspace/group/docs/rev
 | Container Path | Purpose | Access |
 |----------------|---------|--------|
 | `/workspace/group` | Role docs and memory | read-write at runtime |
-| `/workspace/extra/repos` | Review repository mount (if available) | allowlist/policy controlled (typically read-only) |
+| `/workspace/extra/repos` | Review repository mount → NanoClawWorkspace | full access for staging |
+
+**Path distinction:**
+
+- **You (andy-developer)** use `/workspace/extra/repos` for local review staging
+- **jarvis-worker-*** use `/workspace/group/workspace` for task execution (different sandbox)
 
 ## Communication
 

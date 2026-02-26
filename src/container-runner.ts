@@ -14,6 +14,7 @@ import {
   GROUPS_DIR,
   IDLE_TIMEOUT,
   TIMEZONE,
+  WORKER_CONTAINER_IMAGE,
 } from './config.js';
 import { readEnvFile } from './env.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -48,6 +49,36 @@ interface VolumeMount {
   hostPath: string;
   containerPath: string;
   readonly: boolean;
+}
+
+function isRetryableSkillSyncError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code;
+  return code === 'ENOENT' || code === 'EBUSY' || code === 'EPERM';
+}
+
+function copySkillDirWithRetry(srcPath: string, dstPath: string): void {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      fs.cpSync(srcPath, dstPath, { recursive: true, dereference: true, force: true });
+      return;
+    } catch (err) {
+      const retryable = isRetryableSkillSyncError(err);
+      if (!retryable || attempt === maxAttempts) {
+        throw err;
+      }
+      logger.warn(
+        {
+          err,
+          srcPath,
+          dstPath,
+          attempt,
+          maxAttempts,
+        },
+        'Retrying skill copy after transient filesystem race',
+      );
+    }
+  }
 }
 
 function syncContainerSkills(skillsSrc: string, skillsDst: string): void {
@@ -96,7 +127,12 @@ function syncContainerSkills(skillsSrc: string, skillsDst: string): void {
       continue;
     }
 
-    fs.cpSync(srcPath, dstPath, { recursive: true, dereference: true, force: true });
+    try {
+      copySkillDirWithRetry(srcPath, dstPath);
+    } catch (err) {
+      logger.warn({ err, srcPath, dstPath }, 'Failed to copy skill directory');
+      throw err;
+    }
   }
 }
 
@@ -226,10 +262,20 @@ function buildVolumeMounts(
  * Secrets are never written to disk or mounted as files.
  */
 function readSecrets(): Record<string, string> {
-  return readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']);
+  return readEnvFile([
+    'CLAUDE_CODE_OAUTH_TOKEN',
+    'ANTHROPIC_API_KEY',
+    'ANTHROPIC_BASE_URL',
+    'OAUTH_API_FALLBACK_ENABLED',
+    'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  ]);
 }
 
-function buildContainerArgs(mounts: VolumeMount[], containerName: string): string[] {
+function buildContainerArgs(
+  mounts: VolumeMount[],
+  containerName: string,
+  image: string,
+): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
   // Pass host timezone so container's local time matches the user's
@@ -260,7 +306,7 @@ function buildContainerArgs(mounts: VolumeMount[], containerName: string): strin
     }
   }
 
-  args.push(CONTAINER_IMAGE);
+  args.push(image);
 
   return args;
 }
@@ -279,7 +325,10 @@ export async function runContainerAgent(
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
-  const containerArgs = buildContainerArgs(mounts, containerName);
+  const image = group.folder.startsWith('jarvis-worker')
+    ? WORKER_CONTAINER_IMAGE
+    : CONTAINER_IMAGE;
+  const containerArgs = buildContainerArgs(mounts, containerName, image);
 
   logger.debug(
     {
@@ -502,6 +551,9 @@ export async function runContainerAgent(
           `=== Input ===`,
           JSON.stringify(input, null, 2),
           ``,
+          `=== Container Image ===`,
+          image,
+          ``,
           `=== Container Args ===`,
           containerArgs.join(' '),
           ``,
@@ -524,6 +576,7 @@ export async function runContainerAgent(
           `=== Input Summary ===`,
           `Prompt length: ${input.prompt.length} chars`,
           `Session ID: ${input.sessionId || 'new'}`,
+          `Container Image: ${image}`,
           ``,
           `=== Mounts ===`,
           mounts
@@ -667,6 +720,24 @@ export interface AvailableGroup {
   isRegistered: boolean;
 }
 
+export interface WorkerRunSnapshotEntry {
+  run_id: string;
+  group_folder: string;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  retry_count: number;
+  result_summary: string | null;
+  error_details: string | null;
+}
+
+export interface WorkerRunsSnapshot {
+  generated_at: string;
+  scope: 'all' | 'jarvis' | 'group';
+  active: WorkerRunSnapshotEntry[];
+  recent: WorkerRunSnapshotEntry[];
+}
+
 /**
  * Write available groups snapshot for the container to read.
  * Only main group can see all available groups (for activation).
@@ -696,4 +767,15 @@ export function writeGroupsSnapshot(
       2,
     ),
   );
+}
+
+export function writeWorkerRunsSnapshot(
+  groupFolder: string,
+  snapshot: WorkerRunsSnapshot,
+): void {
+  const groupIpcDir = resolveGroupIpcPath(groupFolder);
+  fs.mkdirSync(groupIpcDir, { recursive: true });
+
+  const workerRunsFile = path.join(groupIpcDir, 'worker_runs.json');
+  fs.writeFileSync(workerRunsFile, JSON.stringify(snapshot, null, 2));
 }

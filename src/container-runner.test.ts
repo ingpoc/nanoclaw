@@ -12,6 +12,7 @@ const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
 // Mock config
 vi.mock('./config.js', () => ({
   CONTAINER_IMAGE: 'nanoclaw-agent:latest',
+  WORKER_CONTAINER_IMAGE: 'nanoclaw-worker:latest',
   CONTAINER_MAX_OUTPUT_SIZE: 10485760,
   CONTAINER_TIMEOUT: 1800000, // 30min
   DATA_DIR: '/tmp/nanoclaw-test-data',
@@ -95,6 +96,13 @@ import type { RegisteredGroup } from './types.js';
 const testGroup: RegisteredGroup = {
   name: 'Test Group',
   folder: 'test-group',
+  trigger: '@Andy',
+  added_at: new Date().toISOString(),
+};
+
+const workerGroup: RegisteredGroup = {
+  name: 'Worker 1',
+  folder: 'jarvis-worker-1',
   trigger: '@Andy',
   added_at: new Date().toISOString(),
 };
@@ -321,6 +329,60 @@ describe('container-runner timeout behavior', () => {
     );
   });
 
+  it('retries transient ENOENT skill copy races', async () => {
+    const skillsSrc = path.join(process.cwd(), 'container', 'skills');
+    const visibleSkillSrc = path.join(skillsSrc, 'agent-browser');
+    const skillsDst = '/tmp/nanoclaw-test-data/sessions/test-group/.claude/skills';
+    const visibleSkillDst = path.join(skillsDst, 'agent-browser');
+
+    fsMock.existsSync.mockImplementation((target: string) => {
+      if (target === skillsSrc) return true;
+      return false;
+    });
+    fsMock.readdirSync.mockImplementation((target: string) => {
+      if (target === skillsSrc) {
+        return [{ name: 'agent-browser' }];
+      }
+      return [];
+    });
+    fsMock.statSync.mockImplementation((target: string) => ({
+      isDirectory: () => target === visibleSkillSrc,
+    }));
+
+    const transient = new Error('transient race') as NodeJS.ErrnoException;
+    transient.code = 'ENOENT';
+    fsMock.cpSync
+      .mockImplementationOnce(() => {
+        throw transient;
+      })
+      .mockImplementation(() => {});
+
+    const resultPromise = runContainerAgent(
+      testGroup,
+      testInput,
+      () => {},
+      async () => {},
+    );
+
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+    await resultPromise;
+
+    expect(fsMock.cpSync).toHaveBeenCalledTimes(2);
+    expect(fsMock.cpSync).toHaveBeenNthCalledWith(
+      1,
+      visibleSkillSrc,
+      visibleSkillDst,
+      expect.objectContaining({ recursive: true, dereference: true, force: true }),
+    );
+    expect(fsMock.cpSync).toHaveBeenNthCalledWith(
+      2,
+      visibleSkillSrc,
+      visibleSkillDst,
+      expect.objectContaining({ recursive: true, dereference: true, force: true }),
+    );
+  });
+
   it('does not pass --user for Apple Container runtime', async () => {
     const resultPromise = runContainerAgent(
       testGroup,
@@ -337,5 +399,41 @@ describe('container-runner timeout behavior', () => {
     expect(spawnCalls.length).toBeGreaterThan(0);
     const containerArgs = spawnCalls[0][1] as string[];
     expect(containerArgs).not.toContain('--user');
+  });
+
+  it('uses worker image for jarvis-worker groups', async () => {
+    const resultPromise = runContainerAgent(
+      workerGroup,
+      testInput,
+      () => {},
+      async () => {},
+    );
+
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+    await resultPromise;
+
+    const spawnCalls = vi.mocked(spawnMock).mock.calls;
+    expect(spawnCalls.length).toBeGreaterThan(0);
+    const containerArgs = spawnCalls[0][1] as string[];
+    expect(containerArgs).toContain('nanoclaw-worker:latest');
+  });
+
+  it('uses default agent image for non-worker groups', async () => {
+    const resultPromise = runContainerAgent(
+      testGroup,
+      testInput,
+      () => {},
+      async () => {},
+    );
+
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+    await resultPromise;
+
+    const spawnCalls = vi.mocked(spawnMock).mock.calls;
+    expect(spawnCalls.length).toBeGreaterThan(0);
+    const containerArgs = spawnCalls[0][1] as string[];
+    expect(containerArgs).toContain('nanoclaw-agent:latest');
   });
 });

@@ -131,6 +131,12 @@ function canUseApiFallback(groupFolder: string): boolean {
   return OAUTH_FALLBACK_GROUPS.has(groupFolder);
 }
 
+function isFallbackToggleEnabled(secrets: Record<string, string>): boolean {
+  const raw = secrets.OAUTH_API_FALLBACK_ENABLED;
+  if (!raw) return true; // Backwards-compatible default.
+  return raw.trim().toLowerCase() !== 'false';
+}
+
 function isOAuthLimitMessage(text: string): boolean {
   const normalized = text.trim();
   if (!normalized) return false;
@@ -138,12 +144,20 @@ function isOAuthLimitMessage(text: string): boolean {
 }
 
 function selectInitialAuthMode(
+  groupFolder: string,
   secrets: Record<string, string>,
-  allowFallback: boolean,
 ): AuthMode {
   const hasOauth = !!secrets.CLAUDE_CODE_OAUTH_TOKEN;
   const hasApiKey = !!secrets.ANTHROPIC_API_KEY;
+  const laneSupportsSwitch = canUseApiFallback(groupFolder);
+  const preferApiLane = laneSupportsSwitch && isFallbackToggleEnabled(secrets);
 
+  if (laneSupportsSwitch) {
+    if (preferApiLane && hasApiKey) return 'apiKey';
+    if (!preferApiLane && hasOauth) return 'oauth';
+  }
+
+  const allowFallback = laneSupportsSwitch && !preferApiLane;
   if (hasOauth && hasApiKey && allowFallback) return 'oauth';
   if (hasOauth) return 'oauth';
   if (hasApiKey) return 'apiKey';
@@ -158,9 +172,11 @@ function buildSdkEnv(
   const env: Record<string, string | undefined> = { ...baseEnv };
   delete env.CLAUDE_CODE_OAUTH_TOKEN;
   delete env.ANTHROPIC_API_KEY;
+  delete env.ANTHROPIC_BASE_URL;
 
   const oauth = secrets.CLAUDE_CODE_OAUTH_TOKEN;
   const apiKey = secrets.ANTHROPIC_API_KEY;
+  const anthropicBaseUrl = secrets.ANTHROPIC_BASE_URL;
 
   if (authMode === 'oauth') {
     if (oauth) env.CLAUDE_CODE_OAUTH_TOKEN = oauth;
@@ -169,12 +185,24 @@ function buildSdkEnv(
 
   if (authMode === 'apiKey') {
     if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
+    if (anthropicBaseUrl) env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
     return env;
   }
 
   if (oauth) env.CLAUDE_CODE_OAUTH_TOKEN = oauth;
   if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
+  if (anthropicBaseUrl) env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
   return env;
+}
+
+function selectModelForQuery(
+  secrets: Record<string, string>,
+  authMode: AuthMode,
+): string | undefined {
+  if (authMode !== 'apiKey') return undefined;
+  const model = secrets.ANTHROPIC_DEFAULT_SONNET_MODEL?.trim();
+  if (!model) return undefined;
+  return model;
 }
 
 function log(message: string): void {
@@ -424,6 +452,7 @@ async function runQuery(
   containerInput: ContainerInput,
   sdkEnv: Record<string, string | undefined>,
   authMode: AuthMode,
+  model: string | undefined,
   allowApiFallback: boolean,
   resumeAt?: string,
 ): Promise<{
@@ -484,6 +513,9 @@ async function runQuery(
   if (extraDirs.length > 0) {
     log(`Additional directories: ${extraDirs.join(', ')}`);
   }
+  if (model) {
+    log(`Using model: ${model}`);
+  }
 
   for await (const message of query({
     prompt: stream,
@@ -524,6 +556,7 @@ async function runQuery(
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
         PreToolUse: [{ matcher: 'Bash', hooks: [createSanitizeBashHook()] }],
       },
+      ...(model ? { model } : {}),
     }
   })) {
     messageCount++;
@@ -589,15 +622,18 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Build SDK env: keep secrets SDK-only (not process.env), and allow
-  // OAuth->API fallback for selected control lanes.
+  // Build SDK env: keep secrets SDK-only (not process.env), and support
+  // lane routing between OAuth and API-key providers for control lanes.
   const secrets = containerInput.secrets || {};
-  const fallbackEnabledForGroup = canUseApiFallback(containerInput.groupFolder);
-  const authFallbackAvailable = fallbackEnabledForGroup
+  const laneSupportsSwitch = canUseApiFallback(containerInput.groupFolder);
+  const preferApiLane = laneSupportsSwitch && isFallbackToggleEnabled(secrets);
+  const authFallbackAvailable = laneSupportsSwitch
+    && !preferApiLane
     && !!secrets.CLAUDE_CODE_OAUTH_TOKEN
     && !!secrets.ANTHROPIC_API_KEY;
-  let authMode = selectInitialAuthMode(secrets, fallbackEnabledForGroup);
+  let authMode = selectInitialAuthMode(containerInput.groupFolder, secrets);
   let sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+  let model = selectModelForQuery(secrets, authMode);
   log(`Auth mode: ${authMode}${authFallbackAvailable ? ' (API fallback enabled)' : ''}`);
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -635,6 +671,7 @@ async function main(): Promise<void> {
           containerInput,
           sdkEnv,
           authMode,
+          model,
           authFallbackAvailable,
           resumeAt,
         );
@@ -644,6 +681,7 @@ async function main(): Promise<void> {
           log('OAuth query error indicates limit reached, switching to API key fallback');
           authMode = 'apiKey';
           sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+          model = selectModelForQuery(secrets, authMode);
           sessionId = undefined;
           resumeAt = undefined;
           continue;
@@ -654,6 +692,7 @@ async function main(): Promise<void> {
       if (queryResult.fallbackRequested && authFallbackAvailable && authMode === 'oauth') {
         authMode = 'apiKey';
         sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+        model = selectModelForQuery(secrets, authMode);
         sessionId = undefined;
         resumeAt = undefined;
         log('Retrying prompt with API key fallback after OAuth limit signal');

@@ -8,7 +8,9 @@
  * 4. Completion contract is parsed and validated.
  * 5. worker_runs row transitions to review_requested with completion artifacts.
  *
- * Run with: npx tsx scripts/test-worker-e2e.ts
+ * Run with:
+ * - npx tsx scripts/test-worker-e2e.ts               (live DB, default)
+ * - npx tsx scripts/test-worker-e2e.ts --isolated-db (in-memory DB)
  */
 import { execSync } from 'child_process';
 
@@ -20,6 +22,7 @@ import {
   validateDispatchPayload,
 } from '../src/dispatch-validator.js';
 import {
+  initDatabase,
   _initTestDatabase,
   getWorkerRun,
   insertWorkerRun,
@@ -96,18 +99,32 @@ function formatWorkerPrompt(payload: {
     acceptance,
     'Output Contract (MUST be wrapped in <completion> JSON):',
     required,
+    'Execution rules:',
+    '- Run commands only inside /workspace/group.',
+    '- Do not use /workspace/extra or other external directories.',
+    '- Do not clone repositories for this smoke test.',
+    '- Return exactly one <completion> block and no extra prose.',
   ].join('\n\n');
 }
 
 async function main() {
-  const smokeRunId = `smoke-${Date.now()}`;
-  const smokeBranch = `jarvis-smoke-${Date.now()}`;
+  const useIsolatedDb = process.argv.includes('--isolated-db');
+  const useLiveDb = !useIsolatedDb;
+  const uniqueToken = `${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  const smokeRunId = `smoke-${uniqueToken}`;
+  const smokeBranch = `jarvis-smoke-${uniqueToken}`;
+  const smokeFile = `smoke-flow-${uniqueToken}.txt`;
   const startMs = Date.now();
 
-  _initTestDatabase();
+  if (useLiveDb) {
+    initDatabase();
+  } else {
+    _initTestDatabase();
+  }
 
   console.log('=== Andy -> Jarvis Worker Smoke Test ===');
   console.log(`run_id=${smokeRunId}`);
+  console.log(`db_mode=${useLiveDb ? 'live' : 'isolated'}`);
 
   const delegationAllowed = canIpcAccessTarget('andy-developer', false, WORKER_GROUP);
   console.log(`delegation_auth(andy->jarvis): ${delegationAllowed ? 'PASS' : 'FAIL'}`);
@@ -123,14 +140,15 @@ async function main() {
     '- task_type: code',
     '- repo: openclaw-gurusharan/nanoclaw',
     `- branch: ${smokeBranch}`,
-    '- acceptance_tests: ["test -f smoke-flow.txt","grep -q \'smoke\' smoke-flow.txt"]',
+    `- acceptance_tests: ["test -f ${smokeFile}","grep -q 'smoke' ${smokeFile}"]`,
     '- output_contract.required_fields must include:',
     '  ["run_id","branch","commit_sha","files_changed","test_result","risk","pr_skipped_reason"]',
     'The input field must instruct worker to:',
-    '1) create smoke-flow.txt containing "smoke"',
+    `1) create ${smokeFile} containing "smoke"`,
     '2) run the acceptance tests',
     '3) respond with <completion> JSON only',
     '4) set commit_sha to "deadbeef" and pr_skipped_reason to "smoke test no PR"',
+    `5) set files_changed to a JSON array containing "${smokeFile}" (not a number)`,
   ].join('\n');
 
   let andyImage = 'unknown';

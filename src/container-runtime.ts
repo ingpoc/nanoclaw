@@ -255,3 +255,10 @@ export function cleanupOrphans(): void {
     logger.warn({ err }, 'Failed to clean up orphaned containers');
   }
 }
+
+/** Check if there is any running container whose id starts with prefix. */
+export function hasRunningContainerWithPrefix(prefix: string): boolean {
+  return listContainers().some(
+    (c) => c.state === 'running' && c.id.startsWith(prefix),
+  );
+}

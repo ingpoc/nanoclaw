@@ -159,6 +159,21 @@ We don't want configuration sprawl. Every user should customize NanoClaw so that
 
 Ask Claude Code. "Why isn't the scheduler running?" "What's in the recent logs?" "Why did this message not get a response?" That's the AI-native approach that underlies NanoClaw.
 
+For repeatable operator checks, use:
+
+```bash
+bash scripts/jarvis-ops.sh preflight
+bash scripts/jarvis-ops.sh status
+bash scripts/jarvis-ops.sh probe
+bash scripts/jarvis-ops.sh recover
+bash scripts/jarvis-ops.sh smoke
+bash scripts/jarvis-ops.sh watch --lines 120
+```
+
+Notes:
+- `smoke` uses the live `store/messages.db` path by default.
+- Use `bash scripts/jarvis-ops.sh smoke --isolated-db` only when you explicitly want isolated in-memory validation.
+
 **Why isn't the setup working for me?**
 
 If you have issues, during setup, Claude will try to dynamically fix them. If that doesn't work, run `claude`, then run `/debug`. If Claude finds an issue that is likely affecting other users, open a PR to modify the setup SKILL.md.

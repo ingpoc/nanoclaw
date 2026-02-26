@@ -14,8 +14,14 @@ import {
   runContainerAgent,
   writeGroupsSnapshot,
   writeTasksSnapshot,
+  writeWorkerRunsSnapshot,
+  WorkerRunsSnapshot,
 } from './container-runner.js';
-import { cleanupOrphans, ensureContainerRuntimeRunning } from './container-runtime.js';
+import {
+  cleanupOrphans,
+  ensureContainerRuntimeRunning,
+  hasRunningContainerWithPrefix,
+} from './container-runtime.js';
 import {
   completeWorkerRun,
   getAllChats,
@@ -24,6 +30,7 @@ import {
   getAllTasks,
   getMessagesSince,
   getNewMessages,
+  getWorkerRuns,
   getWorkerRun,
   getRouterState,
   initDatabase,
@@ -37,6 +44,7 @@ import {
   updateWorkerRunStatus,
 } from './db.js';
 import {
+  type DispatchPayload,
   parseCompletionContract,
   parseDispatchPayload,
   validateDispatchPayload,
@@ -62,15 +70,184 @@ let messageLoopRunning = false;
 let whatsapp: WhatsAppChannel;
 const channels: Channel[] = [];
 const queue = new GroupQueue();
+const ANDY_DEVELOPER_FOLDER = 'andy-developer';
+const ACTIVE_WORKER_RUN_STATUSES = ['queued', 'running', 'review_requested'] as const;
+const WORKER_RUN_STALE_MS = 2 * 60 * 60 * 1000;
+const WORKER_NO_CONTAINER_GRACE_MS = 5 * 60 * 1000;
+const WORKER_SNAPSHOT_REFRESH_INTERVAL_MS = 15_000;
 
 interface WorkerRunContext {
   runId: string;
   requiredFields: string[];
   browserEvidenceRequired?: boolean;
+  dispatchPayload: DispatchPayload;
 }
 
 function isJarvisWorkerGroup(folder: string): boolean {
   return folder.startsWith('jarvis-worker');
+}
+
+function isSyntheticWorkerGroup(group: RegisteredGroup): boolean {
+  return isJarvisWorkerGroup(group.folder);
+}
+
+function stripCodeFence(raw: string): string {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenced ? fenced[1].trim() : trimmed;
+}
+
+function sanitizeUserFacingOutput(group: RegisteredGroup, text: string): string {
+  if (group.folder !== ANDY_DEVELOPER_FOLDER) return text;
+
+  const parsed = parseDispatchPayload(stripCodeFence(text));
+  if (!parsed) return text;
+
+  return `Dispatched \`${parsed.run_id}\` to \`${parsed.repo}\` on \`${parsed.branch}\` (${parsed.task_type}).`;
+}
+
+function buildWorkerRunsSnapshot(group: RegisteredGroup, isMain: boolean): WorkerRunsSnapshot {
+  let scope: WorkerRunsSnapshot['scope'] = 'group';
+  let groupFolderLike: string | undefined;
+
+  if (isMain) {
+    scope = 'all';
+  } else if (group.folder === ANDY_DEVELOPER_FOLDER) {
+    scope = 'jarvis';
+    groupFolderLike = 'jarvis-worker-%';
+  } else if (isSyntheticWorkerGroup(group)) {
+    scope = 'group';
+    groupFolderLike = group.folder;
+  } else {
+    scope = 'group';
+    groupFolderLike = group.folder;
+  }
+
+  const active = getWorkerRuns({
+    groupFolderLike,
+    statuses: [...ACTIVE_WORKER_RUN_STATUSES],
+    limit: 25,
+  }).map((r) => ({
+    run_id: r.run_id,
+    group_folder: r.group_folder,
+    status: r.status,
+    started_at: r.started_at,
+    completed_at: r.completed_at,
+    retry_count: r.retry_count,
+    result_summary: r.result_summary,
+    error_details: r.error_details,
+  }));
+
+  const recent = getWorkerRuns({
+    groupFolderLike,
+    limit: 25,
+  }).map((r) => ({
+    run_id: r.run_id,
+    group_folder: r.group_folder,
+    status: r.status,
+    started_at: r.started_at,
+    completed_at: r.completed_at,
+    retry_count: r.retry_count,
+    result_summary: r.result_summary,
+    error_details: r.error_details,
+  }));
+
+  return {
+    generated_at: new Date().toISOString(),
+    scope,
+    active,
+    recent,
+  };
+}
+
+function buildAndyPromptWorkerContext(snapshot: WorkerRunsSnapshot): string {
+  const nowMs = Date.now();
+  const currentWindowMs = 60 * 60 * 1000;
+  const currentWindowRuns = snapshot.recent.filter((r) => {
+    const startedMs = Date.parse(r.started_at);
+    return Number.isFinite(startedMs) && (nowMs - startedMs) <= currentWindowMs;
+  });
+  const currentFailures = snapshot.recent.filter((r) => {
+    if (r.status !== 'failed' && r.status !== 'failed_contract') return false;
+    const startedMs = Date.parse(r.started_at);
+    return Number.isFinite(startedMs) && (nowMs - startedMs) <= currentWindowMs;
+  }).length;
+  const currentPasses = snapshot.recent.filter((r) => {
+    if (r.status !== 'review_requested' && r.status !== 'done') return false;
+    const startedMs = Date.parse(r.started_at);
+    return Number.isFinite(startedMs) && (nowMs - startedMs) <= currentWindowMs;
+  }).length;
+  const workerLaneNames = Array.from(
+    new Set(
+      snapshot.recent
+        .map((r) => r.group_folder)
+        .filter((folder) => isJarvisWorkerGroup(folder)),
+    ),
+  ).sort();
+  const laneSummaryLines = workerLaneNames.length > 0
+    ? workerLaneNames.map((lane) => {
+      const laneRuns = currentWindowRuns.filter((r) => r.group_folder === lane);
+      const pass = laneRuns.filter((r) => r.status === 'review_requested' || r.status === 'done').length;
+      const fail = laneRuns.filter((r) => r.status === 'failed' || r.status === 'failed_contract').length;
+      const active = laneRuns.filter((r) => r.status === 'queued' || r.status === 'running').length;
+      return `- ${lane}: pass=${pass}, fail=${fail}, active=${active}, runs=${laneRuns.length}`;
+    }).join('\n')
+    : '- none';
+
+  const activeLines = snapshot.active.length > 0
+    ? snapshot.active
+      .slice(0, 8)
+      .map((r) => `- ${r.run_id} | ${r.group_folder} | ${r.status} | started ${r.started_at}`)
+      .join('\n')
+    : '- none';
+
+  const recentLines = snapshot.recent.length > 0
+    ? snapshot.recent
+      .slice(0, 8)
+      .map((r) => {
+        const when = r.completed_at ?? r.started_at;
+        const summary = r.result_summary || r.error_details || '-';
+        return `- ${r.run_id} | ${r.group_folder} | ${r.status} | ${when} | ${summary}`;
+      })
+      .join('\n')
+    : '- none';
+
+  return [
+    '<worker_status_source_of_truth>',
+    `generated_at: ${snapshot.generated_at}`,
+    `now: ${new Date(nowMs).toISOString()}`,
+    'Use this DB snapshot as the single source of truth when answering status/queue questions.',
+    'Classify issues older than 60 minutes as historical unless there are fresh failures in the current window.',
+    `Current-window (last 60m): passes=${currentPasses}, failures=${currentFailures}`,
+    'Do not claim a specific worker lane is broken without at least one failure in that lane in the last 60 minutes.',
+    'If a worker lane has no runs in the current window, report it as unknown/no recent evidence.',
+    'Current-window worker lane summary:',
+    laneSummaryLines,
+    'Do not rely on memory for queued/running/completed worker state.',
+    'Active worker runs:',
+    activeLines,
+    'Recent worker runs:',
+    recentLines,
+    '</worker_status_source_of_truth>',
+  ].join('\n');
+}
+
+function refreshWorkerRunSnapshotsForGroups(folders?: string[]): void {
+  const seen = new Set<string>();
+  const targets: RegisteredGroup[] = [];
+
+  for (const group of Object.values(registeredGroups)) {
+    if (seen.has(group.folder)) continue;
+    seen.add(group.folder);
+    targets.push(group);
+  }
+
+  for (const group of targets) {
+    if (folders && !folders.includes(group.folder)) continue;
+    const isMain = group.folder === MAIN_GROUP_FOLDER;
+    const snapshot = buildWorkerRunsSnapshot(group, isMain);
+    writeWorkerRunsSnapshot(group.folder, snapshot);
+  }
 }
 
 function extractWorkerRunContext(
@@ -88,14 +265,241 @@ function extractWorkerRunContext(
       runId: payload.run_id,
       requiredFields: payload.output_contract.required_fields,
       browserEvidenceRequired: payload.output_contract.browser_evidence_required,
+      dispatchPayload: payload,
     };
   }
 
   return null;
 }
 
+function buildWorkerDispatchPrompt(payload: DispatchPayload): string {
+  const acceptanceTests = payload.acceptance_tests
+    .map((test, idx) => `${idx + 1}. ${test}`)
+    .join('\n');
+  const requiredFields = payload.output_contract.required_fields
+    .map((field) => `- ${field}`)
+    .join('\n');
+
+  return [
+    'You are a Jarvis worker.',
+    'Execute exactly one dispatch task and return a strict completion contract.',
+    `Run ID: ${payload.run_id}`,
+    `Task Type: ${payload.task_type}`,
+    `Repository: ${payload.repo}`,
+    `Branch: ${payload.branch}`,
+    `Priority: ${payload.priority ?? 'normal'}`,
+    `UI impacting: ${payload.ui_impacting === true ? 'true' : 'false'}`,
+    `Browser evidence required: ${payload.output_contract.browser_evidence_required === true ? 'true' : 'false'}`,
+    '',
+    'Task instructions:',
+    payload.input,
+    '',
+    'Acceptance tests (all required):',
+    acceptanceTests,
+    '',
+    'Completion output rules (strict):',
+    '- Return exactly one <completion>...</completion> block.',
+    '- The block body must be valid JSON.',
+    '- Do not include markdown fences.',
+    '- Do not include narrative text before or after the <completion> block.',
+    '- Execute commands from /workspace/group only; do not use /workspace/extra or other external directories.',
+    `- completion.run_id must exactly equal "${payload.run_id}".`,
+    `- completion.branch must exactly equal "${payload.branch}".`,
+    '- completion.commit_sha must be a real 6-40 char git SHA from the checked-out branch.',
+    '- Only no-code runs with run_id prefix ping-/smoke-/health-/sync- may use commit_sha placeholder n/a/none and empty files_changed.',
+    '- files_changed must be a JSON array of changed file paths.',
+    '',
+    'Required completion fields:',
+    requiredFields,
+  ].join('\n');
+}
+
+function buildWorkerCompletionRepairPrompt(
+  runId: string,
+  expectedBranch: string,
+  requiredFields: string[],
+  missingFields: string[],
+  outputBuffer: string,
+): string {
+  const requiredList = requiredFields.map((field) => `- ${field}`).join('\n');
+  const missingList = missingFields.length > 0
+    ? missingFields.map((field) => `- ${field}`).join('\n')
+    : '- unknown';
+  const excerpt = outputBuffer.slice(-1600);
+
+  return [
+    'Your previous response did not satisfy the required completion contract.',
+    `Run ID: ${runId}`,
+    '',
+    'Missing or invalid fields:',
+    missingList,
+    '',
+    'Required fields:',
+    requiredList,
+    '',
+    'Re-emit exactly one corrected <completion>...</completion> block.',
+    'Rules:',
+    '- Do not call tools.',
+    '- Do not run commands.',
+    '- Do not include analysis or prose before/after the completion block.',
+    '- completion.run_id must exactly match the run ID above.',
+    `- completion.branch must exactly equal "${expectedBranch}".`,
+    '- completion.commit_sha must be a valid 6-40 char hex SHA (or n/a/none only for ping-/smoke-/health-/sync- no-code runs).',
+    '- files_changed must be a JSON array of strings.',
+    '',
+    'Previous output excerpt (for correction only):',
+    excerpt,
+  ].join('\n');
+}
+
+function selectMessagesForExecution(
+  group: RegisteredGroup,
+  messages: NewMessage[],
+): NewMessage[] {
+  if (!isJarvisWorkerGroup(group.folder) || messages.length <= 1) {
+    return messages;
+  }
+
+  for (const msg of messages) {
+    const payload = parseDispatchPayload(msg.content);
+    if (!payload) continue;
+    const validity = validateDispatchPayload(payload);
+    if (validity.valid) {
+      // Worker lanes must process one canonical dispatch at a time.
+      return [msg];
+    }
+  }
+
+  return messages;
+}
+
 function isActiveOrTerminalWorkerStatus(status: string): boolean {
   return status === 'running' || status === 'review_requested' || status === 'done';
+}
+
+function shouldAllowNoCodeCompletion(runId: string): boolean {
+  return /^(ping|smoke|health|sync)-/i.test(runId);
+}
+
+function findChatJidByGroupFolder(groupFolder: string): string | undefined {
+  return Object.entries(registeredGroups).find(
+    ([, group]) => group.folder === groupFolder,
+  )?.[0];
+}
+
+function reconcileStaleWorkerRuns(): void {
+  const now = Date.now();
+  let changed = false;
+  const activeRuns = getWorkerRuns({
+    groupFolderLike: 'jarvis-worker-%',
+    statuses: ['running', 'queued'],
+    limit: 200,
+  });
+
+  for (const run of activeRuns) {
+    // Invariant violation: active status should not have completed_at.
+    if (run.completed_at) {
+      completeWorkerRun(
+        run.run_id,
+        'failed',
+        'Auto-reconciled inconsistent worker run state',
+        JSON.stringify({
+          reason: 'active_status_with_completed_at',
+          status: run.status,
+          started_at: run.started_at,
+          completed_at: run.completed_at,
+        }),
+      );
+      logger.warn(
+        { runId: run.run_id, status: run.status },
+        'Reconciled worker run with active status and completed_at',
+      );
+      changed = true;
+      continue;
+    }
+
+    const started = Date.parse(run.started_at);
+    if (!Number.isFinite(started)) continue;
+    const ageMs = now - started;
+
+    if (run.status === 'queued') {
+      const chatJid = findChatJidByGroupFolder(run.group_folder);
+      const cursor = chatJid ? lastAgentTimestamp[chatJid] : undefined;
+      // If the group's processing cursor is already past this run's enqueue timestamp,
+      // the dispatch message is no longer reachable and this queued row is orphaned.
+      if (cursor && run.started_at <= cursor) {
+        completeWorkerRun(
+          run.run_id,
+          'failed',
+          'Auto-failed orphaned queued worker run (cursor past dispatch)',
+          JSON.stringify({
+            reason: 'queued_cursor_past_dispatch',
+            status: run.status,
+            started_at: run.started_at,
+            cursor,
+            stale_ms: ageMs,
+          }),
+        );
+        logger.warn(
+          {
+            runId: run.run_id,
+            group: run.group_folder,
+            startedAt: run.started_at,
+            cursor,
+          },
+          'Auto-failed queued worker run with cursor past dispatch timestamp',
+        );
+        changed = true;
+        continue;
+      }
+    }
+
+    if (run.status === 'running' && ageMs > WORKER_NO_CONTAINER_GRACE_MS) {
+      const prefix = `nanoclaw-${run.group_folder}-`;
+      if (!hasRunningContainerWithPrefix(prefix)) {
+        completeWorkerRun(
+          run.run_id,
+          'failed',
+          'Auto-failed worker run with no active container',
+          JSON.stringify({
+            reason: 'running_without_container',
+            status: run.status,
+            started_at: run.started_at,
+            stale_ms: ageMs,
+          }),
+        );
+        logger.warn(
+          { runId: run.run_id, group: run.group_folder, startedAt: run.started_at },
+          'Auto-failed running worker run with no container',
+        );
+        changed = true;
+        continue;
+      }
+    }
+
+    if (ageMs <= WORKER_RUN_STALE_MS) continue;
+
+    completeWorkerRun(
+      run.run_id,
+      'failed',
+      'Auto-failed stale worker run watchdog timeout',
+      JSON.stringify({
+        reason: 'stale_worker_run_watchdog',
+        status: run.status,
+        started_at: run.started_at,
+        stale_ms: now - started,
+      }),
+    );
+    logger.warn(
+      { runId: run.run_id, status: run.status, startedAt: run.started_at },
+      'Auto-failed stale worker run',
+    );
+    changed = true;
+  }
+
+  if (changed) {
+    refreshWorkerRunSnapshotsForGroups();
+  }
 }
 
 function loadState(): void {
@@ -109,6 +513,7 @@ function loadState(): void {
   }
   sessions = getAllSessions();
   registeredGroups = getAllRegisteredGroups();
+  reconcileStaleWorkerRuns();
   logger.info(
     { groupCount: Object.keys(registeredGroups).length },
     'State loaded',
@@ -179,7 +584,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   if (!group) return true;
 
   const channel = findChannel(channels, chatJid);
-  if (!channel) {
+  const syntheticWorker = isSyntheticWorkerGroup(group);
+  if (!channel && !syntheticWorker) {
     console.log(`Warning: no channel owns JID ${chatJid}, skipping messages`);
     return true;
   }
@@ -190,24 +596,27 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   const missedMessages = getMessagesSince(chatJid, sinceTimestamp, ASSISTANT_NAME);
 
   if (missedMessages.length === 0) return true;
+  const messagesToProcess = selectMessagesForExecution(group, missedMessages);
+  const batchLastTimestamp = messagesToProcess[messagesToProcess.length - 1].timestamp;
 
   // For non-main groups, check if trigger is required and present
   if (!isMainGroup && group.requiresTrigger !== false) {
-    const hasTrigger = missedMessages.some((m) =>
+    const hasTrigger = messagesToProcess.some((m) =>
       TRIGGER_PATTERN.test(m.content.trim()),
     );
     if (!hasTrigger) return true;
   }
 
-  const prompt = formatMessages(missedMessages);
-  const workerRun = extractWorkerRunContext(group, missedMessages);
+  const workerRun = extractWorkerRunContext(group, messagesToProcess);
+  const prompt = workerRun
+    ? buildWorkerDispatchPrompt(workerRun.dispatchPayload)
+    : formatMessages(messagesToProcess);
   let workerOutputBuffer = '';
 
   if (workerRun) {
     const existingRun = getWorkerRun(workerRun.runId);
     if (existingRun && isActiveOrTerminalWorkerStatus(existingRun.status)) {
-      lastAgentTimestamp[chatJid] =
-        missedMessages[missedMessages.length - 1].timestamp;
+      lastAgentTimestamp[chatJid] = batchLastTimestamp;
       saveState();
       logger.warn(
         {
@@ -223,8 +632,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (!existingRun || existingRun.status === 'failed' || existingRun.status === 'failed_contract') {
       const insertState = insertWorkerRun(workerRun.runId, group.folder);
       if (insertState === 'duplicate') {
-        lastAgentTimestamp[chatJid] =
-          missedMessages[missedMessages.length - 1].timestamp;
+        lastAgentTimestamp[chatJid] = batchLastTimestamp;
         saveState();
         logger.warn(
           { runId: workerRun.runId, group: group.name },
@@ -239,17 +647,17 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
 
     updateWorkerRunStatus(workerRun.runId, 'running');
+    refreshWorkerRunSnapshotsForGroups();
   }
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
   // these messages. Save the old cursor so we can roll back on error.
   const previousCursor = lastAgentTimestamp[chatJid] || '';
-  lastAgentTimestamp[chatJid] =
-    missedMessages[missedMessages.length - 1].timestamp;
+  lastAgentTimestamp[chatJid] = batchLastTimestamp;
   saveState();
 
   logger.info(
-    { group: group.name, messageCount: missedMessages.length },
+    { group: group.name, messageCount: messagesToProcess.length },
     'Processing messages',
   );
 
@@ -264,7 +672,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }, IDLE_TIMEOUT);
   };
 
-  await channel.setTyping?.(chatJid, true);
+  await channel?.setTyping?.(chatJid, true);
   let hadError = false;
   let outputSentToUser = false;
 
@@ -279,8 +687,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
       logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
       if (text) {
-        await channel.sendMessage(chatJid, text);
-        outputSentToUser = true;
+        const outboundText = sanitizeUserFacingOutput(group, text);
+        if (outboundText && channel) {
+          await channel.sendMessage(chatJid, outboundText);
+          outputSentToUser = true;
+        }
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)
       resetIdleTimer();
@@ -295,16 +706,68 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
   });
 
-  await channel.setTyping?.(chatJid, false);
+  await channel?.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
 
   if (workerRun) {
-    const completion = parseCompletionContract(workerOutputBuffer);
-    const completionCheck = validateCompletionContract(completion, {
+    let completion = parseCompletionContract(workerOutputBuffer);
+    let completionCheck = validateCompletionContract(completion, {
       expectedRunId: workerRun.runId,
+      expectedBranch: workerRun.dispatchPayload.branch,
       requiredFields: workerRun.requiredFields,
       browserEvidenceRequired: workerRun.browserEvidenceRequired,
+      allowNoCodeChanges: shouldAllowNoCodeCompletion(workerRun.runId),
     });
+
+    if (!completionCheck.valid && output !== 'error' && !hadError) {
+      const repairPrompt = buildWorkerCompletionRepairPrompt(
+        workerRun.runId,
+        workerRun.dispatchPayload.branch,
+        workerRun.requiredFields,
+        completionCheck.missing,
+        workerOutputBuffer,
+      );
+
+      let repairBuffer = '';
+      let repairHadError = false;
+      const repairOutput = await runAgent(group, repairPrompt, chatJid, async (result) => {
+        if (result.result) {
+          const raw = typeof result.result === 'string'
+            ? result.result
+            : JSON.stringify(result.result);
+          repairBuffer += `${raw}\n`;
+        }
+        if (result.status === 'error') {
+          repairHadError = true;
+        }
+      });
+
+      if (repairOutput === 'error' || repairHadError) {
+        hadError = true;
+      }
+
+      if (repairBuffer.trim()) {
+        workerOutputBuffer += `\n${repairBuffer}`;
+        completion = parseCompletionContract(workerOutputBuffer);
+        completionCheck = validateCompletionContract(completion, {
+          expectedRunId: workerRun.runId,
+          expectedBranch: workerRun.dispatchPayload.branch,
+          requiredFields: workerRun.requiredFields,
+          browserEvidenceRequired: workerRun.browserEvidenceRequired,
+          allowNoCodeChanges: shouldAllowNoCodeCompletion(workerRun.runId),
+        });
+      }
+
+      logger.info(
+        {
+          runId: workerRun.runId,
+          group: group.name,
+          repaired: completionCheck.valid,
+          missingAfterRepair: completionCheck.missing,
+        },
+        'Worker completion repair attempted',
+      );
+    }
 
     if (completion && completionCheck.valid) {
       updateWorkerRunCompletion(workerRun.runId, {
@@ -316,15 +779,26 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         risk_summary: completion.risk,
       });
       updateWorkerRunStatus(workerRun.runId, 'review_requested');
+      refreshWorkerRunSnapshotsForGroups();
       logger.info(
         { runId: workerRun.runId, group: group.name },
         'Worker completion contract accepted',
       );
     } else if (output === 'error' || hadError) {
+      const missingSummary = completionCheck.missing.join(', ');
       completeWorkerRun(
         workerRun.runId,
         'failed',
-        completionCheck.missing.join(', ') || 'worker execution failed',
+        missingSummary
+          ? `Worker execution failed; missing: ${missingSummary}`
+          : 'worker execution failed',
+        JSON.stringify({
+          reason: 'worker execution failed',
+          missing: completionCheck.missing,
+          output_status: output,
+          had_error: hadError,
+          output_excerpt: workerOutputBuffer.slice(0, 2000),
+        }),
       );
       logger.warn(
         {
@@ -334,11 +808,20 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         },
         'Worker run marked failed',
       );
+      refreshWorkerRunSnapshotsForGroups();
     } else {
+      const missingSummary = completionCheck.missing.join(', ');
       completeWorkerRun(
         workerRun.runId,
         'failed_contract',
-        completionCheck.missing.join(', ') || 'invalid completion contract',
+        missingSummary
+          ? `Completion contract missing: ${missingSummary}`
+          : 'invalid completion contract',
+        JSON.stringify({
+          reason: 'invalid completion contract',
+          missing: completionCheck.missing,
+          output_excerpt: workerOutputBuffer.slice(0, 2000),
+        }),
       );
       logger.warn(
         {
@@ -348,6 +831,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         },
         'Worker run marked failed_contract',
       );
+      refreshWorkerRunSnapshotsForGroups();
     }
   }
 
@@ -363,6 +847,19 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     saveState();
     logger.warn({ group: group.name }, 'Agent error, rolled back message cursor for retry');
     return false;
+  }
+
+  const pendingAfter = getMessagesSince(
+    chatJid,
+    lastAgentTimestamp[chatJid] || '',
+    ASSISTANT_NAME,
+  );
+  if (pendingAfter.length > 0) {
+    logger.debug(
+      { group: group.name, pendingCount: pendingAfter.length },
+      'Pending messages remain after processing, enqueueing follow-up run',
+    );
+    queue.enqueueMessageCheck(chatJid);
   }
 
   return true;
@@ -402,6 +899,12 @@ async function runAgent(
     new Set(Object.keys(registeredGroups)),
   );
 
+  const workerRunsSnapshot = buildWorkerRunsSnapshot(group, isMain);
+  writeWorkerRunsSnapshot(group.folder, workerRunsSnapshot);
+  const effectivePrompt = group.folder === ANDY_DEVELOPER_FOLDER
+    ? `${buildAndyPromptWorkerContext(workerRunsSnapshot)}\n\n${prompt}`
+    : prompt;
+
   // Wrap onOutput to track session ID from streamed results
   const wrappedOnOutput = onOutput
     ? async (output: ContainerOutput) => {
@@ -417,7 +920,7 @@ async function runAgent(
     const output = await runContainerAgent(
       group,
       {
-        prompt,
+        prompt: effectivePrompt,
         sessionId,
         groupFolder: group.folder,
         chatJid,
@@ -456,9 +959,16 @@ async function startMessageLoop(): Promise<void> {
   messageLoopRunning = true;
 
   logger.info(`NanoClaw running (trigger: @${ASSISTANT_NAME})`);
+  let lastWorkerSnapshotRefresh = 0;
 
   while (true) {
     try {
+      reconcileStaleWorkerRuns();
+      const now = Date.now();
+      if (now - lastWorkerSnapshotRefresh >= WORKER_SNAPSHOT_REFRESH_INTERVAL_MS) {
+        refreshWorkerRunSnapshotsForGroups();
+        lastWorkerSnapshotRefresh = now;
+      }
       const jids = Object.keys(registeredGroups);
       const { messages, newTimestamp } = getNewMessages(jids, lastTimestamp, ASSISTANT_NAME);
 
@@ -485,7 +995,8 @@ async function startMessageLoop(): Promise<void> {
           if (!group) continue;
 
           const channel = findChannel(channels, chatJid);
-          if (!channel) {
+          const syntheticWorker = isSyntheticWorkerGroup(group);
+          if (!channel && !syntheticWorker) {
             console.log(`Warning: no channel owns JID ${chatJid}, skipping messages`);
             continue;
           }
@@ -514,6 +1025,13 @@ async function startMessageLoop(): Promise<void> {
             allPending.length > 0 ? allPending : groupMessages;
           const formatted = formatMessages(messagesToSend);
 
+          // Worker lanes must execute one dispatch per container run.
+          // Never pipe additional dispatches into an active worker session.
+          if (syntheticWorker) {
+            queue.enqueueMessageCheck(chatJid);
+            continue;
+          }
+
           if (queue.sendMessage(chatJid, formatted)) {
             logger.debug(
               { chatJid, count: messagesToSend.length },
@@ -523,7 +1041,7 @@ async function startMessageLoop(): Promise<void> {
               messagesToSend[messagesToSend.length - 1].timestamp;
             saveState();
             // Show typing indicator while the container processes the piped message
-            channel.setTyping?.(chatJid, true)?.catch((err) =>
+            channel?.setTyping?.(chatJid, true)?.catch((err) =>
               logger.warn({ chatJid, err }, 'Failed to set typing indicator'),
             );
           } else {
@@ -608,7 +1126,24 @@ async function main(): Promise<void> {
     },
   });
   startIpcWatcher({
-    sendMessage: (jid, text) => {
+    sendMessage: (jid, text, sourceGroup) => {
+      const target = registeredGroups[jid];
+      if (target && isSyntheticWorkerGroup(target)) {
+        const timestamp = new Date().toISOString();
+        // Ensure parent chat row exists before inserting message row (FK on messages.chat_jid).
+        storeChatMetadata(jid, timestamp, target.name, 'nanoclaw', true);
+        storeMessage({
+          id: `ipc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          chat_jid: jid,
+          sender: `${sourceGroup}@nanoclaw`,
+          sender_name: sourceGroup,
+          content: text,
+          timestamp,
+          is_from_me: false,
+          is_bot_message: false,
+        });
+        return Promise.resolve();
+      }
       const channel = findChannel(channels, jid);
       if (!channel) throw new Error(`No channel for JID: ${jid}`);
       return channel.sendMessage(jid, text);

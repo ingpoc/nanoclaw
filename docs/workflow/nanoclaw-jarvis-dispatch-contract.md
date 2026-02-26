@@ -79,6 +79,16 @@ Worker output must include a completion block:
 
 `pr_skipped_reason` may be used instead of `pr_url`.
 
+### `commit_sha` Expectations
+
+- Default rule: `commit_sha` must be a real git SHA (6-40 hex chars) from the worker branch used for the run.
+- Placeholder values (`n/a`, `none`) are accepted only for no-code operational runs with `run_id` prefix:
+  - `ping-`
+  - `smoke-`
+  - `health-`
+  - `sync-`
+- For all feature/fix/implement tasks, placeholder commit values must fail contract validation.
+
 ## Validation Gates
 
 A worker run transitions to `review_requested` only when:
@@ -86,7 +96,8 @@ A worker run transitions to `review_requested` only when:
 1. completion block is parseable JSON
 2. completion includes all required artifacts
 3. completion `run_id` matches dispatch `run_id`
-4. when browser evidence is required, completion includes valid `browser_evidence`:
+4. completion `branch` matches dispatch `branch`
+5. when browser evidence is required, completion includes valid `browser_evidence`:
    - `base_url` must be `http(s)://127.0.0.1:<port>/...`
    - `tools_listed` must be non-empty
    - `execute_tool_evidence` must be non-empty

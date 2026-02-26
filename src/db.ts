@@ -5,7 +5,12 @@ import path from 'path';
 import { ASSISTANT_NAME, DATA_DIR, STORE_DIR } from './config.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
-import { NewMessage, RegisteredGroup, ScheduledTask, TaskRunLog } from './types.js';
+import {
+  NewMessage,
+  RegisteredGroup,
+  ScheduledTask,
+  TaskRunLog,
+} from './types.js';
 
 let db: Database.Database;
 
@@ -123,26 +128,30 @@ function createSchema(database: Database.Database): void {
       `ALTER TABLE messages ADD COLUMN is_bot_message INTEGER DEFAULT 0`,
     );
     // Backfill: mark existing bot messages that used the content prefix pattern
-    database.prepare(
-      `UPDATE messages SET is_bot_message = 1 WHERE content LIKE ?`,
-    ).run(`${ASSISTANT_NAME}:%`);
+    database
+      .prepare(`UPDATE messages SET is_bot_message = 1 WHERE content LIKE ?`)
+      .run(`${ASSISTANT_NAME}:%`);
   } catch {
     /* column already exists */
   }
 
   // Add channel and is_group columns if they don't exist (migration for existing DBs)
   try {
-    database.exec(
-      `ALTER TABLE chats ADD COLUMN channel TEXT`,
-    );
-    database.exec(
-      `ALTER TABLE chats ADD COLUMN is_group INTEGER DEFAULT 0`,
-    );
+    database.exec(`ALTER TABLE chats ADD COLUMN channel TEXT`);
+    database.exec(`ALTER TABLE chats ADD COLUMN is_group INTEGER DEFAULT 0`);
     // Backfill from JID patterns
-    database.exec(`UPDATE chats SET channel = 'whatsapp', is_group = 1 WHERE jid LIKE '%@g.us'`);
-    database.exec(`UPDATE chats SET channel = 'whatsapp', is_group = 0 WHERE jid LIKE '%@s.whatsapp.net'`);
-    database.exec(`UPDATE chats SET channel = 'discord', is_group = 1 WHERE jid LIKE 'dc:%'`);
-    database.exec(`UPDATE chats SET channel = 'telegram', is_group = 1 WHERE jid LIKE 'tg:%'`);
+    database.exec(
+      `UPDATE chats SET channel = 'whatsapp', is_group = 1 WHERE jid LIKE '%@g.us'`,
+    );
+    database.exec(
+      `UPDATE chats SET channel = 'whatsapp', is_group = 0 WHERE jid LIKE '%@s.whatsapp.net'`,
+    );
+    database.exec(
+      `UPDATE chats SET channel = 'discord', is_group = 1 WHERE jid LIKE 'dc:%'`,
+    );
+    database.exec(
+      `UPDATE chats SET channel = 'telegram', is_group = 1 WHERE jid LIKE 'tg:%'`,
+    );
   } catch {
     /* columns already exist */
   }
@@ -569,14 +578,12 @@ export function getRegisteredGroup(
     containerConfig: row.container_config
       ? JSON.parse(row.container_config)
       : undefined,
-    requiresTrigger: row.requires_trigger === null ? undefined : row.requires_trigger === 1,
+    requiresTrigger:
+      row.requires_trigger === null ? undefined : row.requires_trigger === 1,
   };
 }
 
-export function setRegisteredGroup(
-  jid: string,
-  group: RegisteredGroup,
-): void {
+export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
   if (!isValidGroupFolder(group.folder)) {
     throw new Error(`Invalid group folder "${group.folder}" for JID ${jid}`);
   }
@@ -595,9 +602,7 @@ export function setRegisteredGroup(
 }
 
 export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
-  const rows = db
-    .prepare('SELECT * FROM registered_groups')
-    .all() as Array<{
+  const rows = db.prepare('SELECT * FROM registered_groups').all() as Array<{
     jid: string;
     name: string;
     folder: string;
@@ -623,7 +628,8 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
       containerConfig: row.container_config
         ? JSON.parse(row.container_config)
         : undefined,
-      requiresTrigger: row.requires_trigger === null ? undefined : row.requires_trigger === 1,
+      requiresTrigger:
+        row.requires_trigger === null ? undefined : row.requires_trigger === 1,
     };
   }
   return result;
@@ -639,6 +645,62 @@ export type WorkerRunStatus =
   | 'done'
   | 'failed';
 
+export interface WorkerRunRecord {
+  run_id: string;
+  group_folder: string;
+  status: WorkerRunStatus;
+  started_at: string;
+  completed_at: string | null;
+  retry_count: number;
+  result_summary: string | null;
+  error_details: string | null;
+  branch_name: string | null;
+  pr_url: string | null;
+  commit_sha: string | null;
+  files_changed: string | null;
+  test_summary: string | null;
+  risk_summary: string | null;
+}
+
+const TERMINAL_WORKER_RUN_STATUSES: Set<WorkerRunStatus> = new Set([
+  'review_requested',
+  'done',
+  'failed',
+  'failed_contract',
+]);
+
+function isTerminalWorkerRunStatus(status: WorkerRunStatus): boolean {
+  return TERMINAL_WORKER_RUN_STATUSES.has(status);
+}
+
+function canTransitionWorkerRunStatus(
+  current: WorkerRunStatus,
+  next: WorkerRunStatus,
+): boolean {
+  if (current === next) return true;
+  switch (current) {
+    case 'queued':
+      return next === 'running'
+        || next === 'review_requested'
+        || next === 'done'
+        || next === 'failed'
+        || next === 'failed_contract';
+    case 'running':
+      return next === 'review_requested'
+        || next === 'done'
+        || next === 'failed'
+        || next === 'failed_contract';
+    case 'review_requested':
+      return next === 'done';
+    case 'done':
+    case 'failed':
+    case 'failed_contract':
+      return false;
+    default:
+      return false;
+  }
+}
+
 /**
  * Insert a worker run record.
  * - 'new': run_id not seen before, inserted with status 'queued'
@@ -653,7 +715,20 @@ export function insertWorkerRun(
   if (existing) {
     if (existing.status === 'failed' || existing.status === 'failed_contract') {
       db.prepare(
-        `UPDATE worker_runs SET status = 'queued', retry_count = retry_count + 1, started_at = ? WHERE run_id = ?`,
+        `UPDATE worker_runs
+         SET status = 'queued',
+             started_at = ?,
+             completed_at = NULL,
+             result_summary = NULL,
+             error_details = NULL,
+             branch_name = NULL,
+             pr_url = NULL,
+             commit_sha = NULL,
+             files_changed = NULL,
+             test_summary = NULL,
+             risk_summary = NULL,
+             retry_count = retry_count + 1
+         WHERE run_id = ?`,
       ).run(new Date().toISOString(), runId);
       return 'retry';
     }
@@ -667,17 +742,31 @@ export function insertWorkerRun(
 }
 
 export function updateWorkerRunStatus(runId: string, status: WorkerRunStatus): void {
-  const terminal =
-    status === 'done'
-    || status === 'failed'
-    || status === 'failed_contract'
-    || status === 'review_requested';
-  if (terminal) {
+  const current = getWorkerRun(runId);
+  if (!current) {
+    logger.warn({ runId, status }, 'Ignored worker status update for unknown run');
+    return;
+  }
+
+  const fromStatus = current.status as WorkerRunStatus;
+  if (!canTransitionWorkerRunStatus(fromStatus, status)) {
+    logger.warn(
+      { runId, from: fromStatus, to: status },
+      'Ignored invalid worker status transition',
+    );
+    return;
+  }
+
+  if (isTerminalWorkerRunStatus(status)) {
     db.prepare(
-      `UPDATE worker_runs SET status = ?, completed_at = ? WHERE run_id = ?`,
+      `UPDATE worker_runs
+       SET status = ?, completed_at = COALESCE(completed_at, ?)
+       WHERE run_id = ?`,
     ).run(status, new Date().toISOString(), runId);
   } else {
-    db.prepare(`UPDATE worker_runs SET status = ? WHERE run_id = ?`).run(status, runId);
+    db.prepare(
+      `UPDATE worker_runs SET status = ?, completed_at = NULL WHERE run_id = ?`,
+    ).run(status, runId);
   }
 }
 
@@ -709,17 +798,51 @@ export function completeWorkerRun(
   runId: string,
   status: WorkerRunStatus,
   resultSummary?: string,
+  errorDetails?: string,
 ): void {
+  const current = getWorkerRun(runId);
+  if (!current) {
+    logger.warn({ runId, status }, 'Ignored completeWorkerRun for unknown run');
+    return;
+  }
+
+  if (!isTerminalWorkerRunStatus(status)) {
+    logger.warn(
+      { runId, status },
+      'Ignored completeWorkerRun with non-terminal status',
+    );
+    return;
+  }
+
+  const fromStatus = current.status as WorkerRunStatus;
+  if (!canTransitionWorkerRunStatus(fromStatus, status)) {
+    logger.warn(
+      { runId, from: fromStatus, to: status },
+      'Ignored invalid worker completion transition',
+    );
+    return;
+  }
+
   db.prepare(
-    `UPDATE worker_runs SET status = ?, completed_at = ?, result_summary = ? WHERE run_id = ?`,
-  ).run(status, new Date().toISOString(), resultSummary ?? null, runId);
+    `UPDATE worker_runs SET status = ?, completed_at = ?, result_summary = ?, error_details = ? WHERE run_id = ?`,
+  ).run(
+    status,
+    new Date().toISOString(),
+    resultSummary ?? null,
+    errorDetails ?? null,
+    runId,
+  );
 }
 
 export function getWorkerRun(runId: string): {
   run_id: string;
+  group_folder: string;
   status: string;
+  started_at: string;
+  completed_at: string | null;
   retry_count: number;
   result_summary: string | null;
+  error_details: string | null;
   branch_name: string | null;
   pr_url: string | null;
   commit_sha: string | null;
@@ -729,9 +852,47 @@ export function getWorkerRun(runId: string): {
 } | undefined {
   return db
     .prepare(
-      `SELECT run_id, status, retry_count, result_summary, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary FROM worker_runs WHERE run_id = ?`,
+      `SELECT run_id, group_folder, status, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary FROM worker_runs WHERE run_id = ?`,
     )
     .get(runId) as ReturnType<typeof getWorkerRun>;
+}
+
+export function getWorkerRuns(options?: {
+  groupFolderLike?: string;
+  statuses?: WorkerRunStatus[];
+  limit?: number;
+}): WorkerRunRecord[] {
+  const whereClauses: string[] = [];
+  const params: Array<string | number> = [];
+
+  if (options?.groupFolderLike) {
+    whereClauses.push('group_folder LIKE ?');
+    params.push(options.groupFolderLike);
+  }
+
+  if (options?.statuses && options.statuses.length > 0) {
+    whereClauses.push(
+      `status IN (${options.statuses.map(() => '?').join(', ')})`,
+    );
+    params.push(...options.statuses);
+  }
+
+  const where = whereClauses.length > 0
+    ? `WHERE ${whereClauses.join(' AND ')}`
+    : '';
+  const limit = Math.max(1, Math.min(options?.limit ?? 50, 500));
+
+  params.push(limit);
+
+  return db
+    .prepare(
+      `SELECT run_id, group_folder, status, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary
+       FROM worker_runs
+       ${where}
+       ORDER BY started_at DESC
+       LIMIT ?`,
+    )
+    .all(...params) as WorkerRunRecord[];
 }
 
 // --- JSON migration ---

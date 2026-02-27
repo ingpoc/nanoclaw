@@ -33,7 +33,11 @@
       "Bash(container start:*)",
       "Bash(container run:*)",
       "Bash(container ps:*)",
-      "Bash(container logs:*)"
+      "Bash(container logs:*)",
+      "Bash(test:*)",
+      "Bash(./scripts/jarvis-status.sh:*)",
+      "Bash(./scripts/jarvis-ops.sh status:*)",
+      "Bash(./scripts/jarvis-worker-probe.sh:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

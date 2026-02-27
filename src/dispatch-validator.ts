@@ -122,7 +122,7 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
   const errors: string[] = [];
 
   if (
-    payload.ui_impacting !== undefined
+    payload.ui_impacting != null
     && typeof payload.ui_impacting !== 'boolean'
   ) {
     errors.push('ui_impacting must be a boolean when provided');
@@ -156,7 +156,7 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
   }
 
   if (
-    payload.base_branch !== undefined
+    payload.base_branch != null
     && (
       typeof payload.base_branch !== 'string'
       || !payload.base_branch.trim()
@@ -172,7 +172,7 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
   }
 
   if (
-    payload.session_id !== undefined
+    payload.session_id != null
     && (
       typeof payload.session_id !== 'string'
       || !payload.session_id.trim()
@@ -185,7 +185,7 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
   }
 
   if (
-    payload.parent_run_id !== undefined
+    payload.parent_run_id != null
     && (
       typeof payload.parent_run_id !== 'string'
       || !payload.parent_run_id.trim()

@@ -179,6 +179,7 @@ function buildSdkEnv(
   baseEnv: NodeJS.ProcessEnv,
   secrets: Record<string, string>,
   authMode: AuthMode,
+  groupFolder: string,
 ): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...baseEnv };
   delete env.CLAUDE_CODE_OAUTH_TOKEN;
@@ -188,6 +189,15 @@ function buildSdkEnv(
   const oauth = secrets.CLAUDE_CODE_OAUTH_TOKEN;
   const apiKey = secrets.ANTHROPIC_API_KEY;
   const anthropicBaseUrl = secrets.ANTHROPIC_BASE_URL;
+  const fallbackEnabled = isFallbackToggleEnabled(secrets);
+  const laneKey = groupFolder.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  const laneGithub = secrets[`GITHUB_TOKEN_${laneKey}`] || secrets[`GH_TOKEN_${laneKey}`];
+  const globalGithub = secrets.GITHUB_TOKEN || secrets.GH_TOKEN;
+  const githubToken = laneGithub || globalGithub;
+  if (githubToken) {
+    env.GITHUB_TOKEN = githubToken;
+    env.GH_TOKEN = githubToken;
+  }
 
   if (authMode === 'oauth') {
     if (oauth) env.CLAUDE_CODE_OAUTH_TOKEN = oauth;
@@ -196,13 +206,13 @@ function buildSdkEnv(
 
   if (authMode === 'apiKey') {
     if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
-    if (anthropicBaseUrl) env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
+    if (anthropicBaseUrl && fallbackEnabled) env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
     return env;
   }
 
   if (oauth) env.CLAUDE_CODE_OAUTH_TOKEN = oauth;
   if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
-  if (anthropicBaseUrl) env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
+  if (anthropicBaseUrl && fallbackEnabled) env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
   return env;
 }
 
@@ -647,7 +657,7 @@ async function main(): Promise<void> {
     && !!secrets.CLAUDE_CODE_OAUTH_TOKEN
     && !!secrets.ANTHROPIC_API_KEY;
   let authMode = selectInitialAuthMode(containerInput.groupFolder, secrets);
-  let sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+  let sdkEnv = buildSdkEnv(process.env, secrets, authMode, containerInput.groupFolder);
   let model = selectModelForQuery(secrets, authMode);
   log(`Auth mode: ${authMode}${authFallbackAvailable ? ' (API fallback enabled)' : ''}`);
 
@@ -709,7 +719,7 @@ async function main(): Promise<void> {
         if (authFallbackAvailable && authMode === 'oauth' && isOAuthLimitMessage(message)) {
           log('OAuth query error indicates limit reached, switching to API key fallback');
           authMode = 'apiKey';
-          sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+          sdkEnv = buildSdkEnv(process.env, secrets, authMode, containerInput.groupFolder);
           model = selectModelForQuery(secrets, authMode);
           sessionId = undefined;
           resumeAt = undefined;
@@ -720,7 +730,7 @@ async function main(): Promise<void> {
 
       if (queryResult.fallbackRequested && authFallbackAvailable && authMode === 'oauth') {
         authMode = 'apiKey';
-        sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+        sdkEnv = buildSdkEnv(process.env, secrets, authMode, containerInput.groupFolder);
         model = selectModelForQuery(secrets, authMode);
         sessionId = undefined;
         resumeAt = undefined;

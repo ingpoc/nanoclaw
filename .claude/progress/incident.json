@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-02-27T13:31:01.450223+00:00",
+  "updated_at": "2026-02-27T15:00:08.846651+00:00",
   "incidents": [
     {
       "id": "incident-worker-connectivity-block-20260227",
@@ -8,41 +8,41 @@
       "status": "open",
       "severity": "high",
       "created_at": "2026-02-27T13:02:09.098285+00:00",
-      "updated_at": "2026-02-27T13:31:01.450190+00:00",
+      "updated_at": "2026-02-27T15:00:08.846621+00:00",
       "summary": {
         "symptom": "Workers are not connected and I don't have access to restart them. To restart the push task: start worker containers manually via deployment system, then I will dispatch push task. Alternative: push branches manually from local environment.",
-        "suspected_cause": "wa_conflict_churn",
-        "impact": "Workers recovered, but push workflow remains blocked until push dispatches are re-sent with valid contract-compliant payloads.",
-        "next_action": "Re-dispatch push tasks for jarvis-worker-1 and jarvis-worker-2 using branch names that match jarvis-<feature> and verify completion contract fields (especially commit_sha format)."
+        "suspected_cause": "dispatch_blocked_due_to_invalid_dispatch_payload (primary), with historical wa_conflict_churn noise in trace tail",
+        "impact": "Rework dispatches at 13:59Z were blocked before worker execution; workers themselves are currently healthy after recover+probe.",
+        "next_action": "Re-send rework using contract-compliant dispatch JSON for all affected run_ids; verify no new dispatch-block artifacts and that worker_runs move to review_requested/completed."
       },
       "evidence": {
-        "bundle_count": 2,
-        "last_bundle_dir": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260227T131146Z",
-        "last_manifest_path": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260227T131146Z/manifest.json",
+        "bundle_count": 3,
+        "last_bundle_dir": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260227T150005Z",
+        "last_manifest_path": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260227T150005Z/manifest.json",
         "last_root_cause": "wa_conflict_churn",
         "last_status": "warn",
-        "last_checked_at": "2026-02-27T13:11:49.530958+00:00",
-        "non_zero_command_count": 1,
-        "debug_summary": "root_cause=wa_conflict_churn; messages=4; worker_runs=0; dispatch_blocks=0; non_zero_commands=1"
+        "last_checked_at": "2026-02-27T15:00:08.106276+00:00",
+        "non_zero_command_count": 3,
+        "debug_summary": "root_cause=wa_conflict_churn; messages=12; worker_runs=0; dispatch_blocks=4; non_zero_commands=3"
       },
       "context": {
         "lane": "andy-developer"
       },
       "notes": [
         {
-          "ts": "2026-02-27T13:02:09.282115+00:00",
-          "author": "andy-developer",
-          "text": "Workers are not connected and I don't have access to restart them. To restart the push task: start worker containers manually via deployment system, then I will dispatch push task. Alternative: push branches manually from local environment."
-        },
-        {
-          "ts": "2026-02-27T13:24:04.537503+00:00",
-          "author": "operator",
-          "text": "2026-02-27: probe --skip-lint passed on jarvis-worker-1 and jarvis-worker-2 (review_requested); status now shows recent PASS runs. Remaining blockers are historical dispatch validation errors (branch must match jarvis-<feature>) and prior contract failures."
-        },
-        {
           "ts": "2026-02-27T13:29:44.475546+00:00",
           "author": "operator",
           "text": "2026-02-27 fix applied: scripts/jarvis-worker-probe.sh now uses mktemp template without suffix; scripts/jarvis-dispatch-lint.sh now only cleans up temp stdin payloads and uses mktemp without suffix. Verification: jarvis-ops probe passed (2/2) without --skip-lint, followed by status showing new review_requested probe runs on both lanes."
+        },
+        {
+          "ts": "2026-02-27T13:55:34.903700+00:00",
+          "author": "operator",
+          "text": "2026-02-27 token propagation fix validated: push-w1-tokencheck-20260227 and push-w2-tokencheck-20260227 both reached review_requested. Test summary reports all 4 acceptance tests passed, tokens verified (GITHUB_TOKEN/GH_TOKEN present), and target branches pushed successfully for aadhaar-chain/flatwatch and ondc-buyer/ondc-seller."
+        },
+        {
+          "ts": "2026-02-27T15:00:08.650944+00:00",
+          "author": "operator",
+          "text": "2026-02-27T13:59:27Z..13:59:44Z: four dispatches blocked by invalid_dispatch_payload (missing task_type/context_intent/input/acceptance_tests/output_contract). Restarted runtime via recover at ~2026-02-27T14:57Z; probe passed on both workers (run_ids probe-jarvis-worker-1-1772204266-25172 and probe-jarvis-worker-2-1772204311-31179)."
         }
       ]
     }

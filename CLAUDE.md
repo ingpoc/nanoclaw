@@ -35,6 +35,7 @@ BEFORE finalizing any Andy/Jarvis operating agreement change → read docs/opera
 BEFORE deciding runtime-local vs prebaked container placement → read docs/operations/runtime-vs-prebaked-boundary.md
 BEFORE debugging Andy/Jarvis worker flow issues → read .claude/rules/nanoclaw-jarvis-debug-loop.md
 BEFORE debugging Apple Container build/runtime issues → read docs/troubleshooting/DEBUG_CHECKLIST.md and docs/troubleshooting/APPLE-CONTAINER-NETWORKING.md
+BEFORE debugging container/auth/session/mount issues → read docs/workflow/nanoclaw-container-debugging.md
 ```
 
 NanoClaw baseline is the default. Jarvis docs apply only when working on the `jarvis-worker-*` execution tier.
@@ -59,17 +60,21 @@ NanoClaw baseline is the default. Jarvis docs apply only when working on the `ja
 Decision boundary: `docs/operations/skills-vs-docs-map.md`
 
 Mandatory preflight:
+
 - New feature/custom behavior work starts with `/customize` (or a more specific `/add-*` skill if available)
 - Runtime/auth/container issue debugging starts with `/debug`
 - For browser/docs/repo tasks, use intent-matched MCP routing from `docs/operations/skills-vs-docs-map.md` (`chrome-devtools` preferred for browser tasks)
 
 Primary ops:
+
 - `/setup`, `/customize`, `/debug`, `/update`, `/convert-to-apple-container`
 
 Channel/integration skills:
+
 - `/add-telegram`, `/add-telegram-swarm`, `/add-discord`, `/add-gmail`, `/add-voice-transcription`, `/add-parallel`, `/x-integration`
 
 Quality/governance helpers:
+
 - `/get-qodo-rules`, `/qodo-pr-resolver`
 
 ## Development
@@ -83,6 +88,7 @@ npm run build        # Compile TypeScript
 ```
 
 Service management:
+
 ```bash
 # macOS (launchd)
 launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist

@@ -79,6 +79,16 @@ Worker output must include a completion block:
 
 `pr_skipped_reason` may be used instead of `pr_url`.
 
+## Push/PR Guidance (Non-Blocking)
+
+To keep workflow flexible but reliable:
+
+- For code tasks (`implement`, `fix`, `refactor`, `release`, `code`), prefer returning `pr_url`.
+- Use `pr_skipped_reason` for no-code runs or clear push/PR blockers.
+- When practical, include lightweight remote confirmation in acceptance tests:
+  - `git push -u origin <branch>`
+  - `git ls-remote --heads origin <branch>`
+
 ### `commit_sha` Expectations
 
 - Default rule: `commit_sha` must be a real git SHA (6-40 hex chars) from the worker branch used for the run.

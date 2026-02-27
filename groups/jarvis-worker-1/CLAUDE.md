@@ -97,7 +97,8 @@ Every code/fix task MUST end with a completion block:
 
 Get it after push with: `git rev-parse HEAD` or from PR URL.
 
-If PR not opened, use `"pr_skipped_reason"` instead of `"pr_url"`.
+Prefer `"pr_url"` for code tasks. If push/PR is blocked, use `"pr_skipped_reason"` with the exact blocker and next step.
+Recommended quick check after push: `git ls-remote --heads origin <branch>`.
 
 ## Communication
 

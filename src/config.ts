@@ -44,6 +44,10 @@ export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
   process.env.CONTAINER_MAX_OUTPUT_SIZE || '10485760',
   10,
 ); // 10MB default
+export const CONTAINER_PARSE_BUFFER_LIMIT = parseInt(
+  process.env.CONTAINER_PARSE_BUFFER_LIMIT || '1048576',
+  10,
+); // 1MB default - prevents unbounded memory growth if markers are malformed
 export const CONTAINER_CPU_LIMIT =
   process.env.CONTAINER_CPU_LIMIT || '2';
 export const CONTAINER_MEMORY_LIMIT =

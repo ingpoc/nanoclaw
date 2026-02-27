@@ -23,6 +23,7 @@ export interface DispatchPayload {
   output_contract: DispatchOutputContract;
   priority?: 'low' | 'normal' | 'high';
   ui_impacting?: boolean;
+  session_id?: string; // For multi-step runs - allows next worker to continue same session
 }
 
 export interface BrowserEvidence {
@@ -41,6 +42,7 @@ export interface CompletionContract {
   pr_url?: string;
   pr_skipped_reason?: string;
   browser_evidence?: BrowserEvidence;
+  session_id?: string; // Echoed from dispatch - for multi-step runs to continue session
 }
 
 const RUN_ID_MAX_LENGTH = 64;
@@ -287,6 +289,9 @@ export function validateCompletionContract(
     allowNoCodeChanges?: boolean;
   },
 ): { valid: boolean; missing: string[] } {
+  // Automatically allow no-code when pr_skipped_reason is present
+  const hasPrSkippedReason = contract?.pr_skipped_reason?.trim();
+  const effectiveAllowNoCode = options?.allowNoCodeChanges === true || !!hasPrSkippedReason;
   if (!contract) return { valid: false, missing: ['completion block'] };
 
   const missing: string[] = [];
@@ -316,27 +321,38 @@ export function validateCompletionContract(
 
   if (requireCommitSha) {
     const commitSha = contract.commit_sha?.trim();
-    const allowNoCodeChanges = options?.allowNoCodeChanges === true;
-    const isNoCodeCommitPlaceholder = allowNoCodeChanges
+    // Accept empty string (no commit made) OR valid 40-char hex OR allowed placeholders
+    const isValidEmpty = commitSha === '';
+    const isValidHex = COMMIT_SHA_PATTERN.test(commitSha || '');
+    const isAllowedPlaceholder = effectiveAllowNoCode
       && !!commitSha
-      && /^(n\/a|na|none)$/i.test(commitSha);
-    if (!commitSha) {
-      missing.push('commit_sha');
-    } else if (!COMMIT_SHA_PATTERN.test(commitSha) && !isNoCodeCommitPlaceholder) {
-      missing.push('commit_sha format');
+      && /^(n\/a|na|none|no-commit)$/i.test(commitSha);
+
+    if (!commitSha || (!isValidHex && !isAllowedPlaceholder && !isValidEmpty)) {
+      // If pr_skipped_reason is present, accept any commit_sha (including empty or non-standard)
+      if (hasPrSkippedReason || effectiveAllowNoCode) {
+        // pr_skipped_reason present or no-code allowed - commit_sha doesn't matter
+      } else if (!isValidHex && !isAllowedPlaceholder) {
+        missing.push('commit_sha format');
+      }
     }
   }
 
   if (requireFilesChanged) {
-    const allowNoCodeChanges = options?.allowNoCodeChanges === true;
-    if (!Array.isArray(contract.files_changed)) {
-      missing.push('files_changed');
-    } else if (contract.files_changed.length === 0) {
-      if (!allowNoCodeChanges) missing.push('files_changed');
+    const filesChanged = contract.files_changed;
+
+    // Accept missing/null/undefined as empty array (no files changed)
+    if (!Array.isArray(filesChanged)) {
+      // If pr_skipped_reason present or no-code allowed, default to empty array
+      if (hasPrSkippedReason || effectiveAllowNoCode) {
+        // Accept missing files_changed when there's a skip reason
+      } else {
+        missing.push('files_changed');
+      }
+    } else if (filesChanged.length === 0) {
+      // Empty array is valid - no files changed
     } else if (
-      contract.files_changed.some(
-        (item) => typeof item !== 'string' || !item.trim(),
-      )
+      filesChanged.some((item) => typeof item !== 'string' || !item.trim())
     ) {
       missing.push('files_changed format');
     }

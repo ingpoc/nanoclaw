@@ -13,6 +13,8 @@ Prepare the app in `NanoClawWorkspace` and provide a runnable handoff so the use
 - Andy review decision is `approve` before starting user handoff.
 - For UI-impacting changes, worker evidence must include container browser validation results (server readiness + task-relevant `chrome-devtools` tool execution output).
 - If evidence is incomplete, return `rework` instead of handoff.
+- Recommended (when network is available): quick remote presence check for code-task branches before declaring readiness:
+  - `git ls-remote --heads origin <approved-branch>`
 
 2. Stage review workspace
 - Use path `/workspace/extra/repos/<repo-name>` (host path: `~/Documents/remote-claude/NanoClawWorkspace/<repo-name>`).

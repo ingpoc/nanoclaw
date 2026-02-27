@@ -61,7 +61,7 @@ import { logger } from './logger.js';
 // Re-export for backwards compatibility during refactor
 export { escapeXml, formatMessages } from './router.js';
 
-let lastTimestamp = '';
+let lastCursor = '';
 let sessions: Record<string, string> = {};
 let registeredGroups: Record<string, RegisteredGroup> = {};
 let lastAgentTimestamp: Record<string, string> = {};
@@ -291,6 +291,12 @@ function buildWorkerDispatchPrompt(payload: DispatchPayload): string {
     `UI impacting: ${payload.ui_impacting === true ? 'true' : 'false'}`,
     `Browser evidence required: ${payload.output_contract.browser_evidence_required === true ? 'true' : 'false'}`,
     '',
+    'CRITICAL: Container lifecycle - this container will EXIT after completing this task.',
+    '- The container runs once and shuts down when done.',
+    '- If you need session continuity for follow-up tasks, include the session_id in your completion output.',
+    '- Output format: add "session_id": "<current-session-id>" to your completion block.',
+    '- Andy will pass this session_id to the next worker to continue the conversation.',
+    '',
     'Task instructions:',
     payload.input,
     '',
@@ -308,6 +314,7 @@ function buildWorkerDispatchPrompt(payload: DispatchPayload): string {
     '- completion.commit_sha must be a real 6-40 char git SHA from the checked-out branch.',
     '- Only no-code runs with run_id prefix ping-/smoke-/health-/sync- may use commit_sha placeholder n/a/none and empty files_changed.',
     '- files_changed must be a JSON array of changed file paths.',
+    '- OPTIONAL: Add "session_id": "<session-id>" if you want follow-up tasks to continue this session.',
     '',
     'Required completion fields:',
     requiredFields,
@@ -503,7 +510,7 @@ function reconcileStaleWorkerRuns(): void {
 }
 
 function loadState(): void {
-  lastTimestamp = getRouterState('last_timestamp') || '';
+  lastCursor = getRouterState('last_timestamp') || '';
   const agentTs = getRouterState('last_agent_timestamp');
   try {
     lastAgentTimestamp = agentTs ? JSON.parse(agentTs) : {};
@@ -521,7 +528,7 @@ function loadState(): void {
 }
 
 function saveState(): void {
-  setRouterState('last_timestamp', lastTimestamp);
+  setRouterState('last_timestamp', lastCursor);
   setRouterState(
     'last_agent_timestamp',
     JSON.stringify(lastAgentTimestamp),
@@ -970,13 +977,13 @@ async function startMessageLoop(): Promise<void> {
         lastWorkerSnapshotRefresh = now;
       }
       const jids = Object.keys(registeredGroups);
-      const { messages, newTimestamp } = getNewMessages(jids, lastTimestamp, ASSISTANT_NAME);
+      const { messages, newCursor } = getNewMessages(jids, lastCursor, ASSISTANT_NAME);
 
       if (messages.length > 0) {
         logger.info({ count: messages.length }, 'New messages');
 
         // Advance the "seen" cursor for all messages immediately
-        lastTimestamp = newTimestamp;
+        lastCursor = newCursor;
         saveState();
 
         // Deduplicate by group
@@ -1059,7 +1066,7 @@ async function startMessageLoop(): Promise<void> {
 
 /**
  * Startup recovery: check for unprocessed messages in registered groups.
- * Handles crash between advancing lastTimestamp and processing messages.
+ * Handles crash between advancing the message cursor and processing messages.
  */
 function recoverPendingMessages(): void {
   for (const [chatJid, group] of Object.entries(registeredGroups)) {

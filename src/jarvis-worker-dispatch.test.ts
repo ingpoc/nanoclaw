@@ -520,13 +520,43 @@ describe('completion contract validation', () => {
     expect(missing).toContain('pr_url or pr_skipped_reason');
   });
 
-  it('fails when files_changed is a number', () => {
+  it('accepts files_changed as number when pr_skipped_reason is present', () => {
+    // When pr_skipped_reason is present, files_changed type doesn't matter
     const { valid, missing } = validateCompletionContract({
       run_id: 'task-1',
       branch: 'jarvis-feat',
       commit_sha: 'abc1234',
       files_changed: 1 as unknown as string[],
-      pr_skipped_reason: 'test',
+      pr_skipped_reason: 'task blocked by user',
+      test_result: 'blocked',
+      risk: 'unknown',
+    });
+    expect(valid).toBe(true);
+    expect(missing).toHaveLength(0);
+  });
+
+  it('accepts placeholder commit_sha when pr_skipped_reason is present', () => {
+    // When pr_skipped_reason is present, commit_sha format doesn't matter
+    const { valid, missing } = validateCompletionContract({
+      run_id: 'task-1',
+      branch: 'jarvis-feat',
+      commit_sha: 'none',
+      files_changed: ['src/a.ts'],
+      pr_skipped_reason: 'task blocked by user',
+      test_result: 'blocked',
+      risk: 'unknown',
+    });
+    expect(valid).toBe(true);
+    expect(missing).toHaveLength(0);
+  });
+
+  it('fails when files_changed is invalid type without pr_skipped_reason', () => {
+    const { valid, missing } = validateCompletionContract({
+      run_id: 'task-1',
+      branch: 'jarvis-feat',
+      commit_sha: 'abc1234',
+      files_changed: 1 as unknown as string[],
+      // No pr_skipped_reason
       test_result: 'pass',
       risk: 'low',
     });
@@ -534,13 +564,13 @@ describe('completion contract validation', () => {
     expect(missing).toContain('files_changed');
   });
 
-  it('fails for placeholder commit_sha on non-health run', () => {
+  it('fails for placeholder commit_sha without pr_skipped_reason or allowNoCodeChanges', () => {
     const { valid, missing } = validateCompletionContract({
       run_id: 'task-1',
       branch: 'jarvis-feat',
       commit_sha: 'none',
       files_changed: ['src/a.ts'],
-      pr_skipped_reason: 'test',
+      // No pr_skipped_reason, no allowNoCodeChanges option
       test_result: 'pass',
       risk: 'low',
     });

@@ -9,6 +9,7 @@ import path from 'path';
 import {
   CONTAINER_IMAGE,
   CONTAINER_MAX_OUTPUT_SIZE,
+  CONTAINER_PARSE_BUFFER_LIMIT,
   CONTAINER_TIMEOUT,
   DATA_DIR,
   GROUPS_DIR,
@@ -257,18 +258,24 @@ function buildVolumeMounts(
   return mounts;
 }
 
+const DEFAULT_SECRETS = [
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_BASE_URL',
+  'OAUTH_API_FALLBACK_ENABLED',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
+];
+
 /**
  * Read allowed secrets from .env for passing to the container via stdin.
  * Secrets are never written to disk or mounted as files.
+ * @param allowedSecrets - Optional list of env var names to read (defaults to all)
  */
-function readSecrets(): Record<string, string> {
-  return readEnvFile([
-    'CLAUDE_CODE_OAUTH_TOKEN',
-    'ANTHROPIC_API_KEY',
-    'ANTHROPIC_BASE_URL',
-    'OAUTH_API_FALLBACK_ENABLED',
-    'ANTHROPIC_DEFAULT_SONNET_MODEL',
-  ]);
+function readSecrets(allowedSecrets?: string[]): Record<string, string> {
+  const vars = allowedSecrets && allowedSecrets.length > 0
+    ? allowedSecrets
+    : DEFAULT_SECRETS;
+  return readEnvFile(vars);
 }
 
 function buildContainerArgs(
@@ -369,7 +376,8 @@ export async function runContainerAgent(
     let stderrTruncated = false;
 
     // Pass secrets via stdin (never written to disk or mounted as files)
-    input.secrets = readSecrets();
+    // Use per-group secrets config if specified, otherwise use defaults
+    input.secrets = readSecrets(group.containerConfig?.secrets);
     container.stdin.write(JSON.stringify(input));
     container.stdin.end();
     // Remove secrets from input so they don't appear in logs
@@ -401,6 +409,23 @@ export async function runContainerAgent(
       // Stream-parse for output markers
       if (onOutput) {
         parseBuffer += chunk;
+
+        // Fail-fast: if parseBuffer exceeds limit with incomplete markers, abort
+        if (parseBuffer.length > CONTAINER_PARSE_BUFFER_LIMIT) {
+          const hasStartMarker = parseBuffer.includes(OUTPUT_START_MARKER);
+          const hasEndMarker = parseBuffer.includes(OUTPUT_END_MARKER);
+          if (hasStartMarker && !hasEndMarker) {
+            logger.error(
+              { group: group.name, bufferSize: parseBuffer.length },
+              'Parse buffer exceeded limit with incomplete markers, aborting container',
+            );
+            container.kill('SIGKILL');
+            return;
+          }
+          // Buffer overflow - trim oldest data to prevent unbounded growth
+          parseBuffer = parseBuffer.slice(-CONTAINER_PARSE_BUFFER_LIMIT / 2);
+        }
+
         let startIdx: number;
         while ((startIdx = parseBuffer.indexOf(OUTPUT_START_MARKER)) !== -1) {
           const endIdx = parseBuffer.indexOf(OUTPUT_END_MARKER, startIdx);

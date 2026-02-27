@@ -68,6 +68,19 @@ Required outcome:
 - `risk`
 - one of `pr_url` or `pr_skipped_reason`
 
+## Recommended Push Guidance (Lightweight)
+
+For code tasks (`implement`, `fix`, `refactor`, `release`, `code`), prefer:
+
+- include `pr_url` in `output_contract.required_fields`
+- include a push/remote check in `acceptance_tests` when practical
+- ask worker to return exact blocker evidence if push/PR is blocked
+
+Suggested checks:
+
+- `git push -u origin <branch>`
+- `git ls-remote --heads origin <branch>`
+
 ## Dispatch Example
 
 Use `mcp__nanoclaw__send_message` with `target_group_jid`:
@@ -97,7 +110,7 @@ Workers must end code/fix/refactor/implement tasks with:
 </completion>
 ```
 
-If no PR is opened, provide `pr_skipped_reason` instead of `pr_url`.
+If no PR is opened, provide `pr_skipped_reason` instead of `pr_url` with a short blocker reason and next step.
 
 ## Run State Machine
 

@@ -162,6 +162,10 @@ export function initDatabase(): void {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
   db = new Database(dbPath);
+
+  // Enable foreign keys constraint enforcement for data integrity
+  db.exec('PRAGMA foreign_keys = ON');
+
   createSchema(db);
 
   // Migrate from JSON files if they exist
@@ -171,6 +175,8 @@ export function initDatabase(): void {
 /** @internal - for tests only. Creates a fresh in-memory database. */
 export function _initTestDatabase(): void {
   db = new Database(':memory:');
+  // Enable foreign keys constraint enforcement for data integrity
+  db.exec('PRAGMA foreign_keys = ON');
   createSchema(db);
 }
 
@@ -320,33 +326,56 @@ export function storeMessageDirect(msg: {
 
 export function getNewMessages(
   jids: string[],
-  lastTimestamp: string,
+  lastCursor: string,
   botPrefix: string,
-): { messages: NewMessage[]; newTimestamp: string } {
-  if (jids.length === 0) return { messages: [], newTimestamp: lastTimestamp };
+): { messages: NewMessage[]; newCursor: string } {
+  if (jids.length === 0) return { messages: [], newCursor: lastCursor };
+
+  // Parse composite cursor: "timestamp|messageId" or just "timestamp" for backward compat
+  let lastTimestamp = lastCursor;
+  let lastMessageId = '';
+  if (lastCursor.includes('|')) {
+    [lastTimestamp, lastMessageId] = lastCursor.split('|');
+  }
 
   const placeholders = jids.map(() => '?').join(',');
-  // Filter bot messages using both the is_bot_message flag AND the content
-  // prefix as a backstop for messages written before the migration ran.
-  const sql = `
+
+  // Use composite cursor for deterministic ordering:
+  // (timestamp > last) OR (timestamp = last AND id > lastId)
+  // This prevents message loss when multiple messages share the same timestamp.
+  const sql = lastMessageId
+    ? `
+    SELECT id, chat_jid, sender, sender_name, content, timestamp
+    FROM messages
+    WHERE ((timestamp > ?) OR (timestamp = ? AND id > ?))
+      AND chat_jid IN (${placeholders})
+      AND is_bot_message = 0 AND content NOT LIKE ?
+      AND content != '' AND content IS NOT NULL
+    ORDER BY timestamp, id
+  `
+    : `
     SELECT id, chat_jid, sender, sender_name, content, timestamp
     FROM messages
     WHERE timestamp > ? AND chat_jid IN (${placeholders})
       AND is_bot_message = 0 AND content NOT LIKE ?
       AND content != '' AND content IS NOT NULL
-    ORDER BY timestamp
+    ORDER BY timestamp, id
   `;
 
-  const rows = db
-    .prepare(sql)
-    .all(lastTimestamp, ...jids, `${botPrefix}:%`) as NewMessage[];
+  const params = lastMessageId
+    ? [lastTimestamp, lastTimestamp, lastMessageId, ...jids, `${botPrefix}:%`]
+    : [lastTimestamp, ...jids, `${botPrefix}:%`];
 
-  let newTimestamp = lastTimestamp;
-  for (const row of rows) {
-    if (row.timestamp > newTimestamp) newTimestamp = row.timestamp;
+  const rows = db.prepare(sql).all(...params) as NewMessage[];
+
+  // Build composite cursor: timestamp|messageId
+  let newCursor = lastCursor;
+  if (rows.length > 0) {
+    const lastRow = rows[rows.length - 1];
+    newCursor = `${lastRow.timestamp}|${lastRow.id}`;
   }
 
-  return { messages: rows, newTimestamp };
+  return { messages: rows, newCursor };
 }
 
 export function getMessagesSince(

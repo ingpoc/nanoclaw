@@ -9,6 +9,7 @@ Andy-developer may directly change:
 - `.github/workflows/*.yml`
 - CI/review policy docs
 - Branch governance docs and operational checklists
+- Pre-seeded worker branches (`jarvis-*`) created from an approved `base_branch`
 
 Andy-developer must not directly implement product source code.
 

@@ -11,6 +11,7 @@ For cross-domain ownership and update-location mapping, see
   - manages `.github/workflows/*`
   - manages PR/review automation policy
   - manages branch governance playbooks
+  - creates and pushes pre-seeded `jarvis-*` worker branches from approved base branches
   - decides whether `@claude` review is required, optional, or disabled per project
 - `jarvis-worker-*` (OpenCode lane):
   - implements product code changes from dispatch contracts
@@ -51,6 +52,7 @@ Andy-developer should choose the minimum bundle that satisfies reliability and g
 
 - Keep control-plane changes on admin branches (`jarvis-admin-*` recommended).
 - Keep product implementation branches on worker branches (`jarvis-*`).
+- Allow Andy-developer push only for control-plane/admin branches and worker branch seeding.
 - Do not bypass branch protection except for explicit emergency procedure.
 
 ## User QA Handoff Gate (Andy-Owned)

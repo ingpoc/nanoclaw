@@ -46,8 +46,10 @@ Tasks MUST arrive as structured JSON (plain text dispatch is invalid):
 {
   "run_id": "task-20260222-001",
   "task_type": "implement",
+  "context_intent": "fresh",
   "input": "Implement X",
   "repo": "openclaw-gurusharan/nanoclaw",
+  "base_branch": "main",
   "branch": "jarvis-feature-x",
   "acceptance_tests": ["npm run build", "npm test"],
   "output_contract": {
@@ -65,6 +67,10 @@ Tasks MUST arrive as structured JSON (plain text dispatch is invalid):
 ```
 
 Use `input` as the actual task objective. Always acknowledge and preserve the same `run_id`.
+Use the dispatched `branch` exactly as provided. If `base_branch` is present, treat it as the seed source and do not invent a different worker branch name.
+Respect `context_intent`:
+- `fresh`: start clean; do not assume prior task context.
+- `continue`: resume the provided/selected session context and include `session_id` in completion output.
 
 ## Execution Style
 
@@ -99,6 +105,7 @@ Get it after push with: `git rev-parse HEAD` or from PR URL.
 
 Prefer `"pr_url"` for code tasks. If push/PR is blocked, use `"pr_skipped_reason"` with the exact blocker and next step.
 Recommended quick check after push: `git ls-remote --heads origin <branch>`.
+When dispatch `output_contract.required_fields` includes `session_id` (continue runs), completion must include `"session_id": "<current-session-id>"`.
 
 ## Communication
 

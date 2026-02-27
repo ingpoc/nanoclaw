@@ -43,6 +43,15 @@ When you learn something important:
 - Split files larger than 500 lines into folders
 - Keep an index in your memory for the files you create
 
+### Research Persistence (Required)
+
+For any research task (scheduled or ad-hoc), persist artifacts in the mounted NanoClawWorkspace research folder:
+- Root: `/workspace/extra/repos/research`
+- If missing, create it first: `mkdir -p /workspace/extra/repos/research`
+- Save outputs under a topic/date structure (example: `/workspace/extra/repos/research/ai-agents/2026-02-27-openai-anthropic.md`)
+- Update an index file for discoverability: `/workspace/extra/repos/research/index.md`
+- When reporting results, include the saved file path(s)
+
 ## WhatsApp Formatting (and other messaging apps)
 
 Do NOT use markdown headings (##) in WhatsApp messages. Only use:
@@ -67,6 +76,9 @@ Main has read-only access to the project and read-write access to its group fold
 |----------------|-----------|--------|
 | `/workspace/project` | Project root | read-only |
 | `/workspace/group` | `groups/main/` | read-write |
+
+When configured via `additionalMounts`, shared workspace mounts appear under `/workspace/extra/<containerPath>`.
+For this lane, NanoClawWorkspace is mounted at `/workspace/extra/repos`.
 
 Key paths inside the container:
 - `/workspace/project/store/messages.db` - SQLite database
@@ -211,3 +223,6 @@ When scheduling tasks for other groups, use the `target_group_jid` parameter wit
 - `schedule_task(prompt: "...", schedule_type: "cron", schedule_value: "0 9 * * 1", target_group_jid: "120363336345536173@g.us")`
 
 The task will run in that group's context with access to their files and memory.
+
+For `jarvis-worker-*` execution lanes, do not dispatch strict worker contracts directly from `main`.
+Worker dispatch ownership is `andy-developer` only.

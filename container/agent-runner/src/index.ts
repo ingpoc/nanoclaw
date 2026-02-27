@@ -34,6 +34,8 @@ interface ContainerOutput {
   status: 'success' | 'error';
   result: string | null;
   newSessionId?: string;
+  sessionResumeStatus?: 'resumed' | 'fallback_new' | 'new';
+  sessionResumeError?: string;
   error?: string;
 }
 
@@ -141,6 +143,15 @@ function isOAuthLimitMessage(text: string): boolean {
   const normalized = text.trim();
   if (!normalized) return false;
   return OAUTH_LIMIT_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function isSessionResumeErrorMessage(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) return false;
+  return (
+    /(resume|session)/i.test(normalized)
+    && /(not found|unknown|invalid|does not exist|failed|cannot|unable|missing)/i.test(normalized)
+  );
 }
 
 function selectInitialAuthMode(
@@ -454,6 +465,8 @@ async function runQuery(
   authMode: AuthMode,
   model: string | undefined,
   allowApiFallback: boolean,
+  sessionResumeStatus: ContainerOutput['sessionResumeStatus'],
+  sessionResumeError?: string,
   resumeAt?: string,
 ): Promise<{
   newSessionId?: string;
@@ -594,7 +607,9 @@ async function runQuery(
       writeOutput({
         status: 'success',
         result: textResult || null,
-        newSessionId
+        newSessionId,
+        sessionResumeStatus,
+        sessionResumeError,
       });
     }
   }
@@ -658,6 +673,9 @@ async function main(): Promise<void> {
 
   // Query loop: run query → wait for IPC message → run new query → repeat
   let resumeAt: string | undefined;
+  let sessionResumeStatus: ContainerOutput['sessionResumeStatus'] = sessionId ? 'resumed' : 'new';
+  let sessionResumeError: string | undefined;
+  let resumeFallbackAttempted = false;
   try {
     while (true) {
       log(`Starting query (session: ${sessionId || 'new'}, resumeAt: ${resumeAt || 'latest'})...`);
@@ -673,10 +691,21 @@ async function main(): Promise<void> {
           authMode,
           model,
           authFallbackAvailable,
+          sessionResumeStatus,
+          sessionResumeError,
           resumeAt,
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        if (sessionId && !resumeFallbackAttempted && isSessionResumeErrorMessage(message)) {
+          log(`Session resume failed, falling back to new session: ${message}`);
+          resumeFallbackAttempted = true;
+          sessionResumeStatus = 'fallback_new';
+          sessionResumeError = message.slice(0, 500);
+          sessionId = undefined;
+          resumeAt = undefined;
+          continue;
+        }
         if (authFallbackAvailable && authMode === 'oauth' && isOAuthLimitMessage(message)) {
           log('OAuth query error indicates limit reached, switching to API key fallback');
           authMode = 'apiKey';
@@ -715,7 +744,13 @@ async function main(): Promise<void> {
       }
 
       // Emit session update so host can track it
-      writeOutput({ status: 'success', result: null, newSessionId: sessionId });
+      writeOutput({
+        status: 'success',
+        result: null,
+        newSessionId: sessionId,
+        sessionResumeStatus,
+        sessionResumeError,
+      });
 
       log('Query ended, waiting for next IPC message...');
 
@@ -736,6 +771,8 @@ async function main(): Promise<void> {
       status: 'error',
       result: null,
       newSessionId: sessionId,
+      sessionResumeStatus,
+      sessionResumeError,
       error: errorMessage
     });
     process.exit(1);

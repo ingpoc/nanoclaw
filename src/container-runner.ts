@@ -43,6 +43,8 @@ export interface ContainerOutput {
   status: 'success' | 'error';
   result: string | null;
   newSessionId?: string;
+  sessionResumeStatus?: 'resumed' | 'fallback_new' | 'new';
+  sessionResumeError?: string;
   error?: string;
 }
 
@@ -386,6 +388,8 @@ export async function runContainerAgent(
     // Streaming output: parse OUTPUT_START/END marker pairs as they arrive
     let parseBuffer = '';
     let newSessionId: string | undefined;
+    let sessionResumeStatus: ContainerOutput['sessionResumeStatus'];
+    let sessionResumeError: string | undefined;
     let outputChain = Promise.resolve();
 
     container.stdout.on('data', (data) => {
@@ -440,6 +444,12 @@ export async function runContainerAgent(
             const parsed: ContainerOutput = JSON.parse(jsonStr);
             if (parsed.newSessionId) {
               newSessionId = parsed.newSessionId;
+            }
+            if (parsed.sessionResumeStatus) {
+              sessionResumeStatus = parsed.sessionResumeStatus;
+            }
+            if (parsed.sessionResumeError) {
+              sessionResumeError = parsed.sessionResumeError;
             }
             hadStreamingOutput = true;
             // Activity detected — reset the hard timeout
@@ -535,6 +545,8 @@ export async function runContainerAgent(
               status: 'success',
               result: null,
               newSessionId,
+              sessionResumeStatus,
+              sessionResumeError,
             });
           });
           return;
@@ -646,6 +658,8 @@ export async function runContainerAgent(
             status: 'success',
             result: null,
             newSessionId,
+            sessionResumeStatus,
+            sessionResumeError,
           });
         });
         return;
@@ -754,6 +768,26 @@ export interface WorkerRunSnapshotEntry {
   retry_count: number;
   result_summary: string | null;
   error_details: string | null;
+  dispatch_repo?: string | null;
+  dispatch_branch?: string | null;
+  context_intent?: string | null;
+  parent_run_id?: string | null;
+  dispatch_session_id?: string | null;
+  selected_session_id?: string | null;
+  effective_session_id?: string | null;
+  session_selection_source?: string | null;
+  session_resume_status?: string | null;
+  session_resume_error?: string | null;
+}
+
+export interface DispatchBlockSnapshotEntry {
+  timestamp: string;
+  source_group: string;
+  target_jid: string;
+  target_folder?: string;
+  reason_code: string;
+  reason_text: string;
+  run_id?: string;
 }
 
 export interface WorkerRunsSnapshot {
@@ -761,6 +795,7 @@ export interface WorkerRunsSnapshot {
   scope: 'all' | 'jarvis' | 'group';
   active: WorkerRunSnapshotEntry[];
   recent: WorkerRunSnapshotEntry[];
+  dispatch_blocks?: DispatchBlockSnapshotEntry[];
 }
 
 /**

@@ -19,6 +19,8 @@ BEFORE declaring work "ready for user review" → read /workspace/group/docs/rev
 - Delegate implementation/fix/refactor/test/code tasks to `jarvis-worker-*`.
 - Review worker completion artifacts and request rework when needed.
 - Keep run tracking explicit with `run_id`.
+- For every dispatch, explicitly choose `context_intent` (`fresh` vs `continue`) and include `session_id` only when continuation is needed.
+- Maintain a per-worker session ledger (repo + branch + latest session_id) and reuse only same-worker sessions for follow-up tasks.
 - Before any status/queue answer, read `/workspace/ipc/worker_runs.json` and treat it as source of truth over conversation memory.
 - Decide whether `@claude` review is required for each project/PR based on requirement profile.
 - Decide what GitHub workflow stack a project needs (minimal, standard, strict).
@@ -27,7 +29,7 @@ BEFORE declaring work "ready for user review" → read /workspace/group/docs/rev
 ## Prohibited Actions
 
 - Do not directly implement product source changes (`src/`, app/runtime feature code).
-- Do not directly commit/push code to product repositories.
+- Do not directly implement product feature/fix commits in product repositories.
 - Do not claim task completion without worker evidence (tests + completion contract).
 - Do not claim "ready for user review" without the local review handoff bundle from `/workspace/group/docs/review-handoff.md`.
 - Do not wait for user reminders to run review-handoff preflight; it is required by default.
@@ -41,6 +43,7 @@ BEFORE declaring work "ready for user review" → read /workspace/group/docs/rev
 - PR/review analysis and feedback.
 - Sending worker dispatch and rework instructions.
 - GitHub administrative updates for the control plane (`.github/workflows`, CI/review policy docs, branch-governance docs).
+- Branch seeding for worker execution (`jarvis-*`): create branch from approved base, push remote branch, and dispatch workers to that branch.
 - Local review staging in `/workspace/extra/repos` (checkout/sync/setup commands) without authoring product feature code directly.
 
 ## Workspace

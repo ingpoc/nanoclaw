@@ -13,17 +13,22 @@ export type DispatchTaskType =
   | 'research'
   | 'code';
 
+export type DispatchContextIntent = 'continue' | 'fresh';
+
 export interface DispatchPayload {
   run_id: string;
   task_type: DispatchTaskType;
+  context_intent: DispatchContextIntent;
   input: string;
   repo: string;
+  base_branch?: string;
   branch: string;
   acceptance_tests: string[];
   output_contract: DispatchOutputContract;
   priority?: 'low' | 'normal' | 'high';
   ui_impacting?: boolean;
   session_id?: string; // For multi-step runs - allows next worker to continue same session
+  parent_run_id?: string; // Link follow-up dispatches to prior run lineage
 }
 
 export interface BrowserEvidence {
@@ -46,8 +51,11 @@ export interface CompletionContract {
 }
 
 const RUN_ID_MAX_LENGTH = 64;
+const SESSION_ID_MAX_LENGTH = 128;
 const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const BASE_BRANCH_PATTERN = /^[A-Za-z0-9._/-]+$/;
 const BRANCH_PATTERN = /^jarvis-[A-Za-z0-9._/-]+$/;
+const SESSION_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
 // Accept short SHA forms commonly used in logs/contracts (6-40 chars).
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{6,40}$/i;
 const ALLOWED_TASK_TYPES: Set<DispatchTaskType> = new Set([
@@ -130,6 +138,13 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
     errors.push(`task_type must be one of: ${Array.from(ALLOWED_TASK_TYPES).join(', ')}`);
   }
 
+  if (
+    payload.context_intent !== 'continue'
+    && payload.context_intent !== 'fresh'
+  ) {
+    errors.push('context_intent must be either "continue" or "fresh"');
+  }
+
   if (!payload.input || !payload.input.trim()) {
     errors.push('input is required');
   } else if (hasScreenshotDirective(payload.input)) {
@@ -140,8 +155,49 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
     errors.push('repo must be in owner/repo format');
   }
 
+  if (
+    payload.base_branch !== undefined
+    && (
+      typeof payload.base_branch !== 'string'
+      || !payload.base_branch.trim()
+      || /\s/.test(payload.base_branch)
+      || !BASE_BRANCH_PATTERN.test(payload.base_branch)
+    )
+  ) {
+    errors.push('base_branch must be a non-empty branch name when provided');
+  }
+
   if (!payload.branch || !BRANCH_PATTERN.test(payload.branch)) {
     errors.push('branch must match jarvis-<feature>');
+  }
+
+  if (
+    payload.session_id !== undefined
+    && (
+      typeof payload.session_id !== 'string'
+      || !payload.session_id.trim()
+      || /\s/.test(payload.session_id)
+      || payload.session_id.length > SESSION_ID_MAX_LENGTH
+      || !SESSION_ID_PATTERN.test(payload.session_id)
+    )
+  ) {
+    errors.push('session_id must be a non-empty opaque id with no whitespace when provided');
+  }
+
+  if (
+    payload.parent_run_id !== undefined
+    && (
+      typeof payload.parent_run_id !== 'string'
+      || !payload.parent_run_id.trim()
+      || /\s/.test(payload.parent_run_id)
+      || payload.parent_run_id.length > RUN_ID_MAX_LENGTH
+    )
+  ) {
+    errors.push(`parent_run_id must be a non-empty id with no whitespace and <= ${RUN_ID_MAX_LENGTH} chars when provided`);
+  }
+
+  if (payload.context_intent === 'fresh' && payload.session_id) {
+    errors.push('session_id must not be provided when context_intent is "fresh"');
   }
 
   if (!Array.isArray(payload.acceptance_tests) || payload.acceptance_tests.length === 0) {
@@ -175,6 +231,9 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
       const hasPrSkipped = fields.includes('pr_skipped_reason');
       if (!hasPrUrl && !hasPrSkipped) {
         errors.push('output_contract.required_fields must include pr_url or pr_skipped_reason');
+      }
+      if (payload.context_intent === 'continue' && !fields.includes('session_id')) {
+        errors.push('output_contract.required_fields must include session_id when context_intent is "continue"');
       }
 
     }
@@ -308,6 +367,7 @@ export function validateCompletionContract(
   const requireBranch = requiredFields.includes('branch');
   const requireCommitSha = requiredFields.includes('commit_sha');
   const requireFilesChanged = requiredFields.includes('files_changed');
+  const requireSessionId = requiredFields.includes('session_id');
 
   if (requireBranch && (!contract.branch || !BRANCH_PATTERN.test(contract.branch))) {
     missing.push('branch');
@@ -361,6 +421,17 @@ export function validateCompletionContract(
   if (!contract.test_result || !contract.test_result.trim()) missing.push('test_result');
   if (!contract.risk || !contract.risk.trim()) missing.push('risk');
   if (!contract.pr_url && !contract.pr_skipped_reason) missing.push('pr_url or pr_skipped_reason');
+  if (requireSessionId) {
+    if (
+      !contract.session_id
+      || !contract.session_id.trim()
+      || /\s/.test(contract.session_id)
+      || contract.session_id.length > SESSION_ID_MAX_LENGTH
+      || !SESSION_ID_PATTERN.test(contract.session_id)
+    ) {
+      missing.push('session_id');
+    }
+  }
 
   const browserEvidenceRequired = options?.browserEvidenceRequired
     ?? options?.requiredFields?.includes('browser_evidence')

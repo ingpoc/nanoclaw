@@ -15,6 +15,8 @@ import {
   completeWorkerRun,
   createTask,
   deleteTask,
+  findWorkerRunByEffectiveSessionId,
+  getLatestReusableWorkerSession,
   getTaskById,
   insertWorkerRun,
   updateTask,
@@ -38,9 +40,110 @@ export interface IpcDeps {
 }
 
 let ipcWatcherRunning = false;
+const IPC_BASE_DIR = path.join(DATA_DIR, 'ipc');
 
 function isJarvisWorkerFolder(folder: string): boolean {
   return folder.startsWith('jarvis-worker');
+}
+
+interface DispatchBlockEvent {
+  kind: 'dispatch_block';
+  timestamp: string;
+  source_group: string;
+  source_jid?: string;
+  target_jid: string;
+  target_folder?: string;
+  reason_code:
+    | 'unauthorized_source_lane'
+    | 'target_authorization_failed'
+    | 'invalid_dispatch_payload'
+    | 'duplicate_run_id';
+  reason_text: string;
+  run_id?: string;
+}
+
+function findGroupJidByFolder(
+  registeredGroups: Record<string, RegisteredGroup>,
+  folder: string,
+): string | undefined {
+  for (const [jid, group] of Object.entries(registeredGroups)) {
+    if (group.folder === folder) return jid;
+  }
+  return undefined;
+}
+
+function writeDispatchBlockEvent(
+  ipcBaseDir: string,
+  event: DispatchBlockEvent,
+): void {
+  const errorDir = path.join(ipcBaseDir, 'errors');
+  fs.mkdirSync(errorDir, { recursive: true });
+  const filename = `dispatch-block-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`;
+  fs.writeFileSync(path.join(errorDir, filename), JSON.stringify(event, null, 2));
+}
+
+function buildDispatchBlockedMessage(event: DispatchBlockEvent): string {
+  const template = {
+    run_id: event.run_id || 'task-<timestamp>-001',
+    task_type: 'implement',
+    context_intent: 'fresh',
+    input: 'Implement the requested change',
+    repo: 'owner/repo',
+    base_branch: 'main',
+    branch: 'jarvis-<feature>',
+    acceptance_tests: ['npm run build', 'npm test'],
+    output_contract: {
+      required_fields: [
+        'run_id',
+        'branch',
+        'commit_sha',
+        'files_changed',
+        'test_result',
+        'risk',
+        'pr_url',
+      ],
+    },
+    priority: 'high',
+  };
+
+  return [
+    '*Dispatch blocked by validator*',
+    `• Target: \`${event.target_jid}\` (${event.target_folder || 'unknown-folder'})`,
+    `• Reason: ${event.reason_text}`,
+    '• Enforced rules:',
+    '  - Only `andy-developer` may dispatch strict JSON contracts to `jarvis-worker-*`.',
+    '  - `branch` must match `jarvis-<feature>`.',
+    '  - Dispatch must be strict JSON with required output contract fields.',
+    '• Fix: resend using the template below (edit values):',
+    '```json',
+    JSON.stringify(template, null, 2),
+    '```',
+  ].join('\n');
+}
+
+async function notifyDispatchBlocked(
+  deps: IpcDeps,
+  registeredGroups: Record<string, RegisteredGroup>,
+  ipcBaseDir: string,
+  event: DispatchBlockEvent,
+): Promise<void> {
+  writeDispatchBlockEvent(ipcBaseDir, event);
+  const sourceJid = event.source_jid
+    ?? findGroupJidByFolder(registeredGroups, event.source_group);
+  if (!sourceJid) return;
+
+  try {
+    await deps.sendMessage(
+      sourceJid,
+      buildDispatchBlockedMessage(event),
+      'nanoclaw-system',
+    );
+  } catch (err) {
+    logger.warn(
+      { err, sourceGroup: event.source_group, sourceJid },
+      'Failed to send dispatch block notice to source lane',
+    );
+  }
 }
 
 export function canIpcAccessTarget(
@@ -58,6 +161,41 @@ export function canIpcAccessTarget(
   }
 
   return false;
+}
+
+function validateWorkerSessionRouting(
+  targetFolder: string,
+  payload: ReturnType<typeof parseDispatchPayload>,
+): { valid: boolean; reason?: string } {
+  if (!payload || !isJarvisWorkerFolder(targetFolder)) {
+    return { valid: true };
+  }
+
+  if (payload.session_id) {
+    const priorRun = findWorkerRunByEffectiveSessionId(payload.session_id);
+    if (priorRun && priorRun.group_folder !== targetFolder) {
+      return {
+        valid: false,
+        reason: `session_id belongs to ${priorRun.group_folder}; cross-worker session reuse is blocked`,
+      };
+    }
+  }
+
+  if (payload.context_intent === 'continue' && !payload.session_id) {
+    const reusable = getLatestReusableWorkerSession(
+      targetFolder,
+      payload.repo,
+      payload.branch,
+    );
+    if (!reusable?.effective_session_id) {
+      return {
+        valid: false,
+        reason: 'context_intent=continue requires a reusable prior session for this worker/repo/branch; provide session_id or use context_intent=fresh',
+      };
+    }
+  }
+
+  return { valid: true };
 }
 
 function canIpcAccessTaskGroup(
@@ -79,6 +217,7 @@ export function validateAndyWorkerDispatchMessage(
   text: string,
 ): { valid: boolean; reason?: string } {
   const parsed = parseDispatchPayload(text);
+  const isWorkerTarget = !!targetGroup && isJarvisWorkerFolder(targetGroup.folder);
 
   // Guardrail: prevent accidental raw dispatch contracts from being posted
   // back into the Andy-Developer WhatsApp chat.
@@ -93,11 +232,18 @@ export function validateAndyWorkerDispatchMessage(
     };
   }
 
+  // Strict worker dispatch contracts are owned by andy-developer.
+  if (isWorkerTarget && sourceGroup !== 'andy-developer' && parsed) {
+    return {
+      valid: false,
+      reason: 'worker dispatch ownership violation: only andy-developer may dispatch strict JSON contracts to jarvis-worker-* lanes',
+    };
+  }
+
   // For andy-developer -> jarvis-worker messages, enforce strict dispatch contract.
   if (
     sourceGroup !== 'andy-developer'
-    || !targetGroup
-    || !isJarvisWorkerFolder(targetGroup.folder)
+    || !isWorkerTarget
   ) {
     return { valid: true };
   }
@@ -109,6 +255,11 @@ export function validateAndyWorkerDispatchMessage(
   const { valid, errors } = validateDispatchPayload(parsed);
   if (!valid) {
     return { valid: false, reason: `invalid dispatch payload: ${errors.join('; ')}` };
+  }
+
+  const sessionRouting = validateWorkerSessionRouting(targetGroup.folder, parsed);
+  if (!sessionRouting.valid) {
+    return { valid: false, reason: sessionRouting.reason };
   }
 
   return { valid: true };
@@ -137,7 +288,19 @@ export function queueAndyWorkerDispatchRun(
   const parsed = parseDispatchPayload(text);
   if (!parsed) return { allowSend: true };
 
-  const queueState = insertWorkerRun(parsed.run_id, targetGroup.folder);
+  const queueState = insertWorkerRun(parsed.run_id, targetGroup.folder, {
+    dispatch_repo: parsed.repo,
+    dispatch_branch: parsed.branch,
+    context_intent: parsed.context_intent,
+    parent_run_id: parsed.parent_run_id,
+    dispatch_session_id: parsed.session_id,
+    selected_session_id: parsed.session_id,
+    session_selection_source: parsed.session_id
+      ? 'explicit'
+      : parsed.context_intent === 'fresh'
+        ? 'new'
+        : undefined,
+  });
   if (queueState === 'duplicate') {
     return {
       allowSend: false,
@@ -160,7 +323,7 @@ export function startIpcWatcher(deps: IpcDeps): void {
   }
   ipcWatcherRunning = true;
 
-  const ipcBaseDir = path.join(DATA_DIR, 'ipc');
+  const ipcBaseDir = IPC_BASE_DIR;
   fs.mkdirSync(ipcBaseDir, { recursive: true });
 
   const processIpcFiles = async () => {
@@ -227,18 +390,49 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     'IPC message sent',
                   );
                 } else {
+                  const reason = !canAccessTarget
+                    ? 'target authorization failed'
+                    : !dispatchValidation.valid
+                      ? dispatchValidation.reason
+                      : queueDecision.reason;
                   logger.warn(
                     {
                       chatJid: data.chatJid,
                       sourceGroup,
-                      reason: !canAccessTarget
-                        ? 'target authorization failed'
-                        : !dispatchValidation.valid
-                          ? dispatchValidation.reason
-                          : queueDecision.reason,
+                      reason,
                     },
                     'Unauthorized IPC message attempt blocked',
                   );
+
+                  if (targetGroup && isJarvisWorkerFolder(targetGroup.folder)) {
+                    const parsed = parseDispatchPayload(data.text);
+                    const reasonCode: DispatchBlockEvent['reason_code'] = !canAccessTarget
+                      ? 'target_authorization_failed'
+                      : !dispatchValidation.valid
+                        ? (
+                          dispatchValidation.reason?.includes('only andy-developer')
+                            ? 'unauthorized_source_lane'
+                            : 'invalid_dispatch_payload'
+                        )
+                        : 'duplicate_run_id';
+
+                    await notifyDispatchBlocked(
+                      deps,
+                      registeredGroups,
+                      ipcBaseDir,
+                      {
+                        kind: 'dispatch_block',
+                        timestamp: new Date().toISOString(),
+                        source_group: sourceGroup,
+                        source_jid: findGroupJidByFolder(registeredGroups, sourceGroup),
+                        target_jid: data.chatJid,
+                        target_folder: targetGroup.folder,
+                        reason_code: reasonCode,
+                        reason_text: reason || 'dispatch blocked',
+                        run_id: parsed?.run_id,
+                      },
+                    );
+                  }
                 }
               }
               fs.unlinkSync(filePath);
@@ -381,23 +575,106 @@ export async function processTaskIpc(
           break;
         }
 
+        if (isJarvisWorkerFolder(targetFolder) && sourceGroup !== 'andy-developer') {
+          const reasonText = 'worker dispatch ownership violation: only andy-developer may schedule worker dispatch tasks';
+          logger.warn(
+            { sourceGroup, targetFolder, reason: reasonText },
+            'Unauthorized worker schedule_task attempt blocked',
+          );
+          await notifyDispatchBlocked(
+            deps,
+            registeredGroups,
+            IPC_BASE_DIR,
+            {
+              kind: 'dispatch_block',
+              timestamp: new Date().toISOString(),
+              source_group: sourceGroup,
+              source_jid: findGroupJidByFolder(registeredGroups, sourceGroup),
+              target_jid: targetJid,
+              target_folder: targetFolder,
+              reason_code: 'unauthorized_source_lane',
+              reason_text: reasonText,
+              run_id: parseDispatchPayload(data.prompt)?.run_id,
+            },
+          );
+          break;
+        }
+
         if (
           sourceGroup === 'andy-developer'
           && isJarvisWorkerFolder(targetFolder)
         ) {
           const parsed = parseDispatchPayload(data.prompt);
           if (!parsed) {
+            const reasonText = 'andy-developer -> jarvis-worker schedule_task requires strict JSON dispatch payload';
             logger.warn(
-              { sourceGroup, targetFolder },
+              { sourceGroup, targetFolder, reason: reasonText },
               'Blocked schedule_task: andy-developer worker prompt must be strict dispatch JSON',
+            );
+            await notifyDispatchBlocked(
+              deps,
+              registeredGroups,
+              IPC_BASE_DIR,
+              {
+                kind: 'dispatch_block',
+                timestamp: new Date().toISOString(),
+                source_group: sourceGroup,
+                source_jid: findGroupJidByFolder(registeredGroups, sourceGroup),
+                target_jid: targetJid,
+                target_folder: targetFolder,
+                reason_code: 'invalid_dispatch_payload',
+                reason_text: reasonText,
+              },
             );
             break;
           }
           const { valid, errors } = validateDispatchPayload(parsed);
           if (!valid) {
+            const reasonText = `invalid dispatch payload: ${errors.join('; ')}`;
             logger.warn(
-              { sourceGroup, targetFolder, errors },
+              { sourceGroup, targetFolder, errors, reason: reasonText },
               'Blocked schedule_task: invalid worker dispatch payload',
+            );
+            await notifyDispatchBlocked(
+              deps,
+              registeredGroups,
+              IPC_BASE_DIR,
+              {
+                kind: 'dispatch_block',
+                timestamp: new Date().toISOString(),
+                source_group: sourceGroup,
+                source_jid: findGroupJidByFolder(registeredGroups, sourceGroup),
+                target_jid: targetJid,
+                target_folder: targetFolder,
+                reason_code: 'invalid_dispatch_payload',
+                reason_text: reasonText,
+                run_id: parsed.run_id,
+              },
+            );
+            break;
+          }
+          const sessionRouting = validateWorkerSessionRouting(targetFolder, parsed);
+          if (!sessionRouting.valid) {
+            const reasonText = sessionRouting.reason || 'invalid dispatch payload';
+            logger.warn(
+              { sourceGroup, targetFolder, reason: reasonText },
+              'Blocked schedule_task: invalid worker dispatch session routing',
+            );
+            await notifyDispatchBlocked(
+              deps,
+              registeredGroups,
+              IPC_BASE_DIR,
+              {
+                kind: 'dispatch_block',
+                timestamp: new Date().toISOString(),
+                source_group: sourceGroup,
+                source_jid: findGroupJidByFolder(registeredGroups, sourceGroup),
+                target_jid: targetJid,
+                target_folder: targetFolder,
+                reason_code: 'invalid_dispatch_payload',
+                reason_text: reasonText,
+                run_id: parsed.run_id,
+              },
             );
             break;
           }

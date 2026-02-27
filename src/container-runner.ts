@@ -20,7 +20,12 @@ import {
 import { readEnvFile } from './env.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
-import { CONTAINER_RUNTIME_BIN, readonlyMountArgs, stopContainer } from './container-runtime.js';
+import {
+  CONTAINER_RUNTIME_BIN,
+  readonlyMountArgs,
+  stopContainer,
+  stopRunningContainersByPrefix,
+} from './container-runtime.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
@@ -333,6 +338,30 @@ export async function runContainerAgent(
 
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
+  const groupPrefix = `nanoclaw-${safeName}-`;
+  // A previous NanoClaw process can leave orphaned group containers alive.
+  // Those orphans can consume IPC input from /workspace/ipc/<group>/input
+  // without forwarding output back to the current host process.
+  try {
+    const { matched, stopped, failures } = stopRunningContainersByPrefix(groupPrefix);
+    if (stopped.length > 0) {
+      logger.info(
+        { group: group.name, groupPrefix, stopped },
+        'Stopped stale group containers before spawn',
+      );
+    }
+    if (failures.length > 0) {
+      logger.warn(
+        { group: group.name, groupPrefix, matched, failures },
+        'Failed to stop some stale group containers before spawn',
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      { group: group.name, groupPrefix, err },
+      'Failed stale-container preflight; continuing with spawn',
+    );
+  }
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
   const image = group.folder.startsWith('jarvis-worker')
     ? WORKER_CONTAINER_IMAGE

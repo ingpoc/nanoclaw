@@ -39,7 +39,9 @@
       "Bash(./scripts/jarvis-ops.sh status:*)",
       "Bash(./scripts/jarvis-worker-probe.sh:*)",
       "Bash(launchctl list:*)",
-      "Bash(launchctl:*)"
+      "Bash(launchctl:*)",
+      "Bash(lsof:*)",
+      "Bash(kill 54775:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

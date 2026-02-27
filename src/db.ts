@@ -102,8 +102,6 @@ function createSchema(database: Database.Database): void {
       session_resume_error TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_worker_runs_folder ON worker_runs(group_folder, started_at);
-    CREATE INDEX IF NOT EXISTS idx_worker_runs_context_lookup ON worker_runs(group_folder, dispatch_repo, dispatch_branch, started_at);
-    CREATE INDEX IF NOT EXISTS idx_worker_runs_effective_session ON worker_runs(effective_session_id, started_at);
   `);
 
   // Add context_mode column if it doesn't exist (migration for existing DBs)
@@ -143,6 +141,15 @@ function createSchema(database: Database.Database): void {
       /* column already exists */
     }
   }
+
+  // Create indexes that depend on migrated worker_runs columns after migrations
+  // so startup succeeds on existing databases created before these fields existed.
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_worker_runs_context_lookup
+      ON worker_runs(group_folder, dispatch_repo, dispatch_branch, started_at);
+    CREATE INDEX IF NOT EXISTS idx_worker_runs_effective_session
+      ON worker_runs(effective_session_id, started_at);
+  `);
 
   // Add is_bot_message column if it doesn't exist (migration for existing DBs)
   try {

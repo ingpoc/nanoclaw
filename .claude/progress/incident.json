@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "updated_at": "2026-02-27T13:31:01.450223+00:00",
+  "incidents": [
+    {
+      "id": "incident-worker-connectivity-block-20260227",
+      "title": "Workers not connected; Andy developer cannot restart workers; push task blocked",
+      "status": "open",
+      "severity": "high",
+      "created_at": "2026-02-27T13:02:09.098285+00:00",
+      "updated_at": "2026-02-27T13:31:01.450190+00:00",
+      "summary": {
+        "symptom": "Workers are not connected and I don't have access to restart them. To restart the push task: start worker containers manually via deployment system, then I will dispatch push task. Alternative: push branches manually from local environment.",
+        "suspected_cause": "wa_conflict_churn",
+        "impact": "Workers recovered, but push workflow remains blocked until push dispatches are re-sent with valid contract-compliant payloads.",
+        "next_action": "Re-dispatch push tasks for jarvis-worker-1 and jarvis-worker-2 using branch names that match jarvis-<feature> and verify completion contract fields (especially commit_sha format)."
+      },
+      "evidence": {
+        "bundle_count": 2,
+        "last_bundle_dir": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260227T131146Z",
+        "last_manifest_path": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260227T131146Z/manifest.json",
+        "last_root_cause": "wa_conflict_churn",
+        "last_status": "warn",
+        "last_checked_at": "2026-02-27T13:11:49.530958+00:00",
+        "non_zero_command_count": 1,
+        "debug_summary": "root_cause=wa_conflict_churn; messages=4; worker_runs=0; dispatch_blocks=0; non_zero_commands=1"
+      },
+      "context": {
+        "lane": "andy-developer"
+      },
+      "notes": [
+        {
+          "ts": "2026-02-27T13:02:09.282115+00:00",
+          "author": "andy-developer",
+          "text": "Workers are not connected and I don't have access to restart them. To restart the push task: start worker containers manually via deployment system, then I will dispatch push task. Alternative: push branches manually from local environment."
+        },
+        {
+          "ts": "2026-02-27T13:24:04.537503+00:00",
+          "author": "operator",
+          "text": "2026-02-27: probe --skip-lint passed on jarvis-worker-1 and jarvis-worker-2 (review_requested); status now shows recent PASS runs. Remaining blockers are historical dispatch validation errors (branch must match jarvis-<feature>) and prior contract failures."
+        },
+        {
+          "ts": "2026-02-27T13:29:44.475546+00:00",
+          "author": "operator",
+          "text": "2026-02-27 fix applied: scripts/jarvis-worker-probe.sh now uses mktemp template without suffix; scripts/jarvis-dispatch-lint.sh now only cleans up temp stdin payloads and uses mktemp without suffix. Verification: jarvis-ops probe passed (2/2) without --skip-lint, followed by status showing new review_requested probe runs on both lanes."
+        }
+      ]
+    }
+  ]
+}

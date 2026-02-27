@@ -163,8 +163,18 @@ For repeatable operator checks, use:
 
 ```bash
 bash scripts/jarvis-ops.sh preflight
+bash scripts/jarvis-ops.sh reliability
 bash scripts/jarvis-ops.sh status
+bash scripts/jarvis-ops.sh trace --lane andy-developer
+bash scripts/jarvis-ops.sh dispatch-lint --file /tmp/dispatch.json --target-folder jarvis-worker-1
+bash scripts/jarvis-ops.sh db-doctor
+bash scripts/jarvis-ops.sh incident add --title "Andy not responding to hi" --lane andy-developer
+bash scripts/jarvis-ops.sh incident enrich --id <incident-id> --cause "<root cause>" --impact "<impact>" --next-action "<next step>"
+bash scripts/jarvis-ops.sh incident list --status open
 bash scripts/jarvis-ops.sh probe
+bash scripts/jarvis-ops.sh hotspots --window-hours 72
+bash scripts/jarvis-ops.sh incident-bundle --window-minutes 180 --lane andy-developer
+bash scripts/jarvis-ops.sh incident-bundle --window-minutes 180 --lane andy-developer --incident-id <incident-id>
 bash scripts/jarvis-ops.sh recover
 bash scripts/jarvis-ops.sh smoke
 bash scripts/jarvis-ops.sh watch --lines 120
@@ -173,6 +183,10 @@ bash scripts/jarvis-ops.sh watch --lines 120
 Notes:
 - `smoke` uses the live `store/messages.db` path by default.
 - Use `bash scripts/jarvis-ops.sh smoke --isolated-db` only when you explicitly want isolated in-memory validation.
+- Incident registry is stored at `.claude/progress/incident.json`.
+- `incident-bundle` is debug-only by default; it tracks only when `--incident-id` (or `--track`) is provided.
+- Only resolve after explicit user confirmation, for example:
+  `bash scripts/jarvis-ops.sh incident resolve --id <incident-id> --resolution "<exact fix>" --verification "<proof>" --fix-reference "<commit/pr>" --user-confirmed-fixed --user-confirmation "<user confirmed fixed>"`
 
 **Why isn't the setup working for me?**
 

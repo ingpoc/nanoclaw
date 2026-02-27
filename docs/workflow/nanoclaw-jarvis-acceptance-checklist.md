@@ -11,11 +11,15 @@ Use this checklist before marking NanoClaw-Jarvis integration complete.
 
 ## Dispatch and State Contract
 
-- [x] Worker dispatch requires strict JSON payload (`run_id`, `task_type`, `input`, `repo`, `branch`, `acceptance_tests`, `output_contract`).
+- [x] Worker dispatch requires strict JSON payload (`run_id`, `task_type`, `context_intent`, `input`, `repo`, `branch`, `acceptance_tests`, `output_contract`).
 - [x] Plain-text worker dispatch is rejected.
 - [x] `run_id` is canonical and required (no fallback hash generation).
 - [x] Duplicate `run_id` does not double execute.
 - [x] Retry semantics are bounded to `failed` and `failed_contract`.
+- [x] Session intent enforcement works:
+  - `context_intent=fresh` rejects provided `session_id`
+  - `context_intent=continue` requires `session_id` in `output_contract.required_fields`
+  - cross-worker explicit `session_id` reuse is blocked
 
 ## Completion Contract
 
@@ -23,6 +27,7 @@ Use this checklist before marking NanoClaw-Jarvis integration complete.
 - [x] Completion requires `run_id`, `branch`, `commit_sha`, `files_changed`, `test_result`, `risk`, and `pr_url|pr_skipped_reason`.
 - [x] Completion `run_id` must match dispatch `run_id`.
 - [x] Completion artifacts are persisted in `worker_runs`.
+- [x] Continue-mode runs require completion `session_id` when requested by dispatch contract.
 
 ## Worker Runtime Standardization
 

@@ -24,6 +24,7 @@ BEFORE starting implementation/debug/setup/update work → read .claude/rules/sk
 BEFORE changing core orchestrator/channel/IPC/scheduler behavior → read docs/reference/REQUIREMENTS.md, docs/reference/SPEC.md, docs/reference/SECURITY.md
 BEFORE changing high-level orchestration methodology → read docs/architecture/harness-engineering-alignment.md
 BEFORE changing Jarvis architecture/state machine → read docs/architecture/nanoclaw-jarvis.md
+BEFORE finalizing Jarvis workflow/contract changes → read docs/workflow/nanoclaw-jarvis-acceptance-checklist.md
 BEFORE changing worker contract code/docs → read .claude/rules/jarvis-dispatch-contract-discipline.md
 BEFORE changing worker dispatch validation/contracts → read docs/workflow/nanoclaw-jarvis-dispatch-contract.md
 BEFORE changing worker container runtime/mounts/model config → read docs/workflow/nanoclaw-jarvis-worker-runtime.md

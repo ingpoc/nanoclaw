@@ -37,7 +37,9 @@
       "Bash(test:*)",
       "Bash(./scripts/jarvis-status.sh:*)",
       "Bash(./scripts/jarvis-ops.sh status:*)",
-      "Bash(./scripts/jarvis-worker-probe.sh:*)"
+      "Bash(./scripts/jarvis-worker-probe.sh:*)",
+      "Bash(launchctl list:*)",
+      "Bash(launchctl:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

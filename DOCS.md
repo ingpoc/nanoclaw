@@ -18,7 +18,6 @@ Canonical classification for repository docs.
 
 ## `docs/workflow/`
 
-- `docs/workflow/optimized-nanoclaw-jarvis-vision.md`: target operating model and roadmap direction
 - `docs/workflow/nanoclaw-jarvis-dispatch-contract.md`: strict dispatch/completion contract
 - `docs/workflow/nanoclaw-jarvis-worker-runtime.md`: worker runtime, mounts, model fallback, role bundles
 - `docs/workflow/nanoclaw-jarvis-acceptance-checklist.md`: acceptance and smoke validation gates

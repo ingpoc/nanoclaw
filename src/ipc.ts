@@ -106,10 +106,14 @@ function buildDispatchBlockedMessage(event: DispatchBlockEvent): string {
     priority: 'high',
   };
 
-  return [
+  const lines = [
     '*Dispatch blocked by validator*',
+    ...(event.run_id ? [`• Run ID: \`${event.run_id}\``] : []),
     `• Target: \`${event.target_jid}\` (${event.target_folder || 'unknown-folder'})`,
     `• Reason: ${event.reason_text}`,
+  ];
+  return [
+    ...lines,
     '• Enforced rules:',
     '  - Only `andy-developer` may dispatch strict JSON contracts to `jarvis-worker-*`.',
     '  - `branch` must match `jarvis-<feature>`.',

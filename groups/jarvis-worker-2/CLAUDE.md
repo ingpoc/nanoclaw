@@ -8,19 +8,6 @@ You are a coding agent. Execute development tasks assigned by Andy-Developer.
 - GitHub account: `openclaw-gurusharan` (full push access)
 - Git identity: `Andy (openclaw-gurusharan)` / `openclaw-gurusharan@users.noreply.github.com`
 
-## GitHub Access
-
-`GITHUB_TOKEN` and `GH_TOKEN` are in your environment. Git credentials are pre-configured.
-
-```bash
-# Clone a repo - use your workspace directory
-cd /workspace/group/workspace
-git clone https://openclaw-gurusharan:$GITHUB_TOKEN@github.com/openclaw-gurusharan/REPO.git
-
-# List repos
-gh repo list openclaw-gurusharan --limit 50
-```
-
 ## Workspace
 
 | Path | Purpose |
@@ -32,6 +19,7 @@ gh repo list openclaw-gurusharan --limit 50
 
 BEFORE any git/PR work → read /workspace/group/docs/workflow/git-pr-workflow.md
 BEFORE any GitHub push or auth setup → read /workspace/group/docs/workflow/github-account-isolation.md
+BEFORE cloning a repo or listing repos → read /workspace/group/docs/workflow/github-quick-ref.md
 BEFORE starting a new task → read /workspace/group/docs/workflow/execution-loop.md
 BEFORE any browser/UI automation task → read /workspace/group/docs/workflow/webmcp-testing.md
 BEFORE selecting skills for a task → read /workspace/group/docs/workflow/worker-skill-policy.md
@@ -69,6 +57,7 @@ Tasks MUST arrive as structured JSON (plain text dispatch is invalid):
 Use `input` as the actual task objective. Always acknowledge and preserve the same `run_id`.
 Use the dispatched `branch` exactly as provided. If `base_branch` is present, treat it as the seed source and do not invent a different worker branch name.
 Respect `context_intent`:
+
 - `fresh`: start clean; do not assume prior task context.
 - `continue`: resume the provided/selected session context and include `session_id` in completion output.
 
@@ -80,6 +69,21 @@ Respect `context_intent`:
 - Do not capture/analyze screenshots for browser validation; use text-based evidence only
 - Commit and push work when complete unless told otherwise
 - Report blockers immediately rather than guessing
+
+## Pre-Exit Gate (enforced by runner)
+
+Before your session ends the runner validates your output. These MUST be present:
+
+- [ ] Exactly one `<completion>...</completion>` block in your output
+- [ ] `run_id` matches the dispatched run_id
+- [ ] `branch` matches `jarvis-*` pattern from dispatch
+- [ ] `commit_sha` is a real git SHA (`git rev-parse HEAD` after push)
+- [ ] `files_changed` is an array of modified file paths
+- [ ] `test_result` describes what passed/failed
+- [ ] `risk` describes the risk level
+- [ ] `pr_url` or `pr_skipped_reason` is present
+
+If the runner finds missing fields, it will re-invoke you with the exact missing list.
 
 ## Completion Contract
 

@@ -46,8 +46,8 @@ Run in order:
 
 If runtime is unhealthy, continue with:
 
-4. `recover`
-5. rerun `preflight` and `status`
+1. `recover`
+2. rerun `preflight` and `status`
 
 ### B) "Andy/Jarvis did not respond"
 
@@ -59,15 +59,33 @@ Run:
 
 If issue persists:
 
-4. `incident-bundle --window-minutes 180 --lane andy-developer --incident-id <id>`
+1. `incident-bundle --window-minutes 180 --lane andy-developer --incident-id <id>`
 
 ### C) "Dispatch blocked / contract mismatch"
 
-Run:
+Two enforcement layers exist — diagnose which one fired:
+
+**L1 — Andy-side PreToolUse hook** (fires inside the container before IPC):
+
+- Andy sees the error inline; dispatch never reaches IPC
+- If hook is not firing when it should, check:
+  - `cat data/sessions/andy-developer/.claude/settings.json` → must have `PreToolUse` hook for `mcp__nanoclaw__send_message`
+  - `ls -la data/sessions/andy-developer/.claude/hooks/validate-dispatch.sh` → must exist and be executable
+  - If missing: restart NanoClaw — `container-runner.ts` copies hooks on every container start
+
+**L2 — IPC server-side validator** (fallback; fires if L1 was bypassed):
+
+- Check `data/ipc/errors/dispatch-block-*.json` for the blocked event
+- Andy receives a WhatsApp message with the run_id and reason
+
+**Diagnostic commands:**
 
 1. `dispatch-lint --file <dispatch.json> --target-folder <jarvis-worker-x>`
 2. `status`
 3. `trace --lane andy-developer`
+
+**Worker completion retry note:**
+If a worker trace shows two OpenCode invocations for one run, the second was a completion validation retry (runner detected missing `<completion>` block fields on first attempt). Check the second invocation's output for the corrected block.
 
 ### D) "DB/schema/session drift suspected"
 

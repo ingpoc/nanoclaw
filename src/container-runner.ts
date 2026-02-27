@@ -200,20 +200,65 @@ function buildVolumeMounts(
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
-  if (!fs.existsSync(settingsFile)) {
-    fs.writeFileSync(settingsFile, JSON.stringify({
-      env: {
-        // Enable agent swarms (subagent orchestration)
-        // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
-        CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
-        // Load CLAUDE.md from additional mounted directories
-        // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
-        CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
-        // Enable Claude's memory feature (persists user preferences between sessions)
-        // https://code.claude.com/docs/en/memory#manage-auto-memory
-        CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
-      },
-    }, null, 2) + '\n');
+
+  // Always-merge settings so hooks and env vars stay current on every start.
+  let settings: Record<string, unknown> = {};
+  if (fs.existsSync(settingsFile)) {
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8')) as Record<string, unknown>;
+    } catch {
+      // Corrupt settings file — start fresh
+    }
+  }
+
+  // Ensure required env vars are present (existing values take precedence)
+  const existingEnv = (settings.env as Record<string, string> | undefined) ?? {};
+  settings.env = {
+    // Enable agent swarms (subagent orchestration)
+    // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
+    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+    // Load CLAUDE.md from additional mounted directories
+    // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
+    CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
+    // Enable Claude's memory feature (persists user preferences between sessions)
+    // https://code.claude.com/docs/en/memory#manage-auto-memory
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+    ...existingEnv,
+  };
+
+  // Inject PreToolUse dispatch validation hook for andy-developer only.
+  // The hook blocks invalid dispatch payloads before they leave the container.
+  if (group.folder === 'andy-developer') {
+    const existingHooks = (settings.hooks as Record<string, unknown> | undefined) ?? {};
+    const existingPreToolUse = (existingHooks.PreToolUse as unknown[] | undefined) ?? [];
+    const validateHook = {
+      matcher: 'mcp__nanoclaw__send_message',
+      hooks: [{ type: 'command', command: '/home/node/.claude/hooks/validate-dispatch.sh' }],
+    };
+    const alreadyPresent = existingPreToolUse.some(
+      (h) => JSON.stringify(h) === JSON.stringify(validateHook),
+    );
+    settings.hooks = {
+      ...existingHooks,
+      PreToolUse: alreadyPresent ? existingPreToolUse : [...existingPreToolUse, validateHook],
+    };
+  }
+
+  fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + '\n');
+
+  // Sync hooks from groups/<folder>/.claude/hooks/ into sessions/<folder>/.claude/hooks/
+  // This runs on every container start so updated scripts are always current.
+  const hooksSrc = path.join(GROUPS_DIR, group.folder, '.claude', 'hooks');
+  if (fs.existsSync(hooksSrc)) {
+    const hooksDst = path.join(groupSessionsDir, 'hooks');
+    fs.mkdirSync(hooksDst, { recursive: true });
+    for (const entry of fs.readdirSync(hooksSrc, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const srcHookPath = path.join(hooksSrc, entry.name);
+      const dstHookPath = path.join(hooksDst, entry.name);
+      fs.copyFileSync(srcHookPath, dstHookPath);
+      fs.chmodSync(dstHookPath, 0o755);
+    }
   }
 
   // Sync skills from container/skills/ into each group's .claude/skills/

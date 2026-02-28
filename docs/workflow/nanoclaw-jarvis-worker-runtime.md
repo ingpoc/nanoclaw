@@ -133,6 +133,19 @@ Operational logs:
 - Pre-launch cleanup: `Stopped stale running containers before launch`
 - Failure with attempts: `Failed to stop some orphaned containers`
 
+## Timeout Semantics
+
+Worker/Andy container runtime now uses three timeout layers:
+
+1. `IDLE_TIMEOUT` (default `300000` ms): host closes stdin after output inactivity.
+2. `CONTAINER_NO_OUTPUT_TIMEOUT` (default `720000` ms): fail-fast when no streamed marker output appears.
+3. `CONTAINER_TIMEOUT` (default `1800000` ms): hard safety timeout (effective hard timeout is at least `IDLE_TIMEOUT + 30000`).
+
+Timeout artifacts include explicit reason codes:
+
+- `no_output_timeout`
+- `hard_timeout`
+
 ## Usage Stats
 
 Current usage payload includes:

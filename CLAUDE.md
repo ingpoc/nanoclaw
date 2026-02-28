@@ -90,6 +90,26 @@ npm run build        # Compile TypeScript
 ./container/build.sh # Rebuild agent container
 ```
 
+Jarvis ops entrypoint:
+
+```bash
+bash scripts/jarvis-ops.sh reliability
+bash scripts/jarvis-ops.sh trace --lane andy-developer --until <iso-timestamp>
+bash scripts/jarvis-ops.sh verify-worker-connectivity
+```
+
+Runtime tuning env vars (see `.env.example` for defaults):
+
+- `IDLE_TIMEOUT`
+- `CONTAINER_TIMEOUT`
+- `CONTAINER_NO_OUTPUT_TIMEOUT`
+- `WA_RECONNECT_BASE_DELAY_MS`
+- `WA_RECONNECT_MAX_DELAY_MS`
+- `WA_RECONNECT_JITTER_MS`
+- `WA_RECONNECT_BURST_WINDOW_MS`
+- `WA_RECONNECT_BURST_THRESHOLD`
+- `WA_RECONNECT_COOLDOWN_MS`
+
 Service management:
 
 ```bash

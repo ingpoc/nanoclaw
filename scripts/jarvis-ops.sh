@@ -13,6 +13,8 @@ Commands:
   status          Show lane health and root-cause summaries from worker_runs
   watch           Follow categorized runtime logs
   trace           Build end-to-end timeline for lane/chat/run
+  verify-worker-connectivity
+                  Validate worker lane connectivity gate using probe + DB checks
   dispatch-lint   Validate worker dispatch payload against current rules
   db-doctor       Diagnose database schema/index/readiness drift (read-only)
   incident        Manage incident registry (list/show/resolve/reopen/note)
@@ -45,6 +47,9 @@ case "$command_name" in
     ;;
   trace)
     exec "$SCRIPT_DIR/jarvis-trace.sh" "$@"
+    ;;
+  verify-worker-connectivity)
+    exec "$SCRIPT_DIR/jarvis-verify-worker-connectivity.sh" "$@"
     ;;
   dispatch-lint)
     exec "$SCRIPT_DIR/jarvis-dispatch-lint.sh" "$@"

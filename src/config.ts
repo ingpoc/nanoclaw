@@ -40,6 +40,10 @@ export const CONTAINER_TIMEOUT = parseInt(
   process.env.CONTAINER_TIMEOUT || '1800000',
   10,
 );
+export const CONTAINER_NO_OUTPUT_TIMEOUT = parseInt(
+  process.env.CONTAINER_NO_OUTPUT_TIMEOUT || '720000',
+  10,
+);
 export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
   process.env.CONTAINER_MAX_OUTPUT_SIZE || '10485760',
   10,
@@ -55,10 +59,34 @@ export const CONTAINER_MEMORY_LIMIT =
   process.env.CONTAINER_MEMORY_LIMIT || '4096M';
 // Upstream: IPC and concurrency
 export const IPC_POLL_INTERVAL = 1000;
-export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10); // 30min default — how long to keep container alive after last result
+export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '300000', 10); // 5min default — close stdin after last result
 export const MAX_CONCURRENT_CONTAINERS = Math.max(
   1,
   parseInt(process.env.MAX_CONCURRENT_CONTAINERS || '5', 10) || 5,
+);
+export const WA_RECONNECT_BASE_DELAY_MS = parseInt(
+  process.env.WA_RECONNECT_BASE_DELAY_MS || '1000',
+  10,
+);
+export const WA_RECONNECT_MAX_DELAY_MS = parseInt(
+  process.env.WA_RECONNECT_MAX_DELAY_MS || '30000',
+  10,
+);
+export const WA_RECONNECT_JITTER_MS = parseInt(
+  process.env.WA_RECONNECT_JITTER_MS || '750',
+  10,
+);
+export const WA_RECONNECT_BURST_WINDOW_MS = parseInt(
+  process.env.WA_RECONNECT_BURST_WINDOW_MS || '600000',
+  10,
+);
+export const WA_RECONNECT_BURST_THRESHOLD = parseInt(
+  process.env.WA_RECONNECT_BURST_THRESHOLD || '15',
+  10,
+);
+export const WA_RECONNECT_COOLDOWN_MS = parseInt(
+  process.env.WA_RECONNECT_COOLDOWN_MS || '60000',
+  10,
 );
 
 function escapeRegex(str: string): string {

@@ -61,6 +61,30 @@ is_pos_int() {
   [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -gt 0 ]
 }
 
+RETRY_LAST_ERR=""
+run_with_retry() {
+  local attempts="$1"
+  local sleep_sec="$2"
+  shift 2
+  local try
+  local out=""
+  for ((try=1; try<=attempts; try++)); do
+    if out="$("$@" 2>&1)"; then
+      RETRY_LAST_ERR=""
+      return 0
+    fi
+    RETRY_LAST_ERR="$out"
+    if [ "$try" -lt "$attempts" ]; then
+      sleep "$sleep_sec"
+    fi
+  done
+  return 1
+}
+
+compact_error() {
+  tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | cut -c1-240
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --db)
@@ -135,15 +159,15 @@ else
 fi
 
 if have_cmd container; then
-  if container system status >/dev/null 2>&1; then
+  if run_with_retry 3 1 container system status; then
     pass "container system status OK"
   else
-    fail "container system status failed"
+    fail "container system status failed (stderr: $(printf '%s' "$RETRY_LAST_ERR" | compact_error))"
   fi
-  if container builder status >/dev/null 2>&1; then
+  if run_with_retry 3 1 container builder status; then
     pass "container builder status OK"
   else
-    fail "container builder status failed"
+    fail "container builder status failed (stderr: $(printf '%s' "$RETRY_LAST_ERR" | compact_error))"
   fi
 
   running_nanoclaw="$(container ls -a 2>/dev/null | awk 'NR>1 && $1 ~ /^nanoclaw-/ && $5=="running" {print $1}')"
@@ -240,15 +264,20 @@ else
 fi
 
 dispatch_block_count=0
+recent_dispatch_block_count=0
 if [ -d "$ROOT_DIR/data/ipc/errors" ]; then
   while IFS= read -r _; do
     dispatch_block_count=$((dispatch_block_count + 1))
   done < <(find "$ROOT_DIR/data/ipc/errors" -type f -name 'dispatch-block-*.json' 2>/dev/null)
+  while IFS= read -r _; do
+    recent_dispatch_block_count=$((recent_dispatch_block_count + 1))
+  done < <(find "$ROOT_DIR/data/ipc/errors" -type f -name 'dispatch-block-*.json' -mmin "-${WINDOW_MINUTES}" 2>/dev/null)
 fi
-if [ "$dispatch_block_count" -eq 0 ]; then
-  pass "no dispatch-block artifacts under data/ipc/errors"
+info "all-time dispatch-block artifacts: $dispatch_block_count"
+if [ "$recent_dispatch_block_count" -eq 0 ]; then
+  pass "no dispatch-block artifacts in last ${WINDOW_MINUTES}m"
 else
-  warn "dispatch-block artifacts present: $dispatch_block_count"
+  warn "dispatch-block artifacts in last ${WINDOW_MINUTES}m: $recent_dispatch_block_count"
   recent_block_reasons="$(rg -n '"reason_text"' "$ROOT_DIR/data/ipc/errors"/dispatch-block-*.json 2>/dev/null | tail -n 3 || true)"
   if [ -n "$recent_block_reasons" ]; then
     info "recent dispatch block reasons:"

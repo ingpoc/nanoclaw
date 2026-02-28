@@ -587,9 +587,9 @@ function reconcileStaleWorkerRuns(): void {
         completeWorkerRun(
           run.run_id,
           'failed',
-          'Auto-failed orphaned queued worker run (cursor past dispatch)',
+          'Auto-failed queued worker run before spawn (cursor past dispatch)',
           JSON.stringify({
-            reason: 'queued_cursor_past_dispatch',
+            reason: 'queued_stale_before_spawn',
             status: run.status,
             started_at: run.started_at,
             cursor,
@@ -603,7 +603,7 @@ function reconcileStaleWorkerRuns(): void {
             startedAt: run.started_at,
             cursor,
           },
-          'Auto-failed queued worker run with cursor past dispatch timestamp',
+          'Auto-failed queued worker run before spawn with cursor past dispatch',
         );
         changed = true;
         continue;
@@ -773,6 +773,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   let runtimeEffectiveSessionId: string | undefined;
   let runtimeSessionResumeStatus: ContainerOutput['sessionResumeStatus'];
   let runtimeSessionResumeError: string | undefined;
+  let workerRunMarkedRunning = false;
+  let workerSpawnContainerName: string | undefined;
 
   if (workerRun) {
     const existingRun = getWorkerRun(workerRun.runId);
@@ -863,8 +865,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       updateWorkerRunDispatchMetadata(workerRun.runId, dispatchMetadata);
     }
 
-    updateWorkerRunStatus(workerRun.runId, 'running');
-    refreshWorkerRunSnapshotsForGroups();
   }
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
@@ -880,13 +880,14 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   // Track idle timer for closing stdin when agent is idle
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  const idleTimeoutMs = group.containerConfig?.idleTimeout || IDLE_TIMEOUT;
 
   const resetIdleTimer = () => {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       logger.debug({ group: group.name }, 'Idle timeout, closing container stdin');
       queue.closeStdin(chatJid);
-    }, IDLE_TIMEOUT);
+    }, idleTimeoutMs);
   };
 
   await channel?.setTyping?.(chatJid, true);
@@ -895,6 +896,19 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   const sessionOverride = workerSessionSelection
     ? (workerSessionSelection.selectedSessionId ?? null)
+    : undefined;
+  const onSpawn = workerRun
+    ? (containerName: string) => {
+        if (workerRunMarkedRunning) return;
+        workerRunMarkedRunning = true;
+        workerSpawnContainerName = containerName;
+        updateWorkerRunStatus(workerRun.runId, 'running');
+        refreshWorkerRunSnapshotsForGroups();
+        logger.info(
+          { runId: workerRun.runId, group: group.name, containerName },
+          'Worker run marked running after container spawn',
+        );
+      }
     : undefined;
   const runOutcome = await runAgent(group, prompt, chatJid, async (result) => {
     // Streaming output callback — called for each agent result
@@ -924,7 +938,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (result.status === 'error') {
       hadError = true;
     }
-  }, sessionOverride);
+  }, sessionOverride, onSpawn);
+
+  const workerSpawnFailedBeforeRunning = !!workerRun
+    && (runOutcome.status === 'error' || hadError)
+    && !workerRunMarkedRunning;
 
   if (runOutcome.newSessionId) {
     runtimeEffectiveSessionId = runOutcome.newSessionId;
@@ -1050,30 +1068,54 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         'Worker completion contract accepted',
       );
     } else if (runOutcome.status === 'error' || hadError) {
-      const missingSummary = completionCheck.missing.join(', ');
-      completeWorkerRun(
-        workerRun.runId,
-        'failed',
-        missingSummary
-          ? `Worker execution failed; missing: ${missingSummary}`
-          : 'worker execution failed',
-        JSON.stringify({
-          reason: 'worker execution failed',
-          missing: completionCheck.missing,
-          output_status: runOutcome.status,
-          output_error: runOutcome.error,
-          had_error: hadError,
-          output_excerpt: workerOutputBuffer.slice(0, 2000),
-        }),
-      );
-      logger.warn(
-        {
-          runId: workerRun.runId,
-          group: group.name,
-          missing: completionCheck.missing,
-        },
-        'Worker run marked failed',
-      );
+      if (workerSpawnFailedBeforeRunning) {
+        completeWorkerRun(
+          workerRun.runId,
+          'failed',
+          'Worker container failed before running state could be established',
+          JSON.stringify({
+            reason: 'container_spawn_failed_before_running',
+            output_status: runOutcome.status,
+            output_error: runOutcome.error,
+            had_error: hadError,
+            container_name: workerSpawnContainerName ?? null,
+            output_excerpt: workerOutputBuffer.slice(0, 2000),
+          }),
+        );
+        logger.warn(
+          {
+            runId: workerRun.runId,
+            group: group.name,
+            outputError: runOutcome.error,
+          },
+          'Worker run failed before running state',
+        );
+      } else {
+        const missingSummary = completionCheck.missing.join(', ');
+        completeWorkerRun(
+          workerRun.runId,
+          'failed',
+          missingSummary
+            ? `Worker execution failed; missing: ${missingSummary}`
+            : 'worker execution failed',
+          JSON.stringify({
+            reason: 'worker execution failed',
+            missing: completionCheck.missing,
+            output_status: runOutcome.status,
+            output_error: runOutcome.error,
+            had_error: hadError,
+            output_excerpt: workerOutputBuffer.slice(0, 2000),
+          }),
+        );
+        logger.warn(
+          {
+            runId: workerRun.runId,
+            group: group.name,
+            missing: completionCheck.missing,
+          },
+          'Worker run marked failed',
+        );
+      }
       refreshWorkerRunSnapshotsForGroups();
     } else {
       const missingSummary = completionCheck.missing.join(', ');
@@ -1137,6 +1179,7 @@ async function runAgent(
   chatJid: string,
   onOutput?: (output: ContainerOutput) => Promise<void>,
   sessionOverride?: string | null,
+  onSpawn?: (containerName: string) => void,
 ): Promise<RunAgentResult> {
   const isMain = group.folder === MAIN_GROUP_FOLDER;
   const sessionId = sessionOverride === undefined
@@ -1200,7 +1243,17 @@ async function runAgent(
         isMain,
         assistantName: ASSISTANT_NAME,
       },
-      (proc, containerName) => queue.registerProcess(chatJid, proc, containerName, group.folder),
+      (proc, containerName) => {
+        queue.registerProcess(chatJid, proc, containerName, group.folder);
+        if (typeof proc.pid === 'number' && proc.pid > 0) {
+          onSpawn?.(containerName);
+        } else {
+          logger.warn(
+            { group: group.name, containerName, pid: proc.pid },
+            'Container process registered without valid pid',
+          );
+        }
+      },
       wrappedOnOutput,
     );
 

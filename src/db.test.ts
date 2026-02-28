@@ -268,14 +268,15 @@ describe('getNewMessages', () => {
   });
 
   it('returns new messages across multiple groups', () => {
-    const { messages, newTimestamp } = getNewMessages(
+    const { messages, newCursor } = getNewMessages(
       ['group1@g.us', 'group2@g.us'],
       '2024-01-01T00:00:00.000Z',
       'Andy',
     );
     // Excludes bot message, returns 3 user messages
     expect(messages).toHaveLength(3);
-    expect(newTimestamp).toBe('2024-01-01T00:00:04.000Z');
+    // Composite cursor includes message ID
+    expect(newCursor).toMatch(/^2024-01-01T00:00:04\.000Z\|/);
   });
 
   it('filters by timestamp', () => {
@@ -290,9 +291,9 @@ describe('getNewMessages', () => {
   });
 
   it('returns empty for no registered groups', () => {
-    const { messages, newTimestamp } = getNewMessages([], '', 'Andy');
+    const { messages, newCursor } = getNewMessages([], '', 'Andy');
     expect(messages).toHaveLength(0);
-    expect(newTimestamp).toBe('');
+    expect(newCursor).toBe('');
   });
 });
 

@@ -71,3 +71,14 @@ git push -u origin jarvis-<feature>
 ```
 
 See `github-account-isolation.md` for full env/secrets reference.
+
+## Recommended Push Verification
+
+Lightweight post-push checks (recommended, not mandatory):
+
+```bash
+git push -u origin jarvis-<feature>
+git ls-remote --heads origin jarvis-<feature>
+```
+
+If push is blocked, report the exact error and include a short `pr_skipped_reason`.

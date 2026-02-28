@@ -34,6 +34,8 @@ interface ContainerOutput {
   status: 'success' | 'error';
   result: string | null;
   newSessionId?: string;
+  sessionResumeStatus?: 'resumed' | 'fallback_new' | 'new';
+  sessionResumeError?: string;
   error?: string;
 }
 
@@ -143,6 +145,15 @@ function isOAuthLimitMessage(text: string): boolean {
   return OAUTH_LIMIT_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
+function isSessionResumeErrorMessage(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) return false;
+  return (
+    /(resume|session)/i.test(normalized)
+    && /(not found|unknown|invalid|does not exist|failed|cannot|unable|missing)/i.test(normalized)
+  );
+}
+
 function selectInitialAuthMode(
   groupFolder: string,
   secrets: Record<string, string>,
@@ -168,6 +179,7 @@ function buildSdkEnv(
   baseEnv: NodeJS.ProcessEnv,
   secrets: Record<string, string>,
   authMode: AuthMode,
+  groupFolder: string,
 ): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...baseEnv };
   delete env.CLAUDE_CODE_OAUTH_TOKEN;
@@ -177,6 +189,15 @@ function buildSdkEnv(
   const oauth = secrets.CLAUDE_CODE_OAUTH_TOKEN;
   const apiKey = secrets.ANTHROPIC_API_KEY;
   const anthropicBaseUrl = secrets.ANTHROPIC_BASE_URL;
+  const fallbackEnabled = isFallbackToggleEnabled(secrets);
+  const laneKey = groupFolder.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  const laneGithub = secrets[`GITHUB_TOKEN_${laneKey}`] || secrets[`GH_TOKEN_${laneKey}`];
+  const globalGithub = secrets.GITHUB_TOKEN || secrets.GH_TOKEN;
+  const githubToken = laneGithub || globalGithub;
+  if (githubToken) {
+    env.GITHUB_TOKEN = githubToken;
+    env.GH_TOKEN = githubToken;
+  }
 
   if (authMode === 'oauth') {
     if (oauth) env.CLAUDE_CODE_OAUTH_TOKEN = oauth;
@@ -185,13 +206,13 @@ function buildSdkEnv(
 
   if (authMode === 'apiKey') {
     if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
-    if (anthropicBaseUrl) env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
+    if (anthropicBaseUrl && fallbackEnabled) env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
     return env;
   }
 
   if (oauth) env.CLAUDE_CODE_OAUTH_TOKEN = oauth;
   if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
-  if (anthropicBaseUrl) env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
+  if (anthropicBaseUrl && fallbackEnabled) env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
   return env;
 }
 
@@ -454,6 +475,8 @@ async function runQuery(
   authMode: AuthMode,
   model: string | undefined,
   allowApiFallback: boolean,
+  sessionResumeStatus: ContainerOutput['sessionResumeStatus'],
+  sessionResumeError?: string,
   resumeAt?: string,
 ): Promise<{
   newSessionId?: string;
@@ -594,7 +617,9 @@ async function runQuery(
       writeOutput({
         status: 'success',
         result: textResult || null,
-        newSessionId
+        newSessionId,
+        sessionResumeStatus,
+        sessionResumeError,
       });
     }
   }
@@ -632,7 +657,7 @@ async function main(): Promise<void> {
     && !!secrets.CLAUDE_CODE_OAUTH_TOKEN
     && !!secrets.ANTHROPIC_API_KEY;
   let authMode = selectInitialAuthMode(containerInput.groupFolder, secrets);
-  let sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+  let sdkEnv = buildSdkEnv(process.env, secrets, authMode, containerInput.groupFolder);
   let model = selectModelForQuery(secrets, authMode);
   log(`Auth mode: ${authMode}${authFallbackAvailable ? ' (API fallback enabled)' : ''}`);
 
@@ -658,6 +683,9 @@ async function main(): Promise<void> {
 
   // Query loop: run query → wait for IPC message → run new query → repeat
   let resumeAt: string | undefined;
+  let sessionResumeStatus: ContainerOutput['sessionResumeStatus'] = sessionId ? 'resumed' : 'new';
+  let sessionResumeError: string | undefined;
+  let resumeFallbackAttempted = false;
   try {
     while (true) {
       log(`Starting query (session: ${sessionId || 'new'}, resumeAt: ${resumeAt || 'latest'})...`);
@@ -673,14 +701,25 @@ async function main(): Promise<void> {
           authMode,
           model,
           authFallbackAvailable,
+          sessionResumeStatus,
+          sessionResumeError,
           resumeAt,
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        if (sessionId && !resumeFallbackAttempted && isSessionResumeErrorMessage(message)) {
+          log(`Session resume failed, falling back to new session: ${message}`);
+          resumeFallbackAttempted = true;
+          sessionResumeStatus = 'fallback_new';
+          sessionResumeError = message.slice(0, 500);
+          sessionId = undefined;
+          resumeAt = undefined;
+          continue;
+        }
         if (authFallbackAvailable && authMode === 'oauth' && isOAuthLimitMessage(message)) {
           log('OAuth query error indicates limit reached, switching to API key fallback');
           authMode = 'apiKey';
-          sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+          sdkEnv = buildSdkEnv(process.env, secrets, authMode, containerInput.groupFolder);
           model = selectModelForQuery(secrets, authMode);
           sessionId = undefined;
           resumeAt = undefined;
@@ -691,7 +730,7 @@ async function main(): Promise<void> {
 
       if (queryResult.fallbackRequested && authFallbackAvailable && authMode === 'oauth') {
         authMode = 'apiKey';
-        sdkEnv = buildSdkEnv(process.env, secrets, authMode);
+        sdkEnv = buildSdkEnv(process.env, secrets, authMode, containerInput.groupFolder);
         model = selectModelForQuery(secrets, authMode);
         sessionId = undefined;
         resumeAt = undefined;
@@ -715,7 +754,13 @@ async function main(): Promise<void> {
       }
 
       // Emit session update so host can track it
-      writeOutput({ status: 'success', result: null, newSessionId: sessionId });
+      writeOutput({
+        status: 'success',
+        result: null,
+        newSessionId: sessionId,
+        sessionResumeStatus,
+        sessionResumeError,
+      });
 
       log('Query ended, waiting for next IPC message...');
 
@@ -736,6 +781,8 @@ async function main(): Promise<void> {
       status: 'error',
       result: null,
       newSessionId: sessionId,
+      sessionResumeStatus,
+      sessionResumeError,
       error: errorMessage
     });
     process.exit(1);

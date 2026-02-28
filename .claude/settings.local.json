@@ -28,7 +28,20 @@
       "WebFetch(domain:opencode.ai)",
       "WebFetch(domain:deepwiki.com)",
       "Bash(./.claude/skills/update/scripts/fetch-upstream.sh:*)",
-      "Bash(true:*)"
+      "Bash(true:*)",
+      "Bash(ls:*)",
+      "Bash(container start:*)",
+      "Bash(container run:*)",
+      "Bash(container ps:*)",
+      "Bash(container logs:*)",
+      "Bash(test:*)",
+      "Bash(./scripts/jarvis-status.sh:*)",
+      "Bash(./scripts/jarvis-ops.sh status:*)",
+      "Bash(./scripts/jarvis-worker-probe.sh:*)",
+      "Bash(launchctl list:*)",
+      "Bash(launchctl:*)",
+      "Bash(lsof:*)",
+      "Bash(kill 54775:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

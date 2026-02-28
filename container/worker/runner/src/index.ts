@@ -8,8 +8,10 @@ import fs from 'fs';
 
 import {
   buildModelCandidates,
+  buildReworkPrompt,
   extractResult,
   getOpencodeErrorMessage,
+  hasValidCompletionBlock,
   isModelNotFound,
   parseEventLines,
   parseMaybeJson,
@@ -128,6 +130,9 @@ async function main(): Promise<void> {
     }
   }
 
+  // Parse dispatch payload for retry metadata (run_id, branch)
+  const dispatchMeta = parseMaybeJson(input.prompt) as { run_id?: string; branch?: string } | null;
+
   // Build prompt — prepend CLAUDE.md if present (belt-and-suspenders;
   // OpenCode also loads it via instructions config but this ensures it works
   // even if OpenCode's instruction loading fails)
@@ -181,6 +186,28 @@ async function main(): Promise<void> {
     }
 
     extracted = extractResult(stdout, payload, events);
+
+    // Completion validation + single retry if block is missing/invalid
+    if (extracted) {
+      const { valid, missing } = hasValidCompletionBlock(extracted);
+      if (!valid) {
+        const runId = typeof dispatchMeta?.run_id === 'string' ? dispatchMeta.run_id : 'unknown';
+        const branch = typeof dispatchMeta?.branch === 'string' ? dispatchMeta.branch : 'unknown';
+        const reworkPrompt = buildReworkPrompt(extracted, runId, branch, missing);
+        const retryResult = runOpencode(reworkPrompt, model);
+        if (retryResult.status === 0 && retryResult.stdout) {
+          const retryEvents = parseEventLines(retryResult.stdout);
+          const retryPayload = retryEvents.length > 0
+            ? retryEvents[retryEvents.length - 1]
+            : parseMaybeJson(retryResult.stdout);
+          const retryExtracted = extractResult(retryResult.stdout, retryPayload, retryEvents);
+          if (retryExtracted) {
+            extracted = retryExtracted;
+          }
+        }
+      }
+    }
+
     break;
   }
 

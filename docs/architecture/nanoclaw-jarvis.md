@@ -45,10 +45,14 @@ queued -> running -> review_requested
 ## Invariants (P0)
 
 1. No plain-text worker dispatch. Worker dispatch must be strict JSON.
-2. Required dispatch fields: `run_id`, `task_type`, `input`, `repo`, `branch`, `acceptance_tests`, `output_contract`.
+2. Required dispatch fields: `run_id`, `task_type`, `context_intent`, `input`, `repo`, `branch`, `acceptance_tests`, `output_contract`.
 3. Branch must follow `jarvis-<feature>`.
-4. Completion block must include `run_id`, `branch`, `commit_sha`, `files_changed`, `test_result`, `risk`, and one of `pr_url` or `pr_skipped_reason`.
-5. Completion `run_id` must match dispatch `run_id`.
+4. Session intent policy is enforced:
+   - `fresh` dispatches must not include `session_id`.
+   - `continue` dispatches must include `session_id` in `output_contract.required_fields`.
+   - explicit cross-worker `session_id` reuse is blocked.
+5. Completion block must include `run_id`, `branch`, `commit_sha`, `files_changed`, `test_result`, `risk`, and one of `pr_url` or `pr_skipped_reason`.
+6. Completion `run_id` must match dispatch `run_id`.
 
 ## Storage and Auditability
 
@@ -57,6 +61,8 @@ queued -> running -> review_requested
 - run state (`queued/running/review_requested/failed_contract/failed/done`)
 - retry count
 - completion artifacts (`branch_name`, `commit_sha`, `files_changed`, `test_summary`, `risk_summary`, `pr_url`)
+- dispatch/session lineage (`dispatch_repo`, `dispatch_branch`, `context_intent`, `parent_run_id`)
+- session continuity telemetry (`dispatch_session_id`, `selected_session_id`, `effective_session_id`, `session_selection_source`, `session_resume_status`, `session_resume_error`)
 
 This keeps worker runs reproducible and review-auditable.
 
@@ -67,7 +73,7 @@ This keeps worker runs reproducible and review-auditable.
 | Host primitives | `src/*` core files |
 | Dispatch contract | `src/dispatch-validator.ts` + `docs/workflow/nanoclaw-jarvis-dispatch-contract.md` |
 | Worker runtime details | `docs/workflow/nanoclaw-jarvis-worker-runtime.md` |
-| Team operating model | `docs/workflow/optimized-nanoclaw-jarvis-vision.md` |
+| Team operating model | `docs/operations/workflow-setup-responsibility-map.md` + lane `groups/*/CLAUDE.md` |
 
 ## Non-Goals
 

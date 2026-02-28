@@ -26,7 +26,9 @@ This skill helps users add capabilities or modify behavior. Use AskUserQuestion 
 | `src/config.ts` | Assistant name, trigger pattern, directories |
 | `src/db.ts` | Database initialization and queries |
 | `src/whatsapp-auth.ts` | Standalone WhatsApp authentication script |
-| `groups/CLAUDE.md` | Global memory/persona |
+| `groups/main/CLAUDE.md` | Main-lane behavior and admin policies |
+| `groups/global/CLAUDE.md` | Shared cross-lane memory/policy notes |
+| `groups/<lane>/CLAUDE.md` | Lane-specific behavior (andy-developer, jarvis-worker-*) |
 
 ## Common Customization Patterns
 
@@ -52,7 +54,7 @@ Questions to ask:
 
 Implementation:
 1. Add MCP server config to the container settings (see `src/container-runner.ts` for how MCP servers are mounted)
-2. Document available tools in `groups/CLAUDE.md`
+2. Document available tools in the relevant lane docs (`groups/main/CLAUDE.md` or `groups/<lane>/CLAUDE.md`)
 
 ### Changing Assistant Behavior
 
@@ -61,7 +63,8 @@ Questions to ask:
 - Apply to all groups or specific ones?
 
 Simple changes → edit `src/config.ts`
-Persona changes → edit `groups/CLAUDE.md`
+Global/shared persona changes → edit `groups/global/CLAUDE.md`
+Main-lane behavior changes → edit `groups/main/CLAUDE.md`
 Per-group behavior → edit specific group's `CLAUDE.md`
 
 ### Adding New Commands
@@ -72,7 +75,7 @@ Questions to ask:
 - Does it need new MCP tools?
 
 Implementation:
-1. Commands are handled by the agent naturally — add instructions to `groups/CLAUDE.md` or the group's `CLAUDE.md`
+1. Commands are handled by the agent naturally — add instructions to the relevant lane `CLAUDE.md` (`groups/main/CLAUDE.md`, `groups/global/CLAUDE.md`, or `groups/<lane>/CLAUDE.md`)
 2. For trigger-level routing changes, modify `processGroupMessages()` in `src/index.ts`
 
 ### Changing Deployment
@@ -88,7 +91,7 @@ Implementation:
 
 ## After Changes
 
-Always tell the user:
+Run verification/restart commands directly where possible:
 ```bash
 # Rebuild and restart
 npm run build
@@ -96,7 +99,7 @@ npm run build
 launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist
 launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist
 # Linux:
-# systemctl --user restart nanoclaw
+systemctl --user restart nanoclaw
 ```
 
 ## Example Interaction

@@ -32,6 +32,7 @@ export interface ContainerConfig {
   timeout?: number; // Default: 300000 (5 minutes)
   model?: string;   // Claude model to use (e.g. 'claude-haiku-4-5-20251001')
   image?: string;   // Override container image (e.g. 'nanoclaw-worker:latest')
+  secrets?: string[]; // Env var names to pass (defaults to all if not specified)
 }
 
 export interface RegisteredGroup {

@@ -13,16 +13,22 @@ export type DispatchTaskType =
   | 'research'
   | 'code';
 
+export type DispatchContextIntent = 'continue' | 'fresh';
+
 export interface DispatchPayload {
   run_id: string;
   task_type: DispatchTaskType;
+  context_intent: DispatchContextIntent;
   input: string;
   repo: string;
+  base_branch?: string;
   branch: string;
   acceptance_tests: string[];
   output_contract: DispatchOutputContract;
   priority?: 'low' | 'normal' | 'high';
   ui_impacting?: boolean;
+  session_id?: string; // For multi-step runs - allows next worker to continue same session
+  parent_run_id?: string; // Link follow-up dispatches to prior run lineage
 }
 
 export interface BrowserEvidence {
@@ -41,11 +47,15 @@ export interface CompletionContract {
   pr_url?: string;
   pr_skipped_reason?: string;
   browser_evidence?: BrowserEvidence;
+  session_id?: string; // Echoed from dispatch - for multi-step runs to continue session
 }
 
 const RUN_ID_MAX_LENGTH = 64;
+const SESSION_ID_MAX_LENGTH = 128;
 const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const BASE_BRANCH_PATTERN = /^[A-Za-z0-9._/-]+$/;
 const BRANCH_PATTERN = /^jarvis-[A-Za-z0-9._/-]+$/;
+const SESSION_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
 // Accept short SHA forms commonly used in logs/contracts (6-40 chars).
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{6,40}$/i;
 const ALLOWED_TASK_TYPES: Set<DispatchTaskType> = new Set([
@@ -112,7 +122,7 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
   const errors: string[] = [];
 
   if (
-    payload.ui_impacting !== undefined
+    payload.ui_impacting != null
     && typeof payload.ui_impacting !== 'boolean'
   ) {
     errors.push('ui_impacting must be a boolean when provided');
@@ -128,6 +138,13 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
     errors.push(`task_type must be one of: ${Array.from(ALLOWED_TASK_TYPES).join(', ')}`);
   }
 
+  if (
+    payload.context_intent !== 'continue'
+    && payload.context_intent !== 'fresh'
+  ) {
+    errors.push('context_intent must be either "continue" or "fresh"');
+  }
+
   if (!payload.input || !payload.input.trim()) {
     errors.push('input is required');
   } else if (hasScreenshotDirective(payload.input)) {
@@ -138,8 +155,49 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
     errors.push('repo must be in owner/repo format');
   }
 
+  if (
+    payload.base_branch != null
+    && (
+      typeof payload.base_branch !== 'string'
+      || !payload.base_branch.trim()
+      || /\s/.test(payload.base_branch)
+      || !BASE_BRANCH_PATTERN.test(payload.base_branch)
+    )
+  ) {
+    errors.push('base_branch must be a non-empty branch name when provided');
+  }
+
   if (!payload.branch || !BRANCH_PATTERN.test(payload.branch)) {
     errors.push('branch must match jarvis-<feature>');
+  }
+
+  if (
+    payload.session_id != null
+    && (
+      typeof payload.session_id !== 'string'
+      || !payload.session_id.trim()
+      || /\s/.test(payload.session_id)
+      || payload.session_id.length > SESSION_ID_MAX_LENGTH
+      || !SESSION_ID_PATTERN.test(payload.session_id)
+    )
+  ) {
+    errors.push('session_id must be a non-empty opaque id with no whitespace when provided');
+  }
+
+  if (
+    payload.parent_run_id != null
+    && (
+      typeof payload.parent_run_id !== 'string'
+      || !payload.parent_run_id.trim()
+      || /\s/.test(payload.parent_run_id)
+      || payload.parent_run_id.length > RUN_ID_MAX_LENGTH
+    )
+  ) {
+    errors.push(`parent_run_id must be a non-empty id with no whitespace and <= ${RUN_ID_MAX_LENGTH} chars when provided`);
+  }
+
+  if (payload.context_intent === 'fresh' && payload.session_id) {
+    errors.push('session_id must not be provided when context_intent is "fresh"');
   }
 
   if (!Array.isArray(payload.acceptance_tests) || payload.acceptance_tests.length === 0) {
@@ -173,6 +231,9 @@ export function validateDispatchPayload(payload: DispatchPayload): { valid: bool
       const hasPrSkipped = fields.includes('pr_skipped_reason');
       if (!hasPrUrl && !hasPrSkipped) {
         errors.push('output_contract.required_fields must include pr_url or pr_skipped_reason');
+      }
+      if (payload.context_intent === 'continue' && !fields.includes('session_id')) {
+        errors.push('output_contract.required_fields must include session_id when context_intent is "continue"');
       }
 
     }
@@ -287,6 +348,9 @@ export function validateCompletionContract(
     allowNoCodeChanges?: boolean;
   },
 ): { valid: boolean; missing: string[] } {
+  // Automatically allow no-code when pr_skipped_reason is present
+  const hasPrSkippedReason = contract?.pr_skipped_reason?.trim();
+  const effectiveAllowNoCode = options?.allowNoCodeChanges === true || !!hasPrSkippedReason;
   if (!contract) return { valid: false, missing: ['completion block'] };
 
   const missing: string[] = [];
@@ -303,6 +367,7 @@ export function validateCompletionContract(
   const requireBranch = requiredFields.includes('branch');
   const requireCommitSha = requiredFields.includes('commit_sha');
   const requireFilesChanged = requiredFields.includes('files_changed');
+  const requireSessionId = requiredFields.includes('session_id');
 
   if (requireBranch && (!contract.branch || !BRANCH_PATTERN.test(contract.branch))) {
     missing.push('branch');
@@ -316,27 +381,38 @@ export function validateCompletionContract(
 
   if (requireCommitSha) {
     const commitSha = contract.commit_sha?.trim();
-    const allowNoCodeChanges = options?.allowNoCodeChanges === true;
-    const isNoCodeCommitPlaceholder = allowNoCodeChanges
+    // Accept empty string (no commit made) OR valid 40-char hex OR allowed placeholders
+    const isValidEmpty = commitSha === '';
+    const isValidHex = COMMIT_SHA_PATTERN.test(commitSha || '');
+    const isAllowedPlaceholder = effectiveAllowNoCode
       && !!commitSha
-      && /^(n\/a|na|none)$/i.test(commitSha);
-    if (!commitSha) {
-      missing.push('commit_sha');
-    } else if (!COMMIT_SHA_PATTERN.test(commitSha) && !isNoCodeCommitPlaceholder) {
-      missing.push('commit_sha format');
+      && /^(n\/a|na|none|no-commit)$/i.test(commitSha);
+
+    if (!commitSha || (!isValidHex && !isAllowedPlaceholder && !isValidEmpty)) {
+      // If pr_skipped_reason is present, accept any commit_sha (including empty or non-standard)
+      if (hasPrSkippedReason || effectiveAllowNoCode) {
+        // pr_skipped_reason present or no-code allowed - commit_sha doesn't matter
+      } else if (!isValidHex && !isAllowedPlaceholder) {
+        missing.push('commit_sha format');
+      }
     }
   }
 
   if (requireFilesChanged) {
-    const allowNoCodeChanges = options?.allowNoCodeChanges === true;
-    if (!Array.isArray(contract.files_changed)) {
-      missing.push('files_changed');
-    } else if (contract.files_changed.length === 0) {
-      if (!allowNoCodeChanges) missing.push('files_changed');
+    const filesChanged = contract.files_changed;
+
+    // Accept missing/null/undefined as empty array (no files changed)
+    if (!Array.isArray(filesChanged)) {
+      // If pr_skipped_reason present or no-code allowed, default to empty array
+      if (hasPrSkippedReason || effectiveAllowNoCode) {
+        // Accept missing files_changed when there's a skip reason
+      } else {
+        missing.push('files_changed');
+      }
+    } else if (filesChanged.length === 0) {
+      // Empty array is valid - no files changed
     } else if (
-      contract.files_changed.some(
-        (item) => typeof item !== 'string' || !item.trim(),
-      )
+      filesChanged.some((item) => typeof item !== 'string' || !item.trim())
     ) {
       missing.push('files_changed format');
     }
@@ -345,6 +421,17 @@ export function validateCompletionContract(
   if (!contract.test_result || !contract.test_result.trim()) missing.push('test_result');
   if (!contract.risk || !contract.risk.trim()) missing.push('risk');
   if (!contract.pr_url && !contract.pr_skipped_reason) missing.push('pr_url or pr_skipped_reason');
+  if (requireSessionId) {
+    if (
+      !contract.session_id
+      || !contract.session_id.trim()
+      || /\s/.test(contract.session_id)
+      || contract.session_id.length > SESSION_ID_MAX_LENGTH
+      || !SESSION_ID_PATTERN.test(contract.session_id)
+    ) {
+      missing.push('session_id');
+    }
+  }
 
   const browserEvidenceRequired = options?.browserEvidenceRequired
     ?? options?.requiredFields?.includes('browser_evidence')

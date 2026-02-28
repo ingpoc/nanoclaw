@@ -61,7 +61,10 @@ server.tool(
     writeIpcFile(MESSAGES_DIR, data);
 
     return {
-      content: [{ type: 'text' as const, text: `Message queued for ${targetJid}.` }],
+      content: [{
+        type: 'text' as const,
+        text: `Message queued for ${targetJid}. Host validation is pending and policy may block delivery.`,
+      }],
     };
   },
 );

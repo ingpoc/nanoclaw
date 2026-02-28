@@ -406,6 +406,36 @@ describe('GroupQueue', () => {
     await vi.advanceTimersByTimeAsync(10);
   });
 
+  it('schedules a recovery run when IPC input remains after container exit', async () => {
+    const fs = await import('fs');
+    let callCount = 0;
+
+    const readdirSpy = vi
+      .spyOn(fs.default, 'readdirSync')
+      .mockImplementationOnce(() => ['leftover.json'] as any)
+      .mockImplementation(() => [] as any);
+
+    const processMessages = vi.fn(async () => {
+      callCount++;
+      if (callCount === 1) {
+        queue.registerProcess(
+          'group1@g.us',
+          {} as any,
+          'container-1',
+          'test-group',
+        );
+      }
+      return true;
+    });
+
+    queue.setProcessMessagesFn(processMessages);
+    queue.enqueueMessageCheck('group1@g.us');
+    await vi.advanceTimersByTimeAsync(20);
+
+    expect(processMessages).toHaveBeenCalledTimes(2);
+    readdirSpy.mockRestore();
+  });
+
   it('preempts when idle arrives with pending tasks', async () => {
     const fs = await import('fs');
     let resolveProcess: () => void;

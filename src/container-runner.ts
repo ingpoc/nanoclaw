@@ -9,6 +9,7 @@ import path from 'path';
 import {
   CONTAINER_IMAGE,
   CONTAINER_MAX_OUTPUT_SIZE,
+  CONTAINER_PARSE_BUFFER_LIMIT,
   CONTAINER_TIMEOUT,
   DATA_DIR,
   GROUPS_DIR,
@@ -19,7 +20,12 @@ import {
 import { readEnvFile } from './env.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
-import { CONTAINER_RUNTIME_BIN, readonlyMountArgs, stopContainer } from './container-runtime.js';
+import {
+  CONTAINER_RUNTIME_BIN,
+  readonlyMountArgs,
+  stopContainer,
+  stopRunningContainersByPrefix,
+} from './container-runtime.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
@@ -42,6 +48,8 @@ export interface ContainerOutput {
   status: 'success' | 'error';
   result: string | null;
   newSessionId?: string;
+  sessionResumeStatus?: 'resumed' | 'fallback_new' | 'new';
+  sessionResumeError?: string;
   error?: string;
 }
 
@@ -192,20 +200,65 @@ function buildVolumeMounts(
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
-  if (!fs.existsSync(settingsFile)) {
-    fs.writeFileSync(settingsFile, JSON.stringify({
-      env: {
-        // Enable agent swarms (subagent orchestration)
-        // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
-        CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
-        // Load CLAUDE.md from additional mounted directories
-        // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
-        CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
-        // Enable Claude's memory feature (persists user preferences between sessions)
-        // https://code.claude.com/docs/en/memory#manage-auto-memory
-        CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
-      },
-    }, null, 2) + '\n');
+
+  // Always-merge settings so hooks and env vars stay current on every start.
+  let settings: Record<string, unknown> = {};
+  if (fs.existsSync(settingsFile)) {
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8')) as Record<string, unknown>;
+    } catch {
+      // Corrupt settings file — start fresh
+    }
+  }
+
+  // Ensure required env vars are present (existing values take precedence)
+  const existingEnv = (settings.env as Record<string, string> | undefined) ?? {};
+  settings.env = {
+    // Enable agent swarms (subagent orchestration)
+    // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
+    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+    // Load CLAUDE.md from additional mounted directories
+    // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
+    CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
+    // Enable Claude's memory feature (persists user preferences between sessions)
+    // https://code.claude.com/docs/en/memory#manage-auto-memory
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+    ...existingEnv,
+  };
+
+  // Inject PreToolUse dispatch validation hook for andy-developer only.
+  // The hook blocks invalid dispatch payloads before they leave the container.
+  if (group.folder === 'andy-developer') {
+    const existingHooks = (settings.hooks as Record<string, unknown> | undefined) ?? {};
+    const existingPreToolUse = (existingHooks.PreToolUse as unknown[] | undefined) ?? [];
+    const validateHook = {
+      matcher: 'mcp__nanoclaw__send_message',
+      hooks: [{ type: 'command', command: '/home/node/.claude/hooks/validate-dispatch.sh' }],
+    };
+    const alreadyPresent = existingPreToolUse.some(
+      (h) => JSON.stringify(h) === JSON.stringify(validateHook),
+    );
+    settings.hooks = {
+      ...existingHooks,
+      PreToolUse: alreadyPresent ? existingPreToolUse : [...existingPreToolUse, validateHook],
+    };
+  }
+
+  fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + '\n');
+
+  // Sync hooks from groups/<folder>/.claude/hooks/ into sessions/<folder>/.claude/hooks/
+  // This runs on every container start so updated scripts are always current.
+  const hooksSrc = path.join(GROUPS_DIR, group.folder, '.claude', 'hooks');
+  if (fs.existsSync(hooksSrc)) {
+    const hooksDst = path.join(groupSessionsDir, 'hooks');
+    fs.mkdirSync(hooksDst, { recursive: true });
+    for (const entry of fs.readdirSync(hooksSrc, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const srcHookPath = path.join(hooksSrc, entry.name);
+      const dstHookPath = path.join(hooksDst, entry.name);
+      fs.copyFileSync(srcHookPath, dstHookPath);
+      fs.chmodSync(dstHookPath, 0o755);
+    }
   }
 
   // Sync skills from container/skills/ into each group's .claude/skills/
@@ -257,18 +310,26 @@ function buildVolumeMounts(
   return mounts;
 }
 
+const DEFAULT_SECRETS = [
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_BASE_URL',
+  'OAUTH_API_FALLBACK_ENABLED',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'GITHUB_TOKEN',
+  'GH_TOKEN',
+];
+
 /**
  * Read allowed secrets from .env for passing to the container via stdin.
  * Secrets are never written to disk or mounted as files.
+ * @param allowedSecrets - Optional list of env var names to read (defaults to all)
  */
-function readSecrets(): Record<string, string> {
-  return readEnvFile([
-    'CLAUDE_CODE_OAUTH_TOKEN',
-    'ANTHROPIC_API_KEY',
-    'ANTHROPIC_BASE_URL',
-    'OAUTH_API_FALLBACK_ENABLED',
-    'ANTHROPIC_DEFAULT_SONNET_MODEL',
-  ]);
+function readSecrets(allowedSecrets?: string[]): Record<string, string> {
+  const vars = allowedSecrets && allowedSecrets.length > 0
+    ? allowedSecrets
+    : DEFAULT_SECRETS;
+  return readEnvFile(vars);
 }
 
 function buildContainerArgs(
@@ -324,6 +385,30 @@ export async function runContainerAgent(
 
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
+  const groupPrefix = `nanoclaw-${safeName}-`;
+  // A previous NanoClaw process can leave orphaned group containers alive.
+  // Those orphans can consume IPC input from /workspace/ipc/<group>/input
+  // without forwarding output back to the current host process.
+  try {
+    const { matched, stopped, failures } = stopRunningContainersByPrefix(groupPrefix);
+    if (stopped.length > 0) {
+      logger.info(
+        { group: group.name, groupPrefix, stopped },
+        'Stopped stale group containers before spawn',
+      );
+    }
+    if (failures.length > 0) {
+      logger.warn(
+        { group: group.name, groupPrefix, matched, failures },
+        'Failed to stop some stale group containers before spawn',
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      { group: group.name, groupPrefix, err },
+      'Failed stale-container preflight; continuing with spawn',
+    );
+  }
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
   const image = group.folder.startsWith('jarvis-worker')
     ? WORKER_CONTAINER_IMAGE
@@ -369,7 +454,8 @@ export async function runContainerAgent(
     let stderrTruncated = false;
 
     // Pass secrets via stdin (never written to disk or mounted as files)
-    input.secrets = readSecrets();
+    // Use per-group secrets config if specified, otherwise use defaults
+    input.secrets = readSecrets(group.containerConfig?.secrets);
     container.stdin.write(JSON.stringify(input));
     container.stdin.end();
     // Remove secrets from input so they don't appear in logs
@@ -378,6 +464,8 @@ export async function runContainerAgent(
     // Streaming output: parse OUTPUT_START/END marker pairs as they arrive
     let parseBuffer = '';
     let newSessionId: string | undefined;
+    let sessionResumeStatus: ContainerOutput['sessionResumeStatus'];
+    let sessionResumeError: string | undefined;
     let outputChain = Promise.resolve();
 
     container.stdout.on('data', (data) => {
@@ -401,6 +489,23 @@ export async function runContainerAgent(
       // Stream-parse for output markers
       if (onOutput) {
         parseBuffer += chunk;
+
+        // Fail-fast: if parseBuffer exceeds limit with incomplete markers, abort
+        if (parseBuffer.length > CONTAINER_PARSE_BUFFER_LIMIT) {
+          const hasStartMarker = parseBuffer.includes(OUTPUT_START_MARKER);
+          const hasEndMarker = parseBuffer.includes(OUTPUT_END_MARKER);
+          if (hasStartMarker && !hasEndMarker) {
+            logger.error(
+              { group: group.name, bufferSize: parseBuffer.length },
+              'Parse buffer exceeded limit with incomplete markers, aborting container',
+            );
+            container.kill('SIGKILL');
+            return;
+          }
+          // Buffer overflow - trim oldest data to prevent unbounded growth
+          parseBuffer = parseBuffer.slice(-CONTAINER_PARSE_BUFFER_LIMIT / 2);
+        }
+
         let startIdx: number;
         while ((startIdx = parseBuffer.indexOf(OUTPUT_START_MARKER)) !== -1) {
           const endIdx = parseBuffer.indexOf(OUTPUT_END_MARKER, startIdx);
@@ -415,6 +520,12 @@ export async function runContainerAgent(
             const parsed: ContainerOutput = JSON.parse(jsonStr);
             if (parsed.newSessionId) {
               newSessionId = parsed.newSessionId;
+            }
+            if (parsed.sessionResumeStatus) {
+              sessionResumeStatus = parsed.sessionResumeStatus;
+            }
+            if (parsed.sessionResumeError) {
+              sessionResumeError = parsed.sessionResumeError;
             }
             hadStreamingOutput = true;
             // Activity detected — reset the hard timeout
@@ -510,6 +621,8 @@ export async function runContainerAgent(
               status: 'success',
               result: null,
               newSessionId,
+              sessionResumeStatus,
+              sessionResumeError,
             });
           });
           return;
@@ -621,6 +734,8 @@ export async function runContainerAgent(
             status: 'success',
             result: null,
             newSessionId,
+            sessionResumeStatus,
+            sessionResumeError,
           });
         });
         return;
@@ -729,6 +844,26 @@ export interface WorkerRunSnapshotEntry {
   retry_count: number;
   result_summary: string | null;
   error_details: string | null;
+  dispatch_repo?: string | null;
+  dispatch_branch?: string | null;
+  context_intent?: string | null;
+  parent_run_id?: string | null;
+  dispatch_session_id?: string | null;
+  selected_session_id?: string | null;
+  effective_session_id?: string | null;
+  session_selection_source?: string | null;
+  session_resume_status?: string | null;
+  session_resume_error?: string | null;
+}
+
+export interface DispatchBlockSnapshotEntry {
+  timestamp: string;
+  source_group: string;
+  target_jid: string;
+  target_folder?: string;
+  reason_code: string;
+  reason_text: string;
+  run_id?: string;
 }
 
 export interface WorkerRunsSnapshot {
@@ -736,6 +871,7 @@ export interface WorkerRunsSnapshot {
   scope: 'all' | 'jarvis' | 'group';
   active: WorkerRunSnapshotEntry[];
   recent: WorkerRunSnapshotEntry[];
+  dispatch_blocks?: DispatchBlockSnapshotEntry[];
 }
 
 /**

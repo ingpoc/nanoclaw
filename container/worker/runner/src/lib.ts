@@ -146,6 +146,93 @@ export function extractResult(
   return '';
 }
 
+const COMPLETION_REQUIRED_FIELDS = [
+  'run_id',
+  'branch',
+  'commit_sha',
+  'files_changed',
+  'test_result',
+  'risk',
+];
+
+/**
+ * Validate that the worker output contains a well-formed <completion> block.
+ * Returns { valid, missing } so callers can decide whether to retry.
+ */
+export function hasValidCompletionBlock(output: string): { valid: boolean; missing: string[] } {
+  const match = output.match(/<completion>([\s\S]*?)<\/completion>/i);
+  if (!match) {
+    return { valid: false, missing: ['completion block'] };
+  }
+
+  let contract: Record<string, unknown> | null = null;
+  try {
+    const parsed = JSON.parse(match[1].trim());
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      contract = parsed as Record<string, unknown>;
+    }
+  } catch {
+    return { valid: false, missing: ['completion block (invalid JSON inside tags)'] };
+  }
+
+  if (!contract) {
+    return { valid: false, missing: ['completion block (not a JSON object)'] };
+  }
+
+  const missing: string[] = [];
+
+  for (const field of COMPLETION_REQUIRED_FIELDS) {
+    const value = contract[field];
+    if (field === 'files_changed') {
+      if (!Array.isArray(value)) missing.push(field);
+    } else if (!value || (typeof value === 'string' && !value.trim())) {
+      missing.push(field);
+    }
+  }
+
+  // branch must match jarvis-*
+  if (contract.branch && typeof contract.branch === 'string' && !/^jarvis-/i.test(contract.branch)) {
+    missing.push('branch (must match jarvis-*)');
+  }
+
+  // pr_url OR pr_skipped_reason required
+  const hasPrUrl = typeof contract.pr_url === 'string' && contract.pr_url.trim().length > 0;
+  const hasPrSkipped = typeof contract.pr_skipped_reason === 'string' && contract.pr_skipped_reason.trim().length > 0;
+  if (!hasPrUrl && !hasPrSkipped) {
+    missing.push('pr_url or pr_skipped_reason');
+  }
+
+  return { valid: missing.length === 0, missing };
+}
+
+/**
+ * Build a focused retry prompt asking the worker to emit a corrected completion block.
+ */
+export function buildReworkPrompt(
+  prevOutput: string,
+  runId: string,
+  branch: string,
+  missing: string[],
+): string {
+  return [
+    '<previous_output>',
+    prevOutput,
+    '</previous_output>',
+    '',
+    'The runner validated your output and found missing or invalid fields in the completion block.',
+    '',
+    `Missing fields: ${missing.join(', ')}`,
+    '',
+    `Run ID: ${runId}`,
+    `Branch: ${branch}`,
+    '',
+    'Output ONLY the corrected <completion>...</completion> block with ALL required fields filled in.',
+    'Use the exact run_id and branch shown above.',
+    'Get commit_sha with: git rev-parse HEAD (after any push).',
+    'Do not repeat your previous work — just emit the corrected block.',
+  ].join('\n');
+}
+
 export function buildModelCandidates(
   requestedModel?: string,
   workerModel?: string,

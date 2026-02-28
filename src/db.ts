@@ -89,7 +89,17 @@ function createSchema(database: Database.Database): void {
       started_at TEXT NOT NULL,
       completed_at TEXT,
       result_summary TEXT,
-      files_changed TEXT
+      files_changed TEXT,
+      dispatch_repo TEXT,
+      dispatch_branch TEXT,
+      context_intent TEXT,
+      parent_run_id TEXT,
+      dispatch_session_id TEXT,
+      selected_session_id TEXT,
+      effective_session_id TEXT,
+      session_selection_source TEXT,
+      session_resume_status TEXT,
+      session_resume_error TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_worker_runs_folder ON worker_runs(group_folder, started_at);
   `);
@@ -113,6 +123,16 @@ function createSchema(database: Database.Database): void {
     `ALTER TABLE worker_runs ADD COLUMN files_changed TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN test_summary TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN risk_summary TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN dispatch_repo TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN dispatch_branch TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN context_intent TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN parent_run_id TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN dispatch_session_id TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN selected_session_id TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN effective_session_id TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN session_selection_source TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN session_resume_status TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN session_resume_error TEXT`,
   ];
   for (const sql of workerRunsMigrations) {
     try {
@@ -121,6 +141,15 @@ function createSchema(database: Database.Database): void {
       /* column already exists */
     }
   }
+
+  // Create indexes that depend on migrated worker_runs columns after migrations
+  // so startup succeeds on existing databases created before these fields existed.
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_worker_runs_context_lookup
+      ON worker_runs(group_folder, dispatch_repo, dispatch_branch, started_at);
+    CREATE INDEX IF NOT EXISTS idx_worker_runs_effective_session
+      ON worker_runs(effective_session_id, started_at);
+  `);
 
   // Add is_bot_message column if it doesn't exist (migration for existing DBs)
   try {
@@ -162,6 +191,10 @@ export function initDatabase(): void {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
   db = new Database(dbPath);
+
+  // Enable foreign keys constraint enforcement for data integrity
+  db.exec('PRAGMA foreign_keys = ON');
+
   createSchema(db);
 
   // Migrate from JSON files if they exist
@@ -171,6 +204,8 @@ export function initDatabase(): void {
 /** @internal - for tests only. Creates a fresh in-memory database. */
 export function _initTestDatabase(): void {
   db = new Database(':memory:');
+  // Enable foreign keys constraint enforcement for data integrity
+  db.exec('PRAGMA foreign_keys = ON');
   createSchema(db);
 }
 
@@ -320,33 +355,56 @@ export function storeMessageDirect(msg: {
 
 export function getNewMessages(
   jids: string[],
-  lastTimestamp: string,
+  lastCursor: string,
   botPrefix: string,
-): { messages: NewMessage[]; newTimestamp: string } {
-  if (jids.length === 0) return { messages: [], newTimestamp: lastTimestamp };
+): { messages: NewMessage[]; newCursor: string } {
+  if (jids.length === 0) return { messages: [], newCursor: lastCursor };
+
+  // Parse composite cursor: "timestamp|messageId" or just "timestamp" for backward compat
+  let lastTimestamp = lastCursor;
+  let lastMessageId = '';
+  if (lastCursor.includes('|')) {
+    [lastTimestamp, lastMessageId] = lastCursor.split('|');
+  }
 
   const placeholders = jids.map(() => '?').join(',');
-  // Filter bot messages using both the is_bot_message flag AND the content
-  // prefix as a backstop for messages written before the migration ran.
-  const sql = `
+
+  // Use composite cursor for deterministic ordering:
+  // (timestamp > last) OR (timestamp = last AND id > lastId)
+  // This prevents message loss when multiple messages share the same timestamp.
+  const sql = lastMessageId
+    ? `
+    SELECT id, chat_jid, sender, sender_name, content, timestamp
+    FROM messages
+    WHERE ((timestamp > ?) OR (timestamp = ? AND id > ?))
+      AND chat_jid IN (${placeholders})
+      AND is_bot_message = 0 AND content NOT LIKE ?
+      AND content != '' AND content IS NOT NULL
+    ORDER BY timestamp, id
+  `
+    : `
     SELECT id, chat_jid, sender, sender_name, content, timestamp
     FROM messages
     WHERE timestamp > ? AND chat_jid IN (${placeholders})
       AND is_bot_message = 0 AND content NOT LIKE ?
       AND content != '' AND content IS NOT NULL
-    ORDER BY timestamp
+    ORDER BY timestamp, id
   `;
 
-  const rows = db
-    .prepare(sql)
-    .all(lastTimestamp, ...jids, `${botPrefix}:%`) as NewMessage[];
+  const params = lastMessageId
+    ? [lastTimestamp, lastTimestamp, lastMessageId, ...jids, `${botPrefix}:%`]
+    : [lastTimestamp, ...jids, `${botPrefix}:%`];
 
-  let newTimestamp = lastTimestamp;
-  for (const row of rows) {
-    if (row.timestamp > newTimestamp) newTimestamp = row.timestamp;
+  const rows = db.prepare(sql).all(...params) as NewMessage[];
+
+  // Build composite cursor: timestamp|messageId
+  let newCursor = lastCursor;
+  if (rows.length > 0) {
+    const lastRow = rows[rows.length - 1];
+    newCursor = `${lastRow.timestamp}|${lastRow.id}`;
   }
 
-  return { messages: rows, newTimestamp };
+  return { messages: rows, newCursor };
 }
 
 export function getMessagesSince(
@@ -660,6 +718,32 @@ export interface WorkerRunRecord {
   files_changed: string | null;
   test_summary: string | null;
   risk_summary: string | null;
+  dispatch_repo: string | null;
+  dispatch_branch: string | null;
+  context_intent: string | null;
+  parent_run_id: string | null;
+  dispatch_session_id: string | null;
+  selected_session_id: string | null;
+  effective_session_id: string | null;
+  session_selection_source: string | null;
+  session_resume_status: string | null;
+  session_resume_error: string | null;
+}
+
+export interface WorkerRunDispatchMetadata {
+  dispatch_repo?: string;
+  dispatch_branch?: string;
+  context_intent?: 'continue' | 'fresh';
+  parent_run_id?: string;
+  dispatch_session_id?: string;
+  selected_session_id?: string;
+  session_selection_source?: 'explicit' | 'auto_repo_branch' | 'new';
+}
+
+export interface WorkerRunSessionMetadata {
+  effective_session_id?: string | null;
+  session_resume_status?: 'resumed' | 'fallback_new' | 'new' | null;
+  session_resume_error?: string | null;
 }
 
 const TERMINAL_WORKER_RUN_STATUSES: Set<WorkerRunStatus> = new Set([
@@ -710,6 +794,7 @@ function canTransitionWorkerRunStatus(
 export function insertWorkerRun(
   runId: string,
   groupFolder: string,
+  metadata?: WorkerRunDispatchMetadata,
 ): 'new' | 'retry' | 'duplicate' {
   const existing = getWorkerRun(runId);
   if (existing) {
@@ -727,9 +812,20 @@ export function insertWorkerRun(
              files_changed = NULL,
              test_summary = NULL,
              risk_summary = NULL,
+             dispatch_repo = NULL,
+             dispatch_branch = NULL,
+             context_intent = NULL,
+             parent_run_id = NULL,
+             dispatch_session_id = NULL,
+             selected_session_id = NULL,
+             effective_session_id = NULL,
+             session_selection_source = NULL,
+             session_resume_status = NULL,
+             session_resume_error = NULL,
              retry_count = retry_count + 1
          WHERE run_id = ?`,
       ).run(new Date().toISOString(), runId);
+      if (metadata) updateWorkerRunDispatchMetadata(runId, metadata);
       return 'retry';
     }
     return 'duplicate';
@@ -738,7 +834,52 @@ export function insertWorkerRun(
   db.prepare(
     `INSERT INTO worker_runs (run_id, group_folder, status, started_at, retry_count) VALUES (?, ?, 'queued', ?, 0)`,
   ).run(runId, groupFolder, new Date().toISOString());
+  if (metadata) updateWorkerRunDispatchMetadata(runId, metadata);
   return 'new';
+}
+
+export function updateWorkerRunDispatchMetadata(
+  runId: string,
+  metadata: WorkerRunDispatchMetadata,
+): void {
+  db.prepare(
+    `UPDATE worker_runs
+     SET dispatch_repo = ?,
+         dispatch_branch = ?,
+         context_intent = ?,
+         parent_run_id = ?,
+         dispatch_session_id = ?,
+         selected_session_id = ?,
+         session_selection_source = ?
+     WHERE run_id = ?`,
+  ).run(
+    metadata.dispatch_repo ?? null,
+    metadata.dispatch_branch ?? null,
+    metadata.context_intent ?? null,
+    metadata.parent_run_id ?? null,
+    metadata.dispatch_session_id ?? null,
+    metadata.selected_session_id ?? null,
+    metadata.session_selection_source ?? null,
+    runId,
+  );
+}
+
+export function updateWorkerRunSessionMetadata(
+  runId: string,
+  metadata: WorkerRunSessionMetadata,
+): void {
+  db.prepare(
+    `UPDATE worker_runs
+     SET effective_session_id = ?,
+         session_resume_status = ?,
+         session_resume_error = ?
+     WHERE run_id = ?`,
+  ).run(
+    metadata.effective_session_id ?? null,
+    metadata.session_resume_status ?? null,
+    metadata.session_resume_error ?? null,
+    runId,
+  );
 }
 
 export function updateWorkerRunStatus(runId: string, status: WorkerRunStatus): void {
@@ -779,10 +920,23 @@ export function updateWorkerRunCompletion(
     files_changed?: string[];
     test_summary?: string;
     risk_summary?: string;
+    effective_session_id?: string | null;
+    session_resume_status?: 'resumed' | 'fallback_new' | 'new' | null;
+    session_resume_error?: string | null;
   },
 ): void {
   db.prepare(
-    `UPDATE worker_runs SET branch_name = ?, pr_url = ?, commit_sha = ?, files_changed = ?, test_summary = ?, risk_summary = ? WHERE run_id = ?`,
+    `UPDATE worker_runs
+     SET branch_name = ?,
+         pr_url = ?,
+         commit_sha = ?,
+         files_changed = ?,
+         test_summary = ?,
+         risk_summary = ?,
+         effective_session_id = COALESCE(?, effective_session_id),
+         session_resume_status = COALESCE(?, session_resume_status),
+         session_resume_error = COALESCE(?, session_resume_error)
+     WHERE run_id = ?`,
   ).run(
     data.branch_name ?? null,
     data.pr_url ?? null,
@@ -790,6 +944,9 @@ export function updateWorkerRunCompletion(
     data.files_changed ? JSON.stringify(data.files_changed) : null,
     data.test_summary ?? null,
     data.risk_summary ?? null,
+    data.effective_session_id ?? null,
+    data.session_resume_status ?? null,
+    data.session_resume_error ?? null,
     runId,
   );
 }
@@ -849,10 +1006,22 @@ export function getWorkerRun(runId: string): {
   files_changed: string | null;
   test_summary: string | null;
   risk_summary: string | null;
+  dispatch_repo: string | null;
+  dispatch_branch: string | null;
+  context_intent: string | null;
+  parent_run_id: string | null;
+  dispatch_session_id: string | null;
+  selected_session_id: string | null;
+  effective_session_id: string | null;
+  session_selection_source: string | null;
+  session_resume_status: string | null;
+  session_resume_error: string | null;
 } | undefined {
   return db
     .prepare(
-      `SELECT run_id, group_folder, status, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary FROM worker_runs WHERE run_id = ?`,
+      `SELECT run_id, group_folder, status, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error
+       FROM worker_runs
+       WHERE run_id = ?`,
     )
     .get(runId) as ReturnType<typeof getWorkerRun>;
 }
@@ -886,13 +1055,41 @@ export function getWorkerRuns(options?: {
 
   return db
     .prepare(
-      `SELECT run_id, group_folder, status, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary
+      `SELECT run_id, group_folder, status, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error
        FROM worker_runs
        ${where}
        ORDER BY started_at DESC
        LIMIT ?`,
     )
     .all(...params) as WorkerRunRecord[];
+}
+
+export function getLatestReusableWorkerSession(
+  groupFolder: string,
+  repo: string,
+  branch: string,
+): WorkerRunRecord | undefined {
+  return db.prepare(
+    `SELECT run_id, group_folder, status, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error
+     FROM worker_runs
+     WHERE group_folder = ?
+       AND dispatch_repo = ?
+       AND dispatch_branch = ?
+       AND effective_session_id IS NOT NULL
+       AND status IN ('review_requested', 'done')
+     ORDER BY started_at DESC
+     LIMIT 1`,
+  ).get(groupFolder, repo, branch) as WorkerRunRecord | undefined;
+}
+
+export function findWorkerRunByEffectiveSessionId(sessionId: string): WorkerRunRecord | undefined {
+  return db.prepare(
+    `SELECT run_id, group_folder, status, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error
+     FROM worker_runs
+     WHERE effective_session_id = ?
+     ORDER BY started_at DESC
+     LIMIT 1`,
+  ).get(sessionId) as WorkerRunRecord | undefined;
 }
 
 // --- JSON migration ---

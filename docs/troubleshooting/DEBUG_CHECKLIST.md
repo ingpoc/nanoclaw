@@ -131,11 +131,44 @@ Use the script dispatcher for consistent debug/recovery/smoke flow:
 # Health checks (runtime + auth + DB queue)
 bash scripts/jarvis-ops.sh preflight
 
+# Reliability triage (service/runtime/log/IPC)
+bash scripts/jarvis-ops.sh reliability
+
 # Current lane health and recent failure reasons
 bash scripts/jarvis-ops.sh status
 
+# End-to-end timeline for a lane/chat/run
+bash scripts/jarvis-ops.sh trace --lane andy-developer
+
+# Dispatch payload contract/session lint
+bash scripts/jarvis-ops.sh dispatch-lint --file /tmp/dispatch.json --target-folder jarvis-worker-1
+
+# DB schema/index/consistency checks
+bash scripts/jarvis-ops.sh db-doctor
+
+# Incident registry status
+bash scripts/jarvis-ops.sh incident list --status open
+
+# Manual incident creation (if you want to track before running bundle)
+bash scripts/jarvis-ops.sh incident add --title "Andy not responding to hi" --lane andy-developer
+
+# Attach verified cause/impact details after debugging
+bash scripts/jarvis-ops.sh incident enrich --id <incident-id> --cause "<root cause>" --impact "<impact>" --next-action "<next step>"
+
 # Active worker-lane probe dispatch (jarvis-worker-*)
 bash scripts/jarvis-ops.sh probe
+
+# Recurring issue hotspots (failure reasons + lane ranking)
+bash scripts/jarvis-ops.sh hotspots --window-hours 72
+
+# Capture incident artifact bundle for handoff
+bash scripts/jarvis-ops.sh incident-bundle --window-minutes 180 --lane andy-developer
+
+# Capture and append evidence to an existing tracked incident
+bash scripts/jarvis-ops.sh incident-bundle --window-minutes 180 --lane andy-developer --incident-id <incident-id>
+
+# Mark resolved only after explicit user confirmation
+bash scripts/jarvis-ops.sh incident resolve --id <incident-id> --resolution "<exact fix>" --verification "<proof>" --fix-reference "<commit/pr>" --user-confirmed-fixed --user-confirmation "<user confirmed fixed>"
 
 # Runtime/builder recovery and service restart
 bash scripts/jarvis-ops.sh recover

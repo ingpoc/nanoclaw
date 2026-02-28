@@ -259,6 +259,7 @@ describe('dispatch payload validation', () => {
   const validPayload = {
     run_id: 'task-20260222-001',
     task_type: 'implement' as const,
+    context_intent: 'fresh' as const,
     input: 'Implement feature X',
     repo: 'openclaw-gurusharan/nanoclaw',
     branch: 'jarvis-feature-x',
@@ -307,6 +308,24 @@ describe('dispatch payload validation', () => {
     expect(errors).toContain('branch must match jarvis-<feature>');
   });
 
+  it('accepts valid base_branch when provided', () => {
+    const { valid, errors } = validateDispatchPayload({
+      ...validPayload,
+      base_branch: 'main',
+    });
+    expect(valid).toBe(true);
+    expect(errors).toHaveLength(0);
+  });
+
+  it('rejects invalid base_branch when provided', () => {
+    const { valid, errors } = validateDispatchPayload({
+      ...validPayload,
+      base_branch: 'release branch',
+    });
+    expect(valid).toBe(false);
+    expect(errors).toContain('base_branch must be a non-empty branch name when provided');
+  });
+
   it('rejects payload when output contract misses required fields', () => {
     const { valid, errors } = validateDispatchPayload({
       ...validPayload,
@@ -314,6 +333,49 @@ describe('dispatch payload validation', () => {
     });
     expect(valid).toBe(false);
     expect(errors.some((e) => e.includes('output_contract.required_fields missing commit_sha'))).toBe(true);
+  });
+
+  it('requires session_id in required_fields when context_intent=continue', () => {
+    const { valid, errors } = validateDispatchPayload({
+      ...validPayload,
+      context_intent: 'continue',
+      output_contract: {
+        required_fields: ['run_id', 'branch', 'commit_sha', 'files_changed', 'test_result', 'risk', 'pr_url'],
+      },
+    });
+    expect(valid).toBe(false);
+    expect(errors).toContain('output_contract.required_fields must include session_id when context_intent is "continue"');
+  });
+
+  it('accepts continue intent when required_fields include session_id', () => {
+    const { valid, errors } = validateDispatchPayload({
+      ...validPayload,
+      context_intent: 'continue',
+      output_contract: {
+        required_fields: ['run_id', 'branch', 'commit_sha', 'files_changed', 'test_result', 'risk', 'pr_url', 'session_id'],
+      },
+    });
+    expect(valid).toBe(true);
+    expect(errors).toHaveLength(0);
+  });
+
+  it('rejects session_id when context_intent=fresh', () => {
+    const { valid, errors } = validateDispatchPayload({
+      ...validPayload,
+      context_intent: 'fresh',
+      session_id: 'sess-123',
+    });
+    expect(valid).toBe(false);
+    expect(errors).toContain('session_id must not be provided when context_intent is "fresh"');
+  });
+
+  it('accepts parent_run_id for follow-up lineage', () => {
+    const { valid, errors } = validateDispatchPayload({
+      ...validPayload,
+      parent_run_id: 'task-20260221-099',
+    });
+    expect(valid).toBe(true);
+    expect(errors).toHaveLength(0);
   });
 
   it('does not require browser_evidence field for explicit UI-impacting dispatch', () => {
@@ -520,13 +582,43 @@ describe('completion contract validation', () => {
     expect(missing).toContain('pr_url or pr_skipped_reason');
   });
 
-  it('fails when files_changed is a number', () => {
+  it('accepts files_changed as number when pr_skipped_reason is present', () => {
+    // When pr_skipped_reason is present, files_changed type doesn't matter
     const { valid, missing } = validateCompletionContract({
       run_id: 'task-1',
       branch: 'jarvis-feat',
       commit_sha: 'abc1234',
       files_changed: 1 as unknown as string[],
-      pr_skipped_reason: 'test',
+      pr_skipped_reason: 'task blocked by user',
+      test_result: 'blocked',
+      risk: 'unknown',
+    });
+    expect(valid).toBe(true);
+    expect(missing).toHaveLength(0);
+  });
+
+  it('accepts placeholder commit_sha when pr_skipped_reason is present', () => {
+    // When pr_skipped_reason is present, commit_sha format doesn't matter
+    const { valid, missing } = validateCompletionContract({
+      run_id: 'task-1',
+      branch: 'jarvis-feat',
+      commit_sha: 'none',
+      files_changed: ['src/a.ts'],
+      pr_skipped_reason: 'task blocked by user',
+      test_result: 'blocked',
+      risk: 'unknown',
+    });
+    expect(valid).toBe(true);
+    expect(missing).toHaveLength(0);
+  });
+
+  it('fails when files_changed is invalid type without pr_skipped_reason', () => {
+    const { valid, missing } = validateCompletionContract({
+      run_id: 'task-1',
+      branch: 'jarvis-feat',
+      commit_sha: 'abc1234',
+      files_changed: 1 as unknown as string[],
+      // No pr_skipped_reason
       test_result: 'pass',
       risk: 'low',
     });
@@ -534,13 +626,13 @@ describe('completion contract validation', () => {
     expect(missing).toContain('files_changed');
   });
 
-  it('fails for placeholder commit_sha on non-health run', () => {
+  it('fails for placeholder commit_sha without pr_skipped_reason or allowNoCodeChanges', () => {
     const { valid, missing } = validateCompletionContract({
       run_id: 'task-1',
       branch: 'jarvis-feat',
       commit_sha: 'none',
       files_changed: ['src/a.ts'],
-      pr_skipped_reason: 'test',
+      // No pr_skipped_reason, no allowNoCodeChanges option
       test_result: 'pass',
       risk: 'low',
     });
@@ -637,6 +729,45 @@ describe('completion contract validation', () => {
     );
     expect(valid).toBe(false);
     expect(missing).toContain('browser_evidence');
+  });
+
+  it('requires completion session_id when required_fields includes it', () => {
+    const { valid, missing } = validateCompletionContract(
+      {
+        run_id: 'task-1',
+        branch: 'jarvis-feat',
+        commit_sha: 'abc1234',
+        files_changed: ['src/a.ts'],
+        pr_url: 'url',
+        test_result: 'pass',
+        risk: 'low',
+      },
+      {
+        requiredFields: ['run_id', 'branch', 'commit_sha', 'files_changed', 'test_result', 'risk', 'pr_url', 'session_id'],
+      },
+    );
+    expect(valid).toBe(false);
+    expect(missing).toContain('session_id');
+  });
+
+  it('accepts completion session_id when required', () => {
+    const { valid, missing } = validateCompletionContract(
+      {
+        run_id: 'task-1',
+        branch: 'jarvis-feat',
+        commit_sha: 'abc1234',
+        files_changed: ['src/a.ts'],
+        pr_url: 'url',
+        test_result: 'pass',
+        risk: 'low',
+        session_id: 'sess-abc-123',
+      },
+      {
+        requiredFields: ['run_id', 'branch', 'commit_sha', 'files_changed', 'test_result', 'risk', 'pr_url', 'session_id'],
+      },
+    );
+    expect(valid).toBe(true);
+    expect(missing).toHaveLength(0);
   });
 
   it('accepts valid browser evidence when required', () => {
@@ -737,6 +868,7 @@ describe('run_id contract invariants', () => {
     const { valid, errors } = validateDispatchPayload({
       run_id: '',
       task_type: 'implement',
+      context_intent: 'fresh',
       input: 'x',
       repo: 'openclaw-gurusharan/nanoclaw',
       branch: 'jarvis-x',

@@ -24,6 +24,7 @@ BEFORE starting implementation/debug/setup/update work → read .claude/rules/sk
 BEFORE changing core orchestrator/channel/IPC/scheduler behavior → read docs/reference/REQUIREMENTS.md, docs/reference/SPEC.md, docs/reference/SECURITY.md
 BEFORE changing high-level orchestration methodology → read docs/architecture/harness-engineering-alignment.md
 BEFORE changing Jarvis architecture/state machine → read docs/architecture/nanoclaw-jarvis.md
+BEFORE finalizing Jarvis workflow/contract changes → read docs/workflow/nanoclaw-jarvis-acceptance-checklist.md
 BEFORE changing worker contract code/docs → read .claude/rules/jarvis-dispatch-contract-discipline.md
 BEFORE changing worker dispatch validation/contracts → read docs/workflow/nanoclaw-jarvis-dispatch-contract.md
 BEFORE changing worker container runtime/mounts/model config → read docs/workflow/nanoclaw-jarvis-worker-runtime.md
@@ -35,6 +36,7 @@ BEFORE finalizing any Andy/Jarvis operating agreement change → read docs/opera
 BEFORE deciding runtime-local vs prebaked container placement → read docs/operations/runtime-vs-prebaked-boundary.md
 BEFORE debugging Andy/Jarvis worker flow issues → read .claude/rules/nanoclaw-jarvis-debug-loop.md
 BEFORE debugging Apple Container build/runtime issues → read docs/troubleshooting/DEBUG_CHECKLIST.md and docs/troubleshooting/APPLE-CONTAINER-NETWORKING.md
+BEFORE debugging container/auth/session/mount issues → read docs/workflow/nanoclaw-container-debugging.md
 ```
 
 NanoClaw baseline is the default. Jarvis docs apply only when working on the `jarvis-worker-*` execution tier.
@@ -59,17 +61,23 @@ NanoClaw baseline is the default. Jarvis docs apply only when working on the `ja
 Decision boundary: `docs/operations/skills-vs-docs-map.md`
 
 Mandatory preflight:
+
 - New feature/custom behavior work starts with `/customize` (or a more specific `/add-*` skill if available)
 - Runtime/auth/container issue debugging starts with `/debug`
+- Incident triage, recurring-issue investigation, and incident lifecycle tracking starts with `/incident-debugger`
+- Incident registry is `.claude/progress/incident.json` (open/resolved state and lifecycle notes)
 - For browser/docs/repo tasks, use intent-matched MCP routing from `docs/operations/skills-vs-docs-map.md` (`chrome-devtools` preferred for browser tasks)
 
 Primary ops:
-- `/setup`, `/customize`, `/debug`, `/update`, `/convert-to-apple-container`
+
+- `/setup`, `/customize`, `/debug`, `/incident-debugger`, `/update`, `/convert-to-apple-container`
 
 Channel/integration skills:
+
 - `/add-telegram`, `/add-telegram-swarm`, `/add-discord`, `/add-gmail`, `/add-voice-transcription`, `/add-parallel`, `/x-integration`
 
 Quality/governance helpers:
+
 - `/get-qodo-rules`, `/qodo-pr-resolver`
 
 ## Development
@@ -83,6 +91,7 @@ npm run build        # Compile TypeScript
 ```
 
 Service management:
+
 ```bash
 # macOS (launchd)
 launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist

@@ -38,6 +38,9 @@ export class WhatsAppChannel implements Channel {
 
   private sock!: WASocket;
   private connected = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectInFlight = false;
+  private socketGeneration = 0;
   private lidToPhoneMap: Record<string, string> = {};
   private outgoingQueue: Array<{ jid: string; text: string }> = [];
   private flushing = false;
@@ -55,6 +58,39 @@ export class WhatsAppChannel implements Channel {
     });
   }
 
+  private clearReconnectTimer(): void {
+    if (!this.reconnectTimer) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
+  private scheduleReconnect(delayMs = 0): void {
+    if (this.reconnectInFlight || this.reconnectTimer) return;
+
+    const run = async () => {
+      this.reconnectTimer = null;
+      this.reconnectInFlight = true;
+      try {
+        await this.connectInternal();
+      } catch (err) {
+        logger.error({ err }, 'Failed to reconnect, retrying in 5s');
+        this.reconnectInFlight = false;
+        this.scheduleReconnect(5000);
+        return;
+      }
+      this.reconnectInFlight = false;
+    };
+
+    if (delayMs > 0) {
+      this.reconnectTimer = setTimeout(() => {
+        void run();
+      }, delayMs);
+      return;
+    }
+
+    void run();
+  }
+
   private async connectInternal(onFirstOpen?: () => void): Promise<void> {
     const authDir = path.join(STORE_DIR, 'auth');
     fs.mkdirSync(authDir, { recursive: true });
@@ -68,7 +104,16 @@ export class WhatsAppChannel implements Channel {
       );
       return { version: undefined };
     });
-    this.sock = makeWASocket({
+    // Close any previous socket before replacing it. Without this guard,
+    // overlapping reconnect attempts can create a self-conflict loop.
+    try {
+      this.sock?.end(undefined);
+    } catch {
+      // best-effort cleanup only
+    }
+
+    const generation = ++this.socketGeneration;
+    const sock = makeWASocket({
       version,
       auth: {
         creds: state.creds,
@@ -78,8 +123,10 @@ export class WhatsAppChannel implements Channel {
       logger,
       browser: Browsers.macOS('Chrome'),
     });
+    this.sock = sock;
 
-    this.sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', (update) => {
+      if (generation !== this.socketGeneration) return;
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
@@ -109,31 +156,26 @@ export class WhatsAppChannel implements Channel {
 
         if (shouldReconnect) {
           logger.info('Reconnecting...');
-          this.connectInternal().catch((err) => {
-            logger.error({ err }, 'Failed to reconnect, retrying in 5s');
-            setTimeout(() => {
-              this.connectInternal().catch((err2) => {
-                logger.error({ err: err2 }, 'Reconnection retry failed');
-              });
-            }, 5000);
-          });
+          this.scheduleReconnect();
         } else {
           logger.info('Logged out. Run /setup to re-authenticate.');
           process.exit(0);
         }
       } else if (connection === 'open') {
+        this.clearReconnectTimer();
+        this.reconnectInFlight = false;
         this.connected = true;
         logger.info('Connected to WhatsApp');
 
         // Announce availability so WhatsApp relays subsequent presence updates (typing indicators)
-        this.sock.sendPresenceUpdate('available').catch((err) => {
+        sock.sendPresenceUpdate('available').catch((err) => {
           logger.warn({ err }, 'Failed to send presence update');
         });
 
         // Build LID to phone mapping from auth state for self-chat translation
-        if (this.sock.user) {
-          const phoneUser = this.sock.user.id.split(':')[0];
-          const lidUser = this.sock.user.lid?.split(':')[0];
+        if (sock.user) {
+          const phoneUser = sock.user.id.split(':')[0];
+          const lidUser = sock.user.lid?.split(':')[0];
           if (lidUser && phoneUser) {
             this.lidToPhoneMap[lidUser] = `${phoneUser}@s.whatsapp.net`;
             logger.debug({ lidUser, phoneUser }, 'LID to phone mapping set');
@@ -167,9 +209,10 @@ export class WhatsAppChannel implements Channel {
       }
     });
 
-    this.sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', saveCreds);
 
-    this.sock.ev.on('messages.upsert', async ({ messages }) => {
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+      if (generation !== this.socketGeneration) return;
       for (const msg of messages) {
         if (!msg.message) continue;
         const rawJid = msg.key.remoteJid;
@@ -272,6 +315,9 @@ export class WhatsAppChannel implements Channel {
 
   async disconnect(): Promise<void> {
     this.connected = false;
+    this.clearReconnectTimer();
+    this.reconnectInFlight = false;
+    this.socketGeneration++;
     this.sock?.end(undefined);
   }
 

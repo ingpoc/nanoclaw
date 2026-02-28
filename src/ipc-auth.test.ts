@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import {
@@ -6,8 +9,10 @@ import {
   getAllTasks,
   getRegisteredGroup,
   getWorkerRun,
+  insertWorkerRun,
   getTaskById,
   setRegisteredGroup,
+  updateWorkerRunCompletion,
   updateWorkerRunStatus,
 } from './db.js';
 import {
@@ -55,12 +60,22 @@ const JARVIS_WORKER_GROUP: RegisteredGroup = {
   added_at: '2024-01-01T00:00:00.000Z',
 };
 
+const JARVIS_WORKER_2_GROUP: RegisteredGroup = {
+  name: 'Jarvis Worker 2',
+  folder: 'jarvis-worker-2',
+  trigger: '@jarvis',
+  added_at: '2024-01-01T00:00:00.000Z',
+};
+
 let groups: Record<string, RegisteredGroup>;
 let deps: IpcDeps;
+let sendMessageCalls: Array<{ jid: string; text: string; sourceGroup: string }>;
+const IPC_ERRORS_DIR = path.join(process.cwd(), 'data', 'ipc', 'errors');
 
 const VALID_WORKER_DISPATCH_PROMPT = JSON.stringify({
   run_id: 'run-20260223-001',
   task_type: 'implement',
+  context_intent: 'fresh',
   input: 'Implement and validate the requested feature',
   repo: 'openclaw-gurusharan/nanoclaw',
   branch: 'jarvis-feature-dispatch-contract',
@@ -80,6 +95,8 @@ const VALID_WORKER_DISPATCH_PROMPT = JSON.stringify({
 
 beforeEach(() => {
   _initTestDatabase();
+  fs.rmSync(IPC_ERRORS_DIR, { recursive: true, force: true });
+  sendMessageCalls = [];
 
   groups = {
     'main@g.us': MAIN_GROUP,
@@ -87,6 +104,7 @@ beforeEach(() => {
     'third@g.us': THIRD_GROUP,
     'andy@g.us': ANDY_DEVELOPER_GROUP,
     'jarvis-1@g.us': JARVIS_WORKER_GROUP,
+    'jarvis-2@g.us': JARVIS_WORKER_2_GROUP,
   };
 
   // Populate DB as well
@@ -95,9 +113,12 @@ beforeEach(() => {
   setRegisteredGroup('third@g.us', THIRD_GROUP);
   setRegisteredGroup('andy@g.us', ANDY_DEVELOPER_GROUP);
   setRegisteredGroup('jarvis-1@g.us', JARVIS_WORKER_GROUP);
+  setRegisteredGroup('jarvis-2@g.us', JARVIS_WORKER_2_GROUP);
 
   deps = {
-    sendMessage: async (_jid, _text, _sourceGroup) => {},
+    sendMessage: async (jid, text, sourceGroup) => {
+      sendMessageCalls.push({ jid, text, sourceGroup });
+    },
     registeredGroups: () => groups,
     registerGroup: (jid, group) => {
       groups[jid] = group;
@@ -189,6 +210,27 @@ describe('schedule_task authorization', () => {
     expect(allTasks[0].group_folder).toBe('jarvis-worker-1');
   });
 
+  it('main cannot schedule worker tasks and receives policy guidance', async () => {
+    await processTaskIpc(
+      {
+        type: 'schedule_task',
+        prompt: VALID_WORKER_DISPATCH_PROMPT,
+        schedule_type: 'once',
+        schedule_value: '2025-06-01T00:00:00.000Z',
+        targetJid: 'jarvis-1@g.us',
+      },
+      'main',
+      true,
+      deps,
+    );
+
+    expect(getAllTasks()).toHaveLength(0);
+    expect(sendMessageCalls).toHaveLength(1);
+    expect(sendMessageCalls[0].jid).toBe('main@g.us');
+    expect(sendMessageCalls[0].text).toContain('only andy-developer may schedule worker dispatch tasks');
+    expect(sendMessageCalls[0].sourceGroup).toBe('nanoclaw-system');
+  });
+
   it('andy-developer cannot schedule worker task with invalid dispatch payload', async () => {
     await processTaskIpc(
       {
@@ -205,6 +247,52 @@ describe('schedule_task authorization', () => {
 
     const allTasks = getAllTasks();
     expect(allTasks.length).toBe(0);
+    expect(sendMessageCalls).toHaveLength(1);
+    expect(sendMessageCalls[0].jid).toBe('andy@g.us');
+    expect(sendMessageCalls[0].text).toContain('requires strict JSON dispatch payload');
+    expect(sendMessageCalls[0].sourceGroup).toBe('nanoclaw-system');
+  });
+
+  it('andy-developer receives payload validation errors for invalid worker dispatch JSON', async () => {
+    const invalidDispatch = JSON.stringify({
+      run_id: 'run-20260223-002',
+      task_type: 'implement',
+      context_intent: 'fresh',
+      input: 'Implement and validate the requested feature',
+      repo: 'openclaw-gurusharan/nanoclaw',
+      branch: 'feature-invalid-branch',
+      acceptance_tests: ['npm run build', 'npm test'],
+      output_contract: {
+        required_fields: [
+          'run_id',
+          'branch',
+          'commit_sha',
+          'files_changed',
+          'test_result',
+          'risk',
+          'pr_skipped_reason',
+        ],
+      },
+    });
+
+    await processTaskIpc(
+      {
+        type: 'schedule_task',
+        prompt: invalidDispatch,
+        schedule_type: 'once',
+        schedule_value: '2025-06-01T00:00:00.000Z',
+        targetJid: 'jarvis-1@g.us',
+      },
+      'andy-developer',
+      false,
+      deps,
+    );
+
+    expect(getAllTasks()).toHaveLength(0);
+    expect(sendMessageCalls).toHaveLength(1);
+    expect(sendMessageCalls[0].jid).toBe('andy@g.us');
+    expect(sendMessageCalls[0].text).toContain('branch must match jarvis-<feature>');
+    expect(sendMessageCalls[0].sourceGroup).toBe('nanoclaw-system');
   });
 
   it('andy-developer cannot schedule for non-worker group', async () => {
@@ -559,6 +647,133 @@ describe('andy worker dispatch payload guardrails', () => {
 
     expect(result.valid).toBe(true);
   });
+
+  it('blocks continue dispatch when no reusable session exists for worker/repo/branch', () => {
+    const payload = JSON.stringify({
+      run_id: 'run-20260223-continue-001',
+      task_type: 'fix',
+      context_intent: 'continue',
+      input: 'Continue fixing the same branch task',
+      repo: 'openclaw-gurusharan/nanoclaw',
+      branch: 'jarvis-feature-dispatch-contract',
+      acceptance_tests: ['npm run build'],
+      output_contract: {
+        required_fields: [
+          'run_id',
+          'branch',
+          'commit_sha',
+          'files_changed',
+          'test_result',
+          'risk',
+          'pr_skipped_reason',
+          'session_id',
+        ],
+      },
+    });
+    const result = validateAndyWorkerDispatchMessage(
+      'andy-developer',
+      groups['jarvis-1@g.us'],
+      payload,
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('context_intent=continue requires a reusable prior session');
+  });
+
+  it('blocks continue dispatch when explicit session_id belongs to another worker lane', () => {
+    insertWorkerRun('run-session-owner', 'jarvis-worker-1', {
+      dispatch_repo: 'openclaw-gurusharan/nanoclaw',
+      dispatch_branch: 'jarvis-feature-dispatch-contract',
+      context_intent: 'continue',
+    });
+    updateWorkerRunCompletion('run-session-owner', {
+      effective_session_id: 'sess-owned-by-worker-1',
+    });
+    updateWorkerRunStatus('run-session-owner', 'review_requested');
+
+    const payload = JSON.stringify({
+      run_id: 'run-20260223-continue-002',
+      task_type: 'fix',
+      context_intent: 'continue',
+      session_id: 'sess-owned-by-worker-1',
+      input: 'Continue with the same session',
+      repo: 'openclaw-gurusharan/nanoclaw',
+      branch: 'jarvis-feature-dispatch-contract',
+      acceptance_tests: ['npm run build'],
+      output_contract: {
+        required_fields: [
+          'run_id',
+          'branch',
+          'commit_sha',
+          'files_changed',
+          'test_result',
+          'risk',
+          'pr_skipped_reason',
+          'session_id',
+        ],
+      },
+    });
+    const result = validateAndyWorkerDispatchMessage(
+      'andy-developer',
+      groups['jarvis-2@g.us'],
+      payload,
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('cross-worker session reuse is blocked');
+  });
+
+  it('allows continue dispatch when reusable session exists for same worker/repo/branch', () => {
+    insertWorkerRun('run-session-reusable', 'jarvis-worker-1', {
+      dispatch_repo: 'openclaw-gurusharan/nanoclaw',
+      dispatch_branch: 'jarvis-feature-dispatch-contract',
+      context_intent: 'continue',
+    });
+    updateWorkerRunCompletion('run-session-reusable', {
+      effective_session_id: 'sess-reuse-1',
+    });
+    updateWorkerRunStatus('run-session-reusable', 'review_requested');
+
+    const payload = JSON.stringify({
+      run_id: 'run-20260223-continue-003',
+      task_type: 'fix',
+      context_intent: 'continue',
+      input: 'Continue with recent context',
+      repo: 'openclaw-gurusharan/nanoclaw',
+      branch: 'jarvis-feature-dispatch-contract',
+      acceptance_tests: ['npm run build'],
+      output_contract: {
+        required_fields: [
+          'run_id',
+          'branch',
+          'commit_sha',
+          'files_changed',
+          'test_result',
+          'risk',
+          'pr_skipped_reason',
+          'session_id',
+        ],
+      },
+    });
+    const result = validateAndyWorkerDispatchMessage(
+      'andy-developer',
+      groups['jarvis-1@g.us'],
+      payload,
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it('blocks strict worker dispatch JSON from non-andy source lanes', () => {
+    const result = validateAndyWorkerDispatchMessage(
+      'main',
+      groups['jarvis-1@g.us'],
+      VALID_WORKER_DISPATCH_PROMPT,
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('worker dispatch ownership violation');
+  });
 });
 
 describe('andy worker dispatch run queueing', () => {
@@ -572,7 +787,10 @@ describe('andy worker dispatch run queueing', () => {
     expect(decision.allowSend).toBe(true);
     expect(decision.queueState).toBe('new');
     expect(decision.runId).toBe('run-20260223-001');
-    expect(getWorkerRun('run-20260223-001')?.status).toBe('queued');
+    const row = getWorkerRun('run-20260223-001');
+    expect(row?.status).toBe('queued');
+    expect(row?.context_intent).toBe('fresh');
+    expect(row?.session_selection_source).toBe('new');
   });
 
   it('blocks duplicate run_id dispatch', () => {

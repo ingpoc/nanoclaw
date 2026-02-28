@@ -44,10 +44,16 @@ export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
   process.env.CONTAINER_MAX_OUTPUT_SIZE || '10485760',
   10,
 ); // 10MB default
+// Local: container resource limits
+export const CONTAINER_PARSE_BUFFER_LIMIT = parseInt(
+  process.env.CONTAINER_PARSE_BUFFER_LIMIT || '1048576',
+  10,
+); // 1MB default - prevents unbounded memory growth if markers are malformed
 export const CONTAINER_CPU_LIMIT =
   process.env.CONTAINER_CPU_LIMIT || '2';
 export const CONTAINER_MEMORY_LIMIT =
   process.env.CONTAINER_MEMORY_LIMIT || '4096M';
+// Upstream: IPC and concurrency
 export const IPC_POLL_INTERVAL = 1000;
 export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10); // 30min default — how long to keep container alive after last result
 export const MAX_CONCURRENT_CONTAINERS = Math.max(

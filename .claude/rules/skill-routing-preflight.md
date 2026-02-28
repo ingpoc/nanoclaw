@@ -21,6 +21,7 @@ Do not start ad-hoc edits/debug loops before this check.
 
 - New feature or behavior change -> `/customize` (unless a more specific `/add-*` or domain skill exists)
 - Container/auth/runtime/linking failures -> `/debug`
+- Incident triage/history tracking/resolution workflow -> `/incident-debugger` (combine with `/debug` if runtime is failing)
 - First-time install/onboarding -> `/setup`
 - Upstream sync request -> `/update`
 - Docker -> Apple Container runtime migration -> `/convert-to-apple-container`
@@ -30,9 +31,10 @@ Do not start ad-hoc edits/debug loops before this check.
 When multiple skills match, use this order:
 
 1. Specific integration/domain skill (`/add-*`, `/x-integration`, etc.)
-2. `/debug` for break/fix runtime incidents
-3. `/customize` for general feature/custom behavior work
-4. `/setup` or `/update` for lifecycle operations
+2. `/incident-debugger` for incident triage/tracking workflows
+3. `/debug` for break/fix runtime incidents
+4. `/customize` for general feature/custom behavior work
+5. `/setup` or `/update` for lifecycle operations
 
 For tool routing, prefer intent-matched MCPs before ad-hoc shell/web:
 

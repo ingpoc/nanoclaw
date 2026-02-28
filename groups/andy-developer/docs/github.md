@@ -5,20 +5,23 @@ This is mandatory for Andy-developer.
 ## Branch Policy
 
 - Never commit directly to `main`.
-- Use worker branches only (`jarvis-<feature>`).
+- Use worker branches only (`jarvis-<feature>`) for product execution tasks.
 - Keep `main` as review-protected integration branch.
 - Merge to `main` only via pull request.
+- Seed worker branches remotely before dispatch (create from approved base, then push).
 
 ## Operating Model
 
-1. Andy-developer prepares strict dispatch JSON.
-2. Andy-developer sends dispatch to `jarvis-worker-*`.
-3. Worker applies fix and pushes updates to `jarvis-<feature>` branch.
-4. Worker returns completion contract with test evidence and commit SHA.
-5. Andy-developer reviews code and sends `approve` or `rework`.
-6. If approved, Andy-developer syncs the approved branch/commit into `NanoClawWorkspace` and runs checks on that same branch/commit only.
-7. Andy-developer runs local preflight (`build` + `server start/health`), verifies no duplicate same-lane running containers, and sends user testing handoff (user-run local commands).
-8. If not approved, Andy-developer delegates rework to Jarvis using the same `run_id`.
+1. Andy-developer identifies `base_branch` (default `main`) and creates `jarvis-<feature>` branch.
+2. Andy-developer pushes the seeded branch to origin.
+3. Andy-developer prepares strict dispatch JSON with `base_branch` + `branch`.
+4. Andy-developer sends dispatch to `jarvis-worker-*`.
+5. Worker checks out the dispatched `jarvis-<feature>` branch, applies fix, and pushes updates.
+6. Worker returns completion contract with test evidence and commit SHA.
+7. Andy-developer reviews code and sends `approve` or `rework`.
+8. If approved, Andy-developer syncs the approved branch/commit into `NanoClawWorkspace` and runs checks on that same branch/commit only.
+9. Andy-developer runs local preflight (`build` + `server start/health`), verifies no duplicate same-lane running containers, and sends user testing handoff (user-run local commands).
+10. If not approved, Andy-developer delegates rework to Jarvis using the same `run_id`.
 
 ## Ownership Split
 
@@ -44,8 +47,14 @@ Before saying "done", include:
 ## Prohibited
 
 - Direct product source implementation by Andy-developer
-- Direct `git commit` / `git push` to product repos from Andy lane
+- Product feature/fix commits from Andy lane (implementation remains worker-owned)
 - Any direct push to `main`
+
+## Allowed Push Scope
+
+- Control-plane changes (`.github/workflows`, review/branch-governance docs)
+- Branch seeding pushes for worker lanes (`jarvis-*` pre-created from `base_branch`)
+- Review/handoff staging operations that do not author product feature code
 
 ## Required Repo Controls
 

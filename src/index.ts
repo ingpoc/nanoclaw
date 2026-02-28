@@ -3,6 +3,7 @@ import path from 'path';
 
 import {
   ASSISTANT_NAME,
+  DATA_DIR,
   IDLE_TIMEOUT,
   MAIN_GROUP_FOLDER,
   POLL_INTERVAL,
@@ -11,6 +12,7 @@ import {
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import {
   ContainerOutput,
+  DispatchBlockSnapshotEntry,
   runContainerAgent,
   writeGroupsSnapshot,
   writeTasksSnapshot,
@@ -29,6 +31,7 @@ import {
   getAllSessions,
   getAllTasks,
   getMessagesSince,
+  getLatestReusableWorkerSession,
   getNewMessages,
   getWorkerRuns,
   getWorkerRun,
@@ -41,6 +44,8 @@ import {
   storeChatMetadata,
   storeMessage,
   updateWorkerRunCompletion,
+  updateWorkerRunDispatchMetadata,
+  updateWorkerRunSessionMetadata,
   updateWorkerRunStatus,
 } from './db.js';
 import {
@@ -61,7 +66,7 @@ import { logger } from './logger.js';
 // Re-export for backwards compatibility during refactor
 export { escapeXml, formatMessages } from './router.js';
 
-let lastTimestamp = '';
+let lastCursor = '';
 let sessions: Record<string, string> = {};
 let registeredGroups: Record<string, RegisteredGroup> = {};
 let lastAgentTimestamp: Record<string, string> = {};
@@ -81,6 +86,19 @@ interface WorkerRunContext {
   requiredFields: string[];
   browserEvidenceRequired?: boolean;
   dispatchPayload: DispatchPayload;
+}
+
+interface WorkerSessionSelection {
+  selectedSessionId?: string;
+  source: 'explicit' | 'auto_repo_branch' | 'new';
+}
+
+interface RunAgentResult {
+  status: 'success' | 'error';
+  newSessionId?: string;
+  sessionResumeStatus?: ContainerOutput['sessionResumeStatus'];
+  sessionResumeError?: string;
+  error?: string;
 }
 
 function isJarvisWorkerGroup(folder: string): boolean {
@@ -104,6 +122,50 @@ function sanitizeUserFacingOutput(group: RegisteredGroup, text: string): string 
   if (!parsed) return text;
 
   return `Dispatched \`${parsed.run_id}\` to \`${parsed.repo}\` on \`${parsed.branch}\` (${parsed.task_type}).`;
+}
+
+function getDispatchBlocksForGroup(
+  group: RegisteredGroup,
+  isMain: boolean,
+): DispatchBlockSnapshotEntry[] {
+  const errorDir = path.join(DATA_DIR, 'ipc', 'errors');
+  if (!fs.existsSync(errorDir)) return [];
+
+  const rows: DispatchBlockSnapshotEntry[] = [];
+  const files = fs.readdirSync(errorDir)
+    .filter((name) => name.startsWith('dispatch-block-') && name.endsWith('.json'))
+    .sort()
+    .reverse();
+
+  for (const file of files) {
+    if (rows.length >= 25) break;
+    try {
+      const raw = fs.readFileSync(path.join(errorDir, file), 'utf-8');
+      const parsed = JSON.parse(raw) as Partial<DispatchBlockSnapshotEntry> & { kind?: string };
+      if (parsed.kind !== 'dispatch_block') continue;
+      if (!parsed.timestamp || !parsed.source_group || !parsed.target_jid || !parsed.reason_text) continue;
+
+      const include = isMain
+        || (group.folder === ANDY_DEVELOPER_FOLDER
+          ? parsed.source_group === ANDY_DEVELOPER_FOLDER
+          : parsed.source_group === group.folder);
+      if (!include) continue;
+
+      rows.push({
+        timestamp: parsed.timestamp,
+        source_group: parsed.source_group,
+        target_jid: parsed.target_jid,
+        target_folder: parsed.target_folder,
+        reason_code: parsed.reason_code || 'unknown',
+        reason_text: parsed.reason_text,
+        run_id: parsed.run_id,
+      });
+    } catch {
+      // Ignore malformed block files; they are best-effort diagnostics only.
+    }
+  }
+
+  return rows;
 }
 
 function buildWorkerRunsSnapshot(group: RegisteredGroup, isMain: boolean): WorkerRunsSnapshot {
@@ -136,6 +198,16 @@ function buildWorkerRunsSnapshot(group: RegisteredGroup, isMain: boolean): Worke
     retry_count: r.retry_count,
     result_summary: r.result_summary,
     error_details: r.error_details,
+    dispatch_repo: r.dispatch_repo,
+    dispatch_branch: r.dispatch_branch,
+    context_intent: r.context_intent,
+    parent_run_id: r.parent_run_id,
+    dispatch_session_id: r.dispatch_session_id,
+    selected_session_id: r.selected_session_id,
+    effective_session_id: r.effective_session_id,
+    session_selection_source: r.session_selection_source,
+    session_resume_status: r.session_resume_status,
+    session_resume_error: r.session_resume_error,
   }));
 
   const recent = getWorkerRuns({
@@ -150,13 +222,26 @@ function buildWorkerRunsSnapshot(group: RegisteredGroup, isMain: boolean): Worke
     retry_count: r.retry_count,
     result_summary: r.result_summary,
     error_details: r.error_details,
+    dispatch_repo: r.dispatch_repo,
+    dispatch_branch: r.dispatch_branch,
+    context_intent: r.context_intent,
+    parent_run_id: r.parent_run_id,
+    dispatch_session_id: r.dispatch_session_id,
+    selected_session_id: r.selected_session_id,
+    effective_session_id: r.effective_session_id,
+    session_selection_source: r.session_selection_source,
+    session_resume_status: r.session_resume_status,
+    session_resume_error: r.session_resume_error,
   }));
+
+  const dispatchBlocks = getDispatchBlocksForGroup(group, isMain);
 
   return {
     generated_at: new Date().toISOString(),
     scope,
     active,
     recent,
+    dispatch_blocks: dispatchBlocks,
   };
 }
 
@@ -177,6 +262,10 @@ function buildAndyPromptWorkerContext(snapshot: WorkerRunsSnapshot): string {
     const startedMs = Date.parse(r.started_at);
     return Number.isFinite(startedMs) && (nowMs - startedMs) <= currentWindowMs;
   }).length;
+  const currentDispatchBlocks = (snapshot.dispatch_blocks ?? []).filter((entry) => {
+    const ts = Date.parse(entry.timestamp);
+    return Number.isFinite(ts) && (nowMs - ts) <= currentWindowMs;
+  });
   const workerLaneNames = Array.from(
     new Set(
       snapshot.recent
@@ -211,6 +300,31 @@ function buildAndyPromptWorkerContext(snapshot: WorkerRunsSnapshot): string {
       })
       .join('\n')
     : '- none';
+  const blockLines = currentDispatchBlocks.length > 0
+    ? currentDispatchBlocks
+      .slice(0, 8)
+      .map((entry) => {
+        const runId = entry.run_id ? ` | run_id=${entry.run_id}` : '';
+        return `- ${entry.timestamp} | ${entry.source_group} -> ${entry.target_jid} | ${entry.reason_code}${runId} | ${entry.reason_text}`;
+      })
+      .join('\n')
+    : '- none';
+  const sessionLedgerLines = snapshot.recent.length > 0
+    ? snapshot.recent
+      .filter((r) => isJarvisWorkerGroup(r.group_folder))
+      .slice(0, 8)
+      .map((r) => {
+        const repo = r.dispatch_repo || '-';
+        const branch = r.dispatch_branch || '-';
+        const intent = r.context_intent || '-';
+        const selected = r.selected_session_id || '-';
+        const effective = r.effective_session_id || '-';
+        const source = r.session_selection_source || '-';
+        const resume = r.session_resume_status || '-';
+        return `- ${r.run_id} | ${r.group_folder} | ${repo}#${branch} | intent=${intent} | selected=${selected} | effective=${effective} | source=${source} | resume=${resume}`;
+      })
+      .join('\n')
+    : '- none';
 
   return [
     '<worker_status_source_of_truth>',
@@ -219,13 +333,19 @@ function buildAndyPromptWorkerContext(snapshot: WorkerRunsSnapshot): string {
     'Use this DB snapshot as the single source of truth when answering status/queue questions.',
     'Classify issues older than 60 minutes as historical unless there are fresh failures in the current window.',
     `Current-window (last 60m): passes=${currentPasses}, failures=${currentFailures}`,
+    `Current-window dispatch policy blocks (last 60m): ${currentDispatchBlocks.length}`,
     'Do not claim a specific worker lane is broken without at least one failure in that lane in the last 60 minutes.',
     'If a worker lane has no runs in the current window, report it as unknown/no recent evidence.',
+    'If dispatch policy blocks exist, report this as policy-blocked dispatch (not worker disconnection).',
     'Current-window worker lane summary:',
     laneSummaryLines,
     'Do not rely on memory for queued/running/completed worker state.',
+    'Recent dispatch policy blocks:',
+    blockLines,
     'Active worker runs:',
     activeLines,
+    'Recent worker session ledger:',
+    sessionLedgerLines,
     'Recent worker runs:',
     recentLines,
     '</worker_status_source_of_truth>',
@@ -272,6 +392,33 @@ function extractWorkerRunContext(
   return null;
 }
 
+function selectWorkerSessionForDispatch(
+  groupFolder: string,
+  payload: DispatchPayload,
+): WorkerSessionSelection | null {
+  if (payload.context_intent === 'fresh') {
+    return { source: 'new' };
+  }
+
+  if (payload.session_id) {
+    return { selectedSessionId: payload.session_id, source: 'explicit' };
+  }
+
+  const reusable = getLatestReusableWorkerSession(
+    groupFolder,
+    payload.repo,
+    payload.branch,
+  );
+  if (!reusable?.effective_session_id) {
+    return null;
+  }
+
+  return {
+    selectedSessionId: reusable.effective_session_id,
+    source: 'auto_repo_branch',
+  };
+}
+
 function buildWorkerDispatchPrompt(payload: DispatchPayload): string {
   const acceptanceTests = payload.acceptance_tests
     .map((test, idx) => `${idx + 1}. ${test}`)
@@ -279,6 +426,9 @@ function buildWorkerDispatchPrompt(payload: DispatchPayload): string {
   const requiredFields = payload.output_contract.required_fields
     .map((field) => `- ${field}`)
     .join('\n');
+  const sessionFieldRule = payload.output_contract.required_fields.includes('session_id')
+    ? '- REQUIRED: include "session_id": "<current-session-id>" in completion output.'
+    : '- OPTIONAL: include "session_id": "<current-session-id>" to help follow-up dispatch continuity.';
 
   return [
     'You are a Jarvis worker.',
@@ -290,6 +440,11 @@ function buildWorkerDispatchPrompt(payload: DispatchPayload): string {
     `Priority: ${payload.priority ?? 'normal'}`,
     `UI impacting: ${payload.ui_impacting === true ? 'true' : 'false'}`,
     `Browser evidence required: ${payload.output_contract.browser_evidence_required === true ? 'true' : 'false'}`,
+    '',
+    'CRITICAL: Container lifecycle - this container will EXIT after completing this task.',
+    '- The container runs once and shuts down when done.',
+    sessionFieldRule,
+    '- Andy will pass this session_id to the next worker to continue the conversation.',
     '',
     'Task instructions:',
     payload.input,
@@ -308,6 +463,7 @@ function buildWorkerDispatchPrompt(payload: DispatchPayload): string {
     '- completion.commit_sha must be a real 6-40 char git SHA from the checked-out branch.',
     '- Only no-code runs with run_id prefix ping-/smoke-/health-/sync- may use commit_sha placeholder n/a/none and empty files_changed.',
     '- files_changed must be a JSON array of changed file paths.',
+    '- OPTIONAL: Add "session_id": "<session-id>" if you want follow-up tasks to continue this session.',
     '',
     'Required completion fields:',
     requiredFields,
@@ -503,7 +659,7 @@ function reconcileStaleWorkerRuns(): void {
 }
 
 function loadState(): void {
-  lastTimestamp = getRouterState('last_timestamp') || '';
+  lastCursor = getRouterState('last_timestamp') || '';
   const agentTs = getRouterState('last_agent_timestamp');
   try {
     lastAgentTimestamp = agentTs ? JSON.parse(agentTs) : {};
@@ -521,7 +677,7 @@ function loadState(): void {
 }
 
 function saveState(): void {
-  setRouterState('last_timestamp', lastTimestamp);
+  setRouterState('last_timestamp', lastCursor);
   setRouterState(
     'last_agent_timestamp',
     JSON.stringify(lastAgentTimestamp),
@@ -613,6 +769,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     : formatMessages(messagesToProcess);
   let workerOutputBuffer = '';
 
+  let workerSessionSelection: WorkerSessionSelection | null = null;
+  let runtimeEffectiveSessionId: string | undefined;
+  let runtimeSessionResumeStatus: ContainerOutput['sessionResumeStatus'];
+  let runtimeSessionResumeError: string | undefined;
+
   if (workerRun) {
     const existingRun = getWorkerRun(workerRun.runId);
     if (existingRun && isActiveOrTerminalWorkerStatus(existingRun.status)) {
@@ -629,8 +790,56 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       return true;
     }
 
+    workerSessionSelection = selectWorkerSessionForDispatch(group.folder, workerRun.dispatchPayload);
+    if (!workerSessionSelection) {
+      const queueState = insertWorkerRun(workerRun.runId, group.folder, {
+        dispatch_repo: workerRun.dispatchPayload.repo,
+        dispatch_branch: workerRun.dispatchPayload.branch,
+        context_intent: workerRun.dispatchPayload.context_intent,
+        parent_run_id: workerRun.dispatchPayload.parent_run_id,
+        dispatch_session_id: workerRun.dispatchPayload.session_id,
+      });
+      if (queueState !== 'duplicate') {
+        completeWorkerRun(
+          workerRun.runId,
+          'failed_contract',
+          'dispatch requires existing session context, but no reusable session was found',
+          JSON.stringify({
+            reason: 'missing_reusable_session',
+            repo: workerRun.dispatchPayload.repo,
+            branch: workerRun.dispatchPayload.branch,
+            context_intent: workerRun.dispatchPayload.context_intent,
+          }),
+        );
+      }
+      lastAgentTimestamp[chatJid] = batchLastTimestamp;
+      saveState();
+      refreshWorkerRunSnapshotsForGroups();
+      logger.warn(
+        {
+          runId: workerRun.runId,
+          group: group.name,
+          repo: workerRun.dispatchPayload.repo,
+          branch: workerRun.dispatchPayload.branch,
+        },
+        'Worker dispatch blocked during execution due to missing reusable session',
+      );
+      return true;
+    }
+
+    runtimeEffectiveSessionId = workerSessionSelection.selectedSessionId;
+    const dispatchMetadata = {
+      dispatch_repo: workerRun.dispatchPayload.repo,
+      dispatch_branch: workerRun.dispatchPayload.branch,
+      context_intent: workerRun.dispatchPayload.context_intent,
+      parent_run_id: workerRun.dispatchPayload.parent_run_id,
+      dispatch_session_id: workerRun.dispatchPayload.session_id,
+      selected_session_id: workerSessionSelection.selectedSessionId,
+      session_selection_source: workerSessionSelection.source,
+    } as const;
+
     if (!existingRun || existingRun.status === 'failed' || existingRun.status === 'failed_contract') {
-      const insertState = insertWorkerRun(workerRun.runId, group.folder);
+      const insertState = insertWorkerRun(workerRun.runId, group.folder, dispatchMetadata);
       if (insertState === 'duplicate') {
         lastAgentTimestamp[chatJid] = batchLastTimestamp;
         saveState();
@@ -641,9 +850,17 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         return true;
       }
       logger.info(
-        { runId: workerRun.runId, queueState: insertState, group: group.name },
+        {
+          runId: workerRun.runId,
+          queueState: insertState,
+          group: group.name,
+          sessionSelection: workerSessionSelection.source,
+          selectedSessionId: workerSessionSelection.selectedSessionId,
+        },
         'Worker run queued from worker chat context',
       );
+    } else {
+      updateWorkerRunDispatchMetadata(workerRun.runId, dispatchMetadata);
     }
 
     updateWorkerRunStatus(workerRun.runId, 'running');
@@ -676,7 +893,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   let hadError = false;
   let outputSentToUser = false;
 
-  const output = await runAgent(group, prompt, chatJid, async (result) => {
+  const sessionOverride = workerSessionSelection
+    ? (workerSessionSelection.selectedSessionId ?? null)
+    : undefined;
+  const runOutcome = await runAgent(group, prompt, chatJid, async (result) => {
     // Streaming output callback — called for each agent result
     if (result.result) {
       const raw = typeof result.result === 'string' ? result.result : JSON.stringify(result.result);
@@ -704,7 +924,17 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (result.status === 'error') {
       hadError = true;
     }
-  });
+  }, sessionOverride);
+
+  if (runOutcome.newSessionId) {
+    runtimeEffectiveSessionId = runOutcome.newSessionId;
+  }
+  if (runOutcome.sessionResumeStatus) {
+    runtimeSessionResumeStatus = runOutcome.sessionResumeStatus;
+  }
+  if (runOutcome.sessionResumeError) {
+    runtimeSessionResumeError = runOutcome.sessionResumeError;
+  }
 
   await channel?.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
@@ -719,7 +949,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       allowNoCodeChanges: shouldAllowNoCodeCompletion(workerRun.runId),
     });
 
-    if (!completionCheck.valid && output !== 'error' && !hadError) {
+    if (!completionCheck.valid && runOutcome.status !== 'error' && !hadError) {
       const repairPrompt = buildWorkerCompletionRepairPrompt(
         workerRun.runId,
         workerRun.dispatchPayload.branch,
@@ -730,7 +960,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
       let repairBuffer = '';
       let repairHadError = false;
-      const repairOutput = await runAgent(group, repairPrompt, chatJid, async (result) => {
+      const repairSessionOverride = runtimeEffectiveSessionId
+        ? runtimeEffectiveSessionId
+        : (workerSessionSelection?.selectedSessionId ?? null);
+      const repairOutcome = await runAgent(group, repairPrompt, chatJid, async (result) => {
         if (result.result) {
           const raw = typeof result.result === 'string'
             ? result.result
@@ -740,9 +973,19 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         if (result.status === 'error') {
           repairHadError = true;
         }
-      });
+      }, repairSessionOverride);
 
-      if (repairOutput === 'error' || repairHadError) {
+      if (repairOutcome.newSessionId) {
+        runtimeEffectiveSessionId = repairOutcome.newSessionId;
+      }
+      if (repairOutcome.sessionResumeStatus) {
+        runtimeSessionResumeStatus = repairOutcome.sessionResumeStatus;
+      }
+      if (repairOutcome.sessionResumeError) {
+        runtimeSessionResumeError = repairOutcome.sessionResumeError;
+      }
+
+      if (repairOutcome.status === 'error' || repairHadError) {
         hadError = true;
       }
 
@@ -769,6 +1012,25 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       );
     }
 
+    const completionSessionId = completion?.session_id?.trim();
+    if (completionSessionId) {
+      runtimeEffectiveSessionId = completionSessionId;
+      sessions[group.folder] = completionSessionId;
+      setSession(group.folder, completionSessionId);
+    }
+
+    if (
+      runtimeEffectiveSessionId !== undefined
+      || runtimeSessionResumeStatus !== undefined
+      || runtimeSessionResumeError !== undefined
+    ) {
+      updateWorkerRunSessionMetadata(workerRun.runId, {
+        effective_session_id: runtimeEffectiveSessionId ?? null,
+        session_resume_status: runtimeSessionResumeStatus ?? null,
+        session_resume_error: runtimeSessionResumeError ?? null,
+      });
+    }
+
     if (completion && completionCheck.valid) {
       updateWorkerRunCompletion(workerRun.runId, {
         branch_name: completion.branch,
@@ -777,6 +1039,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         files_changed: completion.files_changed,
         test_summary: completion.test_result,
         risk_summary: completion.risk,
+        effective_session_id: runtimeEffectiveSessionId ?? null,
+        session_resume_status: runtimeSessionResumeStatus ?? null,
+        session_resume_error: runtimeSessionResumeError ?? null,
       });
       updateWorkerRunStatus(workerRun.runId, 'review_requested');
       refreshWorkerRunSnapshotsForGroups();
@@ -784,7 +1049,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         { runId: workerRun.runId, group: group.name },
         'Worker completion contract accepted',
       );
-    } else if (output === 'error' || hadError) {
+    } else if (runOutcome.status === 'error' || hadError) {
       const missingSummary = completionCheck.missing.join(', ');
       completeWorkerRun(
         workerRun.runId,
@@ -795,7 +1060,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         JSON.stringify({
           reason: 'worker execution failed',
           missing: completionCheck.missing,
-          output_status: output,
+          output_status: runOutcome.status,
+          output_error: runOutcome.error,
           had_error: hadError,
           output_excerpt: workerOutputBuffer.slice(0, 2000),
         }),
@@ -835,7 +1101,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
   }
 
-  if (output === 'error' || hadError) {
+  if (runOutcome.status === 'error' || hadError) {
     // If we already sent output to the user, don't roll back the cursor —
     // the user got their response and re-processing would send duplicates.
     if (outputSentToUser) {
@@ -870,9 +1136,16 @@ async function runAgent(
   prompt: string,
   chatJid: string,
   onOutput?: (output: ContainerOutput) => Promise<void>,
-): Promise<'success' | 'error'> {
+  sessionOverride?: string | null,
+): Promise<RunAgentResult> {
   const isMain = group.folder === MAIN_GROUP_FOLDER;
-  const sessionId = sessions[group.folder];
+  const sessionId = sessionOverride === undefined
+    ? sessions[group.folder]
+    : sessionOverride ?? undefined;
+  if (sessionId) {
+    sessions[group.folder] = sessionId;
+    setSession(group.folder, sessionId);
+  }
 
   // Update tasks snapshot for container to read (filtered by group)
   const tasks = getAllTasks();
@@ -941,13 +1214,28 @@ async function runAgent(
         { group: group.name, error: output.error },
         'Container agent error',
       );
-      return 'error';
+      return {
+        status: 'error',
+        newSessionId: output.newSessionId ?? sessionId,
+        sessionResumeStatus: output.sessionResumeStatus,
+        sessionResumeError: output.sessionResumeError,
+        error: output.error,
+      };
     }
 
-    return 'success';
+    return {
+      status: 'success',
+      newSessionId: output.newSessionId ?? sessionId,
+      sessionResumeStatus: output.sessionResumeStatus,
+      sessionResumeError: output.sessionResumeError,
+    };
   } catch (err) {
     logger.error({ group: group.name, err }, 'Agent error');
-    return 'error';
+    return {
+      status: 'error',
+      newSessionId: sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -970,13 +1258,13 @@ async function startMessageLoop(): Promise<void> {
         lastWorkerSnapshotRefresh = now;
       }
       const jids = Object.keys(registeredGroups);
-      const { messages, newTimestamp } = getNewMessages(jids, lastTimestamp, ASSISTANT_NAME);
+      const { messages, newCursor } = getNewMessages(jids, lastCursor, ASSISTANT_NAME);
 
       if (messages.length > 0) {
         logger.info({ count: messages.length }, 'New messages');
 
         // Advance the "seen" cursor for all messages immediately
-        lastTimestamp = newTimestamp;
+        lastCursor = newCursor;
         saveState();
 
         // Deduplicate by group
@@ -1059,7 +1347,7 @@ async function startMessageLoop(): Promise<void> {
 
 /**
  * Startup recovery: check for unprocessed messages in registered groups.
- * Handles crash between advancing lastTimestamp and processing messages.
+ * Handles crash between advancing the message cursor and processing messages.
  */
 function recoverPendingMessages(): void {
   for (const [chatJid, group] of Object.entries(registeredGroups)) {

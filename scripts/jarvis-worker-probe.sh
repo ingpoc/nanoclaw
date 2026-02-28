@@ -8,52 +8,52 @@ DB_PATH="${DB_PATH:-$ROOT_DIR/store/messages.db}"
 TIMEOUT_SEC="${TIMEOUT_SEC:-180}"
 POLL_SEC="${POLL_SEC:-2}"
 WORKERS_FILTER="${WORKERS_FILTER:-}"
+DISPATCH_FILE=""
+SKIP_LINT=0
+JSON_MODE=0
+JSON_OUT=""
+
+RESULTS_FILE="$(mktemp /tmp/jarvis-worker-probe.XXXXXX)"
+trap 'rm -f "$RESULTS_FILE"' EXIT
 
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 Usage: scripts/jarvis-worker-probe.sh [options]
 
 Options:
-  --workers <csv>  Probe only specific worker folders (example: jarvis-worker-1,jarvis-worker-2).
-  --timeout <sec>  Timeout per worker lane (default: 180).
-  --poll <sec>     Poll interval in seconds (default: 2).
-  --db <path>      SQLite DB path (default: store/messages.db).
-  -h, --help       Show this help.
-EOF
+  --workers <csv>         Probe only specific worker folders (jarvis-worker-1,jarvis-worker-2)
+  --dispatch-file <path>  Use explicit dispatch JSON template file (run_id/branch auto-overridden)
+  --skip-lint             Skip dispatch lint precheck
+  --timeout <sec>         Timeout per worker lane (default: 180)
+  --poll <sec>            Poll interval in seconds (default: 2)
+  --db <path>             SQLite DB path (default: store/messages.db)
+  --json                  Emit JSON summary to stdout
+  --json-out <path>       Write JSON summary to file
+  -h, --help              Show help
+USAGE
+}
+
+is_pos_int() {
+  [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -gt 0 ]
 }
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --workers)
-      WORKERS_FILTER="$2"
-      shift 2
-      ;;
-    --timeout)
-      TIMEOUT_SEC="$2"
-      shift 2
-      ;;
-    --poll)
-      POLL_SEC="$2"
-      shift 2
-      ;;
-    --db)
-      DB_PATH="$2"
-      shift 2
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $1"
-      usage
-      exit 1
-      ;;
+    --workers) WORKERS_FILTER="$2"; shift 2 ;;
+    --dispatch-file) DISPATCH_FILE="$2"; shift 2 ;;
+    --skip-lint) SKIP_LINT=1; shift ;;
+    --timeout) TIMEOUT_SEC="$2"; shift 2 ;;
+    --poll) POLL_SEC="$2"; shift 2 ;;
+    --db) DB_PATH="$2"; shift 2 ;;
+    --json) JSON_MODE=1; shift ;;
+    --json-out) JSON_OUT="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
 done
 
 for value in "$TIMEOUT_SEC" "$POLL_SEC"; do
-  if ! [[ "$value" =~ ^[0-9]+$ ]] || [ "$value" -le 0 ]; then
+  if ! is_pos_int "$value"; then
     echo "Expected positive integer, got: $value"
     exit 1
   fi
@@ -63,14 +63,16 @@ if ! command -v sqlite3 >/dev/null 2>&1; then
   echo "sqlite3 is required"
   exit 1
 fi
-
 if ! command -v node >/dev/null 2>&1; then
   echo "node is required"
   exit 1
 fi
-
 if [ ! -f "$DB_PATH" ]; then
   echo "DB not found: $DB_PATH"
+  exit 1
+fi
+if [ -n "$DISPATCH_FILE" ] && [ ! -f "$DISPATCH_FILE" ]; then
+  echo "Dispatch file not found: $DISPATCH_FILE"
   exit 1
 fi
 
@@ -85,7 +87,7 @@ if [ "${#lane_rows[@]}" -eq 0 ]; then
 fi
 
 if [ -n "$WORKERS_FILTER" ]; then
-  IFS=',' read -r -a requested_lanes <<< "$WORKERS_FILTER"
+  IFS=',' read -r -a requested_lanes <<<"$WORKERS_FILTER"
   filtered=()
   for lane in "${requested_lanes[@]}"; do
     lane_trimmed="$(echo "$lane" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
@@ -110,6 +112,7 @@ echo "== Jarvis Worker Probe =="
 echo "db: $DB_PATH"
 echo "timeout: ${TIMEOUT_SEC}s per lane"
 echo "poll: ${POLL_SEC}s"
+[ -n "$DISPATCH_FILE" ] && echo "dispatch template: $DISPATCH_FILE"
 
 overall_fail=0
 total=0
@@ -125,47 +128,85 @@ for row in "${lane_rows[@]}"; do
   branch="jarvis-probe-${folder}-${ts}"
   probe_file="work/${folder}-probe-${ts}.txt"
   msg_file="data/ipc/andy-developer/messages/${ts}-${folder}-probe.json"
+  payload_file="$(mktemp /tmp/jarvis-probe-dispatch.XXXXXX)"
 
-  RUN_ID="$run_id" \
-  BRANCH="$branch" \
-  PROBE_FILE="$probe_file" \
-  CHAT_JID="$jid" \
-  MSG_FILE="$msg_file" \
-  node <<'NODE'
-const fs = require('fs');
-
-const dispatch = {
-  run_id: process.env.RUN_ID,
-  task_type: 'test',
-  input: `Create file ${process.env.PROBE_FILE} with content "probe-ok". Run acceptance tests. Return exactly one <completion> JSON block. Use commit_sha "deadbeef". Set files_changed to ["${process.env.PROBE_FILE}"].`,
-  repo: 'openclaw-gurusharan/nanoclaw',
-  branch: process.env.BRANCH,
-  acceptance_tests: [
-    `test -f ${process.env.PROBE_FILE}`,
-    `grep -q probe-ok ${process.env.PROBE_FILE}`,
-  ],
-  output_contract: {
-    required_fields: [
-      'run_id',
-      'branch',
-      'commit_sha',
-      'files_changed',
-      'test_result',
-      'risk',
-      'pr_skipped_reason',
+  if [ -n "$DISPATCH_FILE" ]; then
+    python3 - "$DISPATCH_FILE" "$run_id" "$branch" <<'PY' >"$payload_file"
+import json
+import sys
+path, run_id, branch = sys.argv[1:4]
+with open(path, 'r', encoding='utf-8') as f:
+    d = json.load(f)
+d['run_id'] = run_id
+d['branch'] = branch
+if 'context_intent' not in d:
+    d['context_intent'] = 'fresh'
+if 'base_branch' not in d:
+    d['base_branch'] = 'main'
+print(json.dumps(d, ensure_ascii=True))
+PY
+  else
+    RUN_ID="$run_id" BRANCH="$branch" PROBE_FILE="$probe_file" python3 <<'PY' >"$payload_file"
+import json
+import os
+run_id = os.environ['RUN_ID']
+branch = os.environ['BRANCH']
+probe_file = os.environ['PROBE_FILE']
+dispatch = {
+    "run_id": run_id,
+    "task_type": "test",
+    "context_intent": "fresh",
+    "input": f"Create file {probe_file} with content 'probe-ok'. Run acceptance tests. Return exactly one <completion> JSON block.",
+    "repo": "openclaw-gurusharan/nanoclaw",
+    "base_branch": "main",
+    "branch": branch,
+    "acceptance_tests": [
+      f"test -f {probe_file}",
+      f"grep -q probe-ok {probe_file}"
     ],
-  },
-  priority: 'normal',
-};
+    "output_contract": {
+      "required_fields": [
+        "run_id",
+        "branch",
+        "commit_sha",
+        "files_changed",
+        "test_result",
+        "risk",
+        "pr_skipped_reason"
+      ]
+    },
+    "priority": "normal"
+}
+print(json.dumps(dispatch, ensure_ascii=True))
+PY
+  fi
 
+  if [ "$SKIP_LINT" -eq 0 ] && [ -x "scripts/jarvis-dispatch-lint.sh" ]; then
+    if ! scripts/jarvis-dispatch-lint.sh --file "$payload_file" --target-folder "$folder" >/tmp/jarvis-probe-lint.out 2>&1; then
+      echo
+      echo "[PROBE] $folder ($jid)"
+      echo "  run_id: $run_id"
+      echo "  result: FAIL (dispatch lint failed before send)"
+      echo "  lint: $(tr '\n' ' ' </tmp/jarvis-probe-lint.out | sed 's/[[:space:]]\+/ /g')"
+      overall_fail=1
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$folder" "$jid" "$run_id" "failed" "dispatch_lint_failed" "" >>"$RESULTS_FILE"
+      rm -f "$payload_file"
+      continue
+    fi
+  fi
+
+  CHAT_JID="$jid" MSG_FILE="$msg_file" PAYLOAD_FILE="$payload_file" node <<'NODE'
+const fs = require('fs');
+const payload = fs.readFileSync(process.env.PAYLOAD_FILE, 'utf8');
 const message = {
   type: 'message',
   chatJid: process.env.CHAT_JID,
-  text: JSON.stringify(dispatch),
+  text: payload,
 };
-
 fs.writeFileSync(process.env.MSG_FILE, JSON.stringify(message));
 NODE
+
+  rm -f "$payload_file"
 
   echo
   echo "[PROBE] $folder ($jid)"
@@ -193,7 +234,7 @@ NODE
     ")"
 
     if [ -n "$result_line" ]; then
-      IFS='|' read -r status summary reason branch_name commit_sha <<< "$result_line"
+      IFS='|' read -r status summary reason branch_name commit_sha <<<"$result_line"
       case "$status" in
         review_requested|done|failed|failed_contract)
           terminal="$status"
@@ -208,6 +249,7 @@ NODE
   if [ -z "$terminal" ]; then
     echo "  result: FAIL (timeout waiting for terminal status)"
     overall_fail=1
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$folder" "$jid" "$run_id" "timeout" "timeout_waiting_terminal" "" >>"$RESULTS_FILE"
     continue
   fi
 
@@ -216,16 +258,65 @@ NODE
     [ -n "${branch_name:-}" ] && echo "  branch: $branch_name"
     [ -n "${commit_sha:-}" ] && echo "  commit_sha: $commit_sha"
     passed=$((passed + 1))
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$folder" "$jid" "$run_id" "$terminal" "" "$commit_sha" >>"$RESULTS_FILE"
   else
     error_hint="${reason:-${summary:-unknown}}"
     echo "  result: FAIL ($terminal)"
     echo "  reason: $error_hint"
     overall_fail=1
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$folder" "$jid" "$run_id" "$terminal" "$error_hint" "$commit_sha" >>"$RESULTS_FILE"
   fi
 done
 
 echo
 echo "Probe summary: pass=$passed total=$total"
+
+if [ "$JSON_MODE" -eq 1 ] || [ -n "$JSON_OUT" ]; then
+  json="$(python3 - "$RESULTS_FILE" "$passed" "$total" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+
+path, passed, total = sys.argv[1:4]
+items = []
+with open(path, 'r', encoding='utf-8') as f:
+    for line in f:
+        parts = line.rstrip('\n').split('\t')
+        if len(parts) < 6:
+            continue
+        folder, jid, run_id, status, reason, commit_sha = parts[:6]
+        items.append({
+            "folder": folder,
+            "jid": jid,
+            "run_id": run_id,
+            "status": status,
+            "reason": reason,
+            "commit_sha": commit_sha,
+        })
+
+payload = {
+    "script": "jarvis-worker-probe",
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+    "summary": {
+        "passed": int(passed),
+        "total": int(total),
+        "failed": int(total) - int(passed),
+    },
+    "results": items,
+}
+print(json.dumps(payload, ensure_ascii=True, indent=2))
+PY
+)"
+
+  if [ "$JSON_MODE" -eq 1 ]; then
+    echo
+    echo "$json"
+  fi
+  if [ -n "$JSON_OUT" ]; then
+    printf '%s\n' "$json" >"$JSON_OUT"
+  fi
+fi
+
 if [ "$overall_fail" -ne 0 ]; then
   exit 1
 fi

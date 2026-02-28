@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { DATA_DIR, MAX_CONCURRENT_CONTAINERS } from './config.js';
+import { stopContainerWithVerification } from './container-runtime.js';
 import { logger } from './logger.js';
 
 interface QueuedTask {
@@ -94,6 +95,17 @@ export class GroupQueue {
       this.groups.set(groupJid, state);
     }
     return state;
+  }
+
+  private hasPendingInputMessages(groupFolder: string | null): boolean {
+    if (!groupFolder) return false;
+    const inputDir = path.join(DATA_DIR, 'ipc', groupFolder, 'input');
+    try {
+      const entries = fs.readdirSync(inputDir);
+      return entries.some((entry) => entry.endsWith('.json'));
+    } catch {
+      return false;
+    }
   }
 
   setProcessMessagesFn(fn: (groupJid: string) => Promise<boolean>): void {
@@ -260,6 +272,13 @@ export class GroupQueue {
       logger.error({ groupJid, err }, 'Error processing messages for group');
       this.scheduleRetry(groupJid, state);
     } finally {
+      if (this.hasPendingInputMessages(state.groupFolder)) {
+        state.pendingMessages = true;
+        logger.warn(
+          { groupJid, groupFolder: state.groupFolder },
+          'Detected unconsumed IPC input after container exit; scheduling recovery run',
+        );
+      }
       state.active = false;
       state.process = null;
       state.containerName = null;
@@ -382,19 +401,43 @@ export class GroupQueue {
   async shutdown(_gracePeriodMs: number): Promise<void> {
     this.shuttingDown = true;
 
-    // Count active containers but don't kill them — they'll finish on their own
-    // via idle timeout or container timeout. The --rm flag cleans them up on exit.
-    // This prevents WhatsApp reconnection restarts from killing working agents.
-    const activeContainers: string[] = [];
+    const stoppedContainers: string[] = [];
+    const failedStops: Array<{ name: string; attempts: string[] }> = [];
+    const signaledGroups: string[] = [];
+
+    // Explicitly stop active containers during shutdown. Detached containers from
+    // previous NanoClaw processes can consume IPC inputs and create "no reply"
+    // behavior because their output is no longer wired to the current host process.
     for (const [jid, state] of this.groups) {
-      if (state.process && !state.process.killed && state.containerName) {
-        activeContainers.push(state.containerName);
+      if (!state.process || state.process.killed || !state.containerName) continue;
+
+      if (state.groupFolder) {
+        this.closeStdin(jid);
+      }
+
+      const stopResult = stopContainerWithVerification(state.containerName);
+      if (stopResult.stopped) {
+        stoppedContainers.push(state.containerName);
+      } else {
+        failedStops.push({ name: state.containerName, attempts: stopResult.attempts });
+      }
+
+      try {
+        state.process.kill('SIGTERM');
+        signaledGroups.push(jid);
+      } catch {
+        // best-effort signal only
       }
     }
 
     logger.info(
-      { activeCount: this.activeCount, detachedContainers: activeContainers },
-      'GroupQueue shutting down (containers detached, not killed)',
+      {
+        activeCount: this.activeCount,
+        stoppedContainers,
+        failedStops,
+        signaledGroups,
+      },
+      'GroupQueue shutting down (active containers stop requested)',
     );
   }
 }

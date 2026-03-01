@@ -102,6 +102,7 @@ function createSchema(database: Database.Database): void {
       session_resume_error TEXT,
       phase TEXT DEFAULT 'queued',
       last_heartbeat_at TEXT,
+      spawn_acknowledged_at TEXT,
       active_container_name TEXT,
       no_container_since TEXT,
       expects_followup_container INTEGER DEFAULT 0,
@@ -118,6 +119,16 @@ function createSchema(database: Database.Database): void {
       run_id TEXT,
       PRIMARY KEY (chat_jid, message_id)
     );
+    CREATE TABLE IF NOT EXISTS worker_steering_events (
+      steer_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      from_group TEXT NOT NULL,
+      message TEXT NOT NULL,
+      sent_at TEXT NOT NULL,
+      acked_at TEXT,
+      status TEXT DEFAULT 'pending'
+    );
+    CREATE INDEX IF NOT EXISTS idx_steering_run_id ON worker_steering_events(run_id);
   `);
 
   // Add context_mode column if it doesn't exist (migration for existing DBs)
@@ -151,12 +162,16 @@ function createSchema(database: Database.Database): void {
     `ALTER TABLE worker_runs ADD COLUMN session_resume_error TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN phase TEXT DEFAULT 'queued'`,
     `ALTER TABLE worker_runs ADD COLUMN last_heartbeat_at TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN spawn_acknowledged_at TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN active_container_name TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN no_container_since TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN expects_followup_container INTEGER DEFAULT 0`,
     `ALTER TABLE worker_runs ADD COLUMN supervisor_owner TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN lease_expires_at TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN recovered_from_reason TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN last_progress_summary TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN last_progress_at TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN steer_count INTEGER DEFAULT 0`,
   ];
   for (const sql of workerRunsMigrations) {
     try {
@@ -776,6 +791,7 @@ export interface WorkerRunRecord {
   session_resume_status: string | null;
   session_resume_error: string | null;
   last_heartbeat_at: string | null;
+  spawn_acknowledged_at: string | null;
   active_container_name: string | null;
   no_container_since: string | null;
   expects_followup_container: number | null;
@@ -803,6 +819,7 @@ export interface WorkerRunSessionMetadata {
 export interface WorkerRunLifecyclePatch {
   phase?: WorkerRunPhase | null;
   last_heartbeat_at?: string | null;
+  spawn_acknowledged_at?: string | null;
   active_container_name?: string | null;
   no_container_since?: string | null;
   expects_followup_container?: boolean | null;
@@ -898,6 +915,7 @@ export function insertWorkerRun(
              session_resume_status = NULL,
              session_resume_error = NULL,
              last_heartbeat_at = NULL,
+             spawn_acknowledged_at = NULL,
              active_container_name = NULL,
              no_container_since = NULL,
              expects_followup_container = 0,
@@ -980,6 +998,10 @@ export function updateWorkerRunLifecycle(
     fields.push('last_heartbeat_at = ?');
     values.push(patch.last_heartbeat_at ?? null);
   }
+  if (patch.spawn_acknowledged_at !== undefined) {
+    fields.push('spawn_acknowledged_at = ?');
+    values.push(patch.spawn_acknowledged_at ?? null);
+  }
   if (patch.active_container_name !== undefined) {
     fields.push('active_container_name = ?');
     values.push(patch.active_container_name ?? null);
@@ -1017,22 +1039,29 @@ export function updateWorkerRunLifecycle(
   db.prepare(`UPDATE worker_runs SET ${fields.join(', ')} WHERE run_id = ?`).run(...values);
 }
 
-export function recoverWorkerRunFromNoContainerFailure(runId: string): boolean {
-  const run = getWorkerRun(runId);
-  if (!run || run.status !== 'failed') return false;
-  if (!run.error_details) return false;
-
-  let reason: string | null = null;
+function getWorkerFailureReason(errorDetails: string | null): string | null {
+  if (!errorDetails) return null;
   try {
-    const parsed = JSON.parse(run.error_details) as { reason?: unknown };
-    if (typeof parsed.reason === 'string') {
-      reason = parsed.reason;
-    }
+    const parsed = JSON.parse(errorDetails) as { reason?: unknown };
+    return typeof parsed.reason === 'string' ? parsed.reason : null;
   } catch {
-    return false;
+    return null;
+  }
+}
+
+function recoverWorkerRunForCompletionReason(
+  runId: string,
+  acceptedReasons: ReadonlySet<string>,
+): { recovered: boolean; reason: string | null } {
+  const run = getWorkerRun(runId);
+  if (!run || (run.status !== 'failed' && run.status !== 'failed_contract')) {
+    return { recovered: false, reason: null };
   }
 
-  if (reason !== 'running_without_container') return false;
+  const reason = getWorkerFailureReason(run.error_details);
+  if (!reason || !acceptedReasons.has(reason)) {
+    return { recovered: false, reason };
+  }
 
   db.prepare(
     `UPDATE worker_runs
@@ -1045,10 +1074,34 @@ export function recoverWorkerRunFromNoContainerFailure(runId: string): boolean {
          no_container_since = NULL,
          expects_followup_container = 0,
          lease_expires_at = NULL,
-         recovered_from_reason = 'running_without_container'
+         recovered_from_reason = ?
      WHERE run_id = ?`,
-  ).run(runId);
-  return true;
+  ).run(reason, runId);
+  return { recovered: true, reason };
+}
+
+const COMPLETION_RECOVERABLE_FAILURE_REASONS = new Set([
+  'running_without_container',
+  'queued_stale_before_spawn',
+  'stale_worker_run_watchdog',
+  'active_status_with_completed_at',
+]);
+
+export function recoverWorkerRunForCompletionAccept(
+  runId: string,
+): { recovered: boolean; reason: string | null } {
+  return recoverWorkerRunForCompletionReason(
+    runId,
+    COMPLETION_RECOVERABLE_FAILURE_REASONS,
+  );
+}
+
+export function recoverWorkerRunFromNoContainerFailure(runId: string): boolean {
+  const result = recoverWorkerRunForCompletionReason(
+    runId,
+    new Set(['running_without_container']),
+  );
+  return result.recovered;
 }
 
 export function updateWorkerRunStatus(runId: string, status: WorkerRunStatus): void {
@@ -1216,6 +1269,7 @@ export function getWorkerRun(runId: string): {
   session_resume_status: string | null;
   session_resume_error: string | null;
   last_heartbeat_at: string | null;
+  spawn_acknowledged_at: string | null;
   active_container_name: string | null;
   no_container_since: string | null;
   expects_followup_container: number | null;
@@ -1225,7 +1279,7 @@ export function getWorkerRun(runId: string): {
 } | undefined {
   return db
     .prepare(
-      `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
+      `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, spawn_acknowledged_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
        FROM worker_runs
        WHERE run_id = ?`,
     )
@@ -1261,7 +1315,7 @@ export function getWorkerRuns(options?: {
 
   return db
     .prepare(
-      `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
+      `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, spawn_acknowledged_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
        FROM worker_runs
        ${where}
        ORDER BY started_at DESC
@@ -1276,7 +1330,7 @@ export function getLatestReusableWorkerSession(
   branch: string,
 ): WorkerRunRecord | undefined {
   return db.prepare(
-    `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
+    `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, spawn_acknowledged_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
      FROM worker_runs
      WHERE group_folder = ?
        AND dispatch_repo = ?
@@ -1290,7 +1344,7 @@ export function getLatestReusableWorkerSession(
 
 export function findWorkerRunByEffectiveSessionId(sessionId: string): WorkerRunRecord | undefined {
   return db.prepare(
-    `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
+    `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, spawn_acknowledged_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
      FROM worker_runs
      WHERE effective_session_id = ?
      ORDER BY started_at DESC
@@ -1345,6 +1399,50 @@ export function markMessagesProcessed(
       insert.run(chatJid, id, now, runIdVal);
     }
   })();
+}
+
+// --- Worker steering events ---
+
+export function insertSteeringEvent(event: {
+  steer_id: string;
+  run_id: string;
+  from_group: string;
+  message: string;
+  sent_at: string;
+}): void {
+  db.prepare(
+    `INSERT OR IGNORE INTO worker_steering_events (steer_id, run_id, from_group, message, sent_at, status)
+     VALUES (?, ?, ?, ?, ?, 'pending')`,
+  ).run(event.steer_id, event.run_id, event.from_group, event.message, event.sent_at);
+  db.prepare(
+    `UPDATE worker_runs SET steer_count = COALESCE(steer_count, 0) + 1 WHERE run_id = ?`,
+  ).run(event.run_id);
+}
+
+export function ackSteeringEvent(steerId: string, ackedAt: string): void {
+  db.prepare(
+    `UPDATE worker_steering_events SET status = 'acked', acked_at = ? WHERE steer_id = ?`,
+  ).run(ackedAt, steerId);
+}
+
+export function updateWorkerRunProgress(
+  runId: string,
+  summary: string,
+  timestamp: string,
+): void {
+  db.prepare(
+    `UPDATE worker_runs SET last_progress_summary = ?, last_progress_at = ? WHERE run_id = ?`,
+  ).run(summary, timestamp, runId);
+}
+
+export function getWorkerRunProgress(
+  runId: string,
+): { last_progress_summary: string | null; last_progress_at: string | null } | null {
+  return db
+    .prepare(
+      `SELECT last_progress_summary, last_progress_at FROM worker_runs WHERE run_id = ?`,
+    )
+    .get(runId) as { last_progress_summary: string | null; last_progress_at: string | null } | null;
 }
 
 // --- JSON migration ---

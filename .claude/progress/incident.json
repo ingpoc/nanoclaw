@@ -1,7 +1,41 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-01T08:55:08.680076+00:00",
+  "updated_at": "2026-03-01T16:44:31.300741+00:00",
   "incidents": [
+    {
+      "id": "incident-20260301T164404Z",
+      "title": "Andy greeting delayed after hi due to no-output run",
+      "status": "open",
+      "severity": "unknown",
+      "created_at": "2026-03-01T16:44:04.869450+00:00",
+      "updated_at": "2026-03-01T16:44:31.300699+00:00",
+      "summary": {
+        "symptom": "Andy greeting delayed after hi due to no-output run",
+        "suspected_cause": "andy_no_output_timeout",
+        "impact": "User pings in Andy-Developer can be consumed without timely reply; perceived responsiveness is poor and trust in lane health degrades.",
+        "next_action": "Add a fast-path greeting handler for simple salutations in andy-developer before heavy workflow logic, and add watchdog handling that aborts/stops no-output Andy runs earlier with immediate fallback reply."
+      },
+      "evidence": {
+        "bundle_count": 1,
+        "last_bundle_dir": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260301T164422Z",
+        "last_manifest_path": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260301T164422Z/manifest.json",
+        "last_root_cause": "andy_no_output_timeout",
+        "last_status": "warn",
+        "last_checked_at": "2026-03-01T16:44:31.300694+00:00",
+        "non_zero_command_count": 3,
+        "debug_summary": "root_cause=andy_no_output_timeout; messages=8; worker_runs=0; dispatch_blocks=0; non_zero_commands=3"
+      },
+      "context": {
+        "lane": "andy-developer"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-01T16:44:04.869450+00:00",
+          "author": "user",
+          "text": "reported: Andy greeting delayed after hi due to no-output run"
+        }
+      ]
+    },
     {
       "id": "incident-worker-connectivity-block-20260227",
       "title": "Workers not connected; Andy developer cannot restart workers; push task blocked",

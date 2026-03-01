@@ -13,6 +13,9 @@ Commands:
   status          Show lane health and root-cause summaries from worker_runs
   watch           Follow categorized runtime logs
   trace           Build end-to-end timeline for lane/chat/run
+  message-timeline
+                  Build exact per-message timeline (anchor latest/user text/message-id)
+  hi-timeline     Alias for message-timeline
   verify-worker-connectivity
                   Validate worker lane connectivity gate using probe + DB checks
   dispatch-lint   Validate worker dispatch payload against current rules
@@ -47,6 +50,9 @@ case "$command_name" in
     ;;
   trace)
     exec "$SCRIPT_DIR/jarvis-trace.sh" "$@"
+    ;;
+  message-timeline|hi-timeline)
+    exec "$SCRIPT_DIR/jarvis-message-timeline.sh" "$@"
     ;;
   verify-worker-connectivity)
     exec "$SCRIPT_DIR/jarvis-verify-worker-connectivity.sh" "$@"

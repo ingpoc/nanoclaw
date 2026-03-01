@@ -112,3 +112,23 @@ export type OnChatMetadata = (
   channel?: string,
   isGroup?: boolean,
 ) => void;
+
+export interface WorkerProgressEvent {
+  kind: 'worker_progress';
+  run_id: string;
+  group_folder: string;
+  timestamp: string;
+  phase: string;       // active phase label (e.g. "using bash", "thinking")
+  summary: string;     // 1-line human-readable progress summary
+  tool_used?: string;  // last tool call name if relevant
+  seq: number;         // monotonic sequence number
+}
+
+export interface WorkerSteerEvent {
+  kind: 'worker_steer';
+  run_id: string;
+  from_group: string;
+  timestamp: string;
+  message: string;     // plain text steering instruction
+  steer_id: string;    // unique id for ack tracking
+}

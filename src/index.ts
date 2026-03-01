@@ -40,7 +40,7 @@ import {
   getProcessedMessageIds,
   isNonRetryableWorkerStatus,
   markMessagesProcessed,
-  recoverWorkerRunFromNoContainerFailure,
+  recoverWorkerRunForCompletionAccept,
   setRegisteredGroup,
   setRouterState,
   setSession,
@@ -60,6 +60,7 @@ import {
 } from './dispatch-validator.js';
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
+import { emitBridgeEvent } from './event-bridge.js';
 import { startIpcWatcher } from './ipc.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
 import { startSchedulerLoop } from './task-scheduler.js';
@@ -74,6 +75,7 @@ let lastCursor = '';
 let sessions: Record<string, string> = {};
 let registeredGroups: Record<string, RegisteredGroup> = {};
 let lastAgentTimestamp: Record<string, string> = {};
+let inFlightAgentTimestamp: Record<string, string> = {};
 let messageLoopRunning = false;
 
 let whatsapp: WhatsAppChannel;
@@ -82,16 +84,22 @@ const queue = new GroupQueue();
 const ANDY_DEVELOPER_FOLDER = 'andy-developer';
 const ACTIVE_WORKER_RUN_STATUSES = ['queued', 'running', 'review_requested'] as const;
 const WORKER_RUN_STALE_MS = 2 * 60 * 60 * 1000;
-const WORKER_NO_CONTAINER_GRACE_MS = 5 * 60 * 1000;
+const WORKER_NO_CONTAINER_GRACE_MS = 15 * 60 * 1000; // 15 minutes to allow for container image pull
 const WORKER_REPAIR_HANDOFF_GRACE_MS = 2 * 60 * 1000;
 const WORKER_LEASE_TTL_MS = 90 * 1000;
+const WORKER_RESTART_SUPPRESSION_WINDOW_MS = 60 * 1000;
 const WORKER_SNAPSHOT_REFRESH_INTERVAL_MS = 15_000;
 const WORKER_SUPERVISOR_OWNER = `nanoclaw-${process.pid}`;
+const PROCESS_START_AT_MS = Date.now();
+const PROCESS_START_AT_ISO = new Date(PROCESS_START_AT_MS).toISOString();
+const SIMPLE_ANDY_GREETING_PATTERN = /^(hi|hello|hey|yo|hiya|sup|ping|what'?s up|good (morning|afternoon|evening))[\s!.,?]*$/i;
 const workerRunSupervisor = new WorkerRunSupervisor({
   hardTimeoutMs: WORKER_RUN_STALE_MS,
   noContainerGraceMs: WORKER_NO_CONTAINER_GRACE_MS,
   repairHandoffGraceMs: WORKER_REPAIR_HANDOFF_GRACE_MS,
   leaseTtlMs: WORKER_LEASE_TTL_MS,
+  processStartAtMs: PROCESS_START_AT_MS,
+  restartSuppressionWindowMs: WORKER_RESTART_SUPPRESSION_WINDOW_MS,
   ownerId: WORKER_SUPERVISOR_OWNER,
 });
 
@@ -132,6 +140,69 @@ function sanitizeUserFacingOutput(group: RegisteredGroup, text: string): string 
   if (!parsed) return text;
 
   return `Dispatched \`${parsed.run_id}\` to \`${parsed.repo}\` on \`${parsed.branch}\` (${parsed.task_type}).`;
+}
+
+function timestampToMs(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isAfterTimestamp(candidate: string, baseline: string): boolean {
+  const candidateMs = timestampToMs(candidate);
+  const baselineMs = timestampToMs(baseline);
+  if (candidateMs !== null && baselineMs !== null) {
+    return candidateMs > baselineMs;
+  }
+  return candidate > baseline;
+}
+
+function getEffectiveAgentCursor(chatJid: string): string {
+  const committed = lastAgentTimestamp[chatJid] || '';
+  const inFlight = inFlightAgentTimestamp[chatJid] || '';
+  if (!committed) return inFlight;
+  if (!inFlight) return committed;
+  return isAfterTimestamp(inFlight, committed) ? inFlight : committed;
+}
+
+function markCursorInFlight(chatJid: string, timestamp: string): void {
+  const current = inFlightAgentTimestamp[chatJid];
+  if (!current || isAfterTimestamp(timestamp, current)) {
+    inFlightAgentTimestamp[chatJid] = timestamp;
+  }
+}
+
+function commitCursor(chatJid: string, timestamp: string): void {
+  const committed = lastAgentTimestamp[chatJid];
+  if (!committed || isAfterTimestamp(timestamp, committed)) {
+    lastAgentTimestamp[chatJid] = timestamp;
+    saveState();
+  }
+}
+
+function commitInFlightCursor(chatJid: string): void {
+  const inFlight = inFlightAgentTimestamp[chatJid];
+  if (!inFlight) return;
+  commitCursor(chatJid, inFlight);
+  delete inFlightAgentTimestamp[chatJid];
+}
+
+function clearInFlightCursor(chatJid: string): void {
+  delete inFlightAgentTimestamp[chatJid];
+}
+
+function stripAssistantTrigger(content: string): string {
+  return content.trim().replace(TRIGGER_PATTERN, '').trim();
+}
+
+function isSimpleAndyGreeting(group: RegisteredGroup, messages: NewMessage[]): boolean {
+  if (group.folder !== ANDY_DEVELOPER_FOLDER) return false;
+  if (messages.length !== 1) return false;
+  if (parseDispatchPayload(messages[0].content)) return false;
+
+  const body = stripAssistantTrigger(messages[0].content);
+  if (!body) return true;
+  return SIMPLE_ANDY_GREETING_PATTERN.test(body);
 }
 
 function getDispatchBlocksForGroup(
@@ -598,6 +669,7 @@ function loadState(): void {
     logger.warn('Corrupted last_agent_timestamp in DB, resetting');
     lastAgentTimestamp = {};
   }
+  inFlightAgentTimestamp = {};
   sessions = getAllSessions();
   registeredGroups = getAllRegisteredGroups();
   reconcileStaleWorkerRuns();
@@ -679,7 +751,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   const isMainGroup = group.folder === MAIN_GROUP_FOLDER;
 
-  const sinceTimestamp = lastAgentTimestamp[chatJid] || '';
+  const sinceTimestamp = getEffectiveAgentCursor(chatJid);
   const missedMessages = getMessagesSince(chatJid, sinceTimestamp, ASSISTANT_NAME);
 
   if (missedMessages.length === 0) return true;
@@ -693,8 +765,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   if (messagesToProcess.length === 0) {
     // All messages already processed — advance cursor without re-running agent
     const advanceTimestamp = selectedMessages[selectedMessages.length - 1].timestamp;
-    lastAgentTimestamp[chatJid] = advanceTimestamp;
-    saveState();
+    markCursorInFlight(chatJid, advanceTimestamp);
+    commitInFlightCursor(chatJid);
     logger.debug(
       { group: group.name, skippedCount: selectedMessages.length },
       'All messages already processed (idempotency), advancing cursor',
@@ -709,6 +781,14 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       TRIGGER_PATTERN.test(m.content.trim()),
     );
     if (!hasTrigger) return true;
+  }
+
+  if (channel && isSimpleAndyGreeting(group, messagesToProcess)) {
+    markCursorInFlight(chatJid, batchLastTimestamp);
+    await channel.sendMessage(chatJid, `${ASSISTANT_NAME}: Hey, I'm here. How can I help?`);
+    markBatchProcessed(chatJid, messagesToProcess);
+    commitInFlightCursor(chatJid);
+    return true;
   }
 
   const workerRun = extractWorkerRunContext(group, messagesToProcess);
@@ -726,9 +806,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   if (workerRun) {
     const existingRun = getWorkerRun(workerRun.runId);
-    if (existingRun && isNonRetryableWorkerStatus(existingRun.status)) {
-      lastAgentTimestamp[chatJid] = batchLastTimestamp;
-      saveState();
+    // IPC pre-queues andy-developer dispatches as status=queued before the
+    // worker lane consumes the message. Allow that first execution pass.
+    if (existingRun && existingRun.status !== 'queued' && isNonRetryableWorkerStatus(existingRun.status)) {
+      markCursorInFlight(chatJid, batchLastTimestamp);
+      commitInFlightCursor(chatJid);
       logger.warn(
         {
           runId: workerRun.runId,
@@ -762,8 +844,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           }),
         );
       }
-      lastAgentTimestamp[chatJid] = batchLastTimestamp;
-      saveState();
+      markCursorInFlight(chatJid, batchLastTimestamp);
+      commitInFlightCursor(chatJid);
       refreshWorkerRunSnapshotsForGroups();
       logger.warn(
         {
@@ -791,8 +873,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (!existingRun || existingRun.status === 'failed' || existingRun.status === 'failed_contract') {
       const insertState = insertWorkerRun(workerRun.runId, group.folder, dispatchMetadata);
       if (insertState === 'duplicate') {
-        lastAgentTimestamp[chatJid] = batchLastTimestamp;
-        saveState();
+        markCursorInFlight(chatJid, batchLastTimestamp);
+        commitInFlightCursor(chatJid);
         logger.warn(
           { runId: workerRun.runId, group: group.name },
           'Duplicate worker run blocked before execution',
@@ -809,6 +891,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         },
         'Worker run queued from worker chat context',
       );
+      void emitBridgeEvent({
+        event_type: 'worker_queued',
+        summary: `[andy-dev] → queued ${workerRun.dispatchPayload.task_type || 'task'} (run: ${workerRun.runId.slice(0, 8)})`,
+        metadata: { agent: 'andy-developer', tier: 'andy-developer', run_id: workerRun.runId, group_folder: group.folder },
+      });
       workerRunSupervisor.markQueued(workerRun.runId);
     } else {
       updateWorkerRunDispatchMetadata(workerRun.runId, dispatchMetadata);
@@ -816,11 +903,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   }
 
-  // Advance cursor so the piping path in startMessageLoop won't re-fetch
-  // these messages. Save the old cursor so we can roll back on error.
-  const previousCursor = lastAgentTimestamp[chatJid] || '';
-  lastAgentTimestamp[chatJid] = batchLastTimestamp;
-  saveState();
+  // Track messages currently being handled by this run without committing the
+  // durable cursor. This prevents duplicate piping while preserving crash safety.
+  markCursorInFlight(chatJid, batchLastTimestamp);
 
   logger.info(
     { group: group.name, messageCount: messagesToProcess.length },
@@ -853,6 +938,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         workerSpawnContainerName = containerName;
         workerRunSupervisor.markSpawnStarted(workerRun.runId, containerName, 'active');
         updateWorkerRunStatus(workerRun.runId, 'running');
+        void emitBridgeEvent({
+          event_type: 'worker_started',
+          summary: `[${group.folder}] started (run: ${workerRun.runId.slice(0, 8)})`,
+          metadata: { agent: group.folder, tier: 'worker', run_id: workerRun.runId, group_folder: group.folder },
+        });
         refreshWorkerRunSnapshotsForGroups();
         logger.info(
           { runId: workerRun.runId, group: group.name, containerName },
@@ -1020,11 +1110,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
 
     if (completion && completionCheck.valid) {
-      const recoveredFromNoContainer = recoverWorkerRunFromNoContainerFailure(workerRun.runId);
-      if (recoveredFromNoContainer) {
+      const recovery = recoverWorkerRunForCompletionAccept(workerRun.runId);
+      if (recovery.recovered) {
         logger.info(
-          { runId: workerRun.runId, group: group.name },
-          'Recovered worker run from running_without_container before completion accept',
+          { runId: workerRun.runId, group: group.name, reason: recovery.reason },
+          'Recovered worker run from terminal failure before completion accept',
         );
       }
       updateWorkerRunCompletion(workerRun.runId, {
@@ -1039,6 +1129,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         session_resume_error: runtimeSessionResumeError ?? null,
       });
       updateWorkerRunStatus(workerRun.runId, 'review_requested');
+      void emitBridgeEvent({
+        event_type: 'worker_completed',
+        summary: `[${group.folder}] ✓ review: ${completion.branch}`,
+        metadata: { agent: group.folder, tier: 'worker', run_id: workerRun.runId, group_folder: group.folder },
+      });
       workerRunSupervisor.markTerminal(workerRun.runId);
       refreshWorkerRunSnapshotsForGroups();
       logger.info(
@@ -1060,6 +1155,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
             output_excerpt: workerOutputBuffer.slice(0, 2000),
           }),
         );
+        void emitBridgeEvent({
+          event_type: 'worker_failed',
+          summary: `[${group.folder}] ✗ container spawn failed`,
+          metadata: { agent: group.folder, tier: 'worker', run_id: workerRun.runId, group_folder: group.folder },
+        });
         logger.warn(
           {
             runId: workerRun.runId,
@@ -1086,6 +1186,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
             output_excerpt: workerOutputBuffer.slice(0, 2000),
           }),
         );
+        void emitBridgeEvent({
+          event_type: 'worker_failed',
+          summary: `[${group.folder}] ✗ ${missingSummary ? `missing: ${missingSummary.slice(0, 80)}` : 'execution failed'}`,
+          metadata: { agent: group.folder, tier: 'worker', run_id: workerRun.runId, group_folder: group.folder },
+        });
         logger.warn(
           {
             runId: workerRun.runId,
@@ -1111,6 +1216,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           output_excerpt: workerOutputBuffer.slice(0, 2000),
         }),
       );
+      void emitBridgeEvent({
+        event_type: 'worker_failed',
+        summary: `[${group.folder}] ✗ contract: ${missingSummary ? missingSummary.slice(0, 80) : 'invalid completion'}`,
+        metadata: { agent: group.folder, tier: 'worker', run_id: workerRun.runId, group_folder: group.folder },
+      });
       logger.warn(
         {
           runId: workerRun.runId,
@@ -1128,20 +1238,22 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     // If we already sent output to the user, don't roll back the cursor —
     // the user got their response and re-processing would send duplicates.
     if (outputSentToUser) {
-      // Mark as processed so cursor rollback elsewhere won't re-send
+      // Mark as processed and commit only this batch's cursor to avoid duplicate replies.
       markBatchProcessed(chatJid, messagesToProcess, workerRun?.runId);
+      commitCursor(chatJid, batchLastTimestamp);
+      clearInFlightCursor(chatJid);
       logger.warn({ group: group.name }, 'Agent error after output was sent, skipping cursor rollback to prevent duplicates');
       return true;
     }
-    // Roll back cursor so retries can re-process these messages
-    lastAgentTimestamp[chatJid] = previousCursor;
-    saveState();
-    logger.warn({ group: group.name }, 'Agent error, rolled back message cursor for retry');
+    // Keep durable cursor unchanged so retries can re-process these messages.
+    clearInFlightCursor(chatJid);
+    logger.warn({ group: group.name }, 'Agent error, left durable cursor unchanged for retry');
     return false;
   }
 
   // Mark all messages as processed (idempotency guard against future cursor rollbacks)
   markBatchProcessed(chatJid, messagesToProcess, workerRun?.runId);
+  commitInFlightCursor(chatJid);
 
   const pendingAfter = getMessagesSince(
     chatJid,
@@ -1341,11 +1453,11 @@ async function startMessageLoop(): Promise<void> {
             if (!hasTrigger) continue;
           }
 
-          // Pull all messages since lastAgentTimestamp so non-trigger
-          // context that accumulated between triggers is included.
+          // Pull all messages since the effective cursor (committed + in-flight)
+          // so non-trigger context that accumulated between triggers is included.
           const allPending = getMessagesSince(
             chatJid,
-            lastAgentTimestamp[chatJid] || '',
+            getEffectiveAgentCursor(chatJid),
             ASSISTANT_NAME,
           );
           const messagesToSend =
@@ -1364,9 +1476,7 @@ async function startMessageLoop(): Promise<void> {
               { chatJid, count: messagesToSend.length },
               'Piped messages to active container',
             );
-            lastAgentTimestamp[chatJid] =
-              messagesToSend[messagesToSend.length - 1].timestamp;
-            saveState();
+            markCursorInFlight(chatJid, messagesToSend[messagesToSend.length - 1].timestamp);
             // Show typing indicator while the container processes the piped message
             channel?.setTyping?.(chatJid, true)?.catch((err) =>
               logger.warn({ chatJid, err }, 'Failed to set typing indicator'),
@@ -1410,6 +1520,7 @@ function ensureContainerSystemRunning(): void {
 async function main(): Promise<void> {
   ensureContainerSystemRunning();
   initDatabase();
+  setRouterState('process_start_at', PROCESS_START_AT_ISO);
   logger.info('Database initialized');
   loadState();
 

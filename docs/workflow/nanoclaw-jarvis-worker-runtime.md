@@ -44,6 +44,8 @@ Worker container mounts:
 | `/workspace/group` | `groups/jarvis-worker-*` | read-write |
 | `/workspace/global` | `groups/global` | read-only (if present) |
 | `/workspace/ipc` | `data/ipc/<group>` | read-write |
+| `/workspace/ipc/steer` | `data/ipc/<group>/steer` | read-write (worker reads steer events) |
+| `/workspace/ipc/progress` | `data/ipc/<group>/progress` | read-write (worker writes progress events) |
 | `/workspace/mcp-servers` | host MCP root | read-only (if present) |
 | `/home/node/.claude/skills` | staged from `container/skills` | read-only |
 | `/home/node/.claude/rules` | staged from `container/rules` | read-only |
@@ -129,6 +131,7 @@ group containers and stuck orphan cleanup:
    - Failed attempts are logged with full command history for debugging.
 
 Operational logs:
+
 - Success: `Stopped orphaned containers`
 - Pre-launch cleanup: `Stopped stale running containers before launch`
 - Failure with attempts: `Failed to stop some orphaned containers`

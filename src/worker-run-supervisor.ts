@@ -13,6 +13,8 @@ export interface WorkerRunSupervisorConfig {
   noContainerGraceMs: number;
   repairHandoffGraceMs: number;
   leaseTtlMs: number;
+  processStartAtMs: number;
+  restartSuppressionWindowMs: number;
   ownerId: string;
 }
 
@@ -52,11 +54,22 @@ export class WorkerRunSupervisor {
     return new Date(nowMs + this.config.leaseTtlMs).toISOString();
   }
 
+  private shouldSuppressQueuedCursorFailure(startedMs: number, nowMs: number): boolean {
+    const windowMs = Math.max(0, this.config.restartSuppressionWindowMs);
+    if (windowMs === 0) return false;
+
+    // Suppress stale cursor failures only during the startup grace window,
+    // and only for runs created close to process startup time.
+    if (nowMs > (this.config.processStartAtMs + windowMs)) return false;
+    return startedMs >= (this.config.processStartAtMs - windowMs);
+  }
+
   markQueued(runId: string): void {
     const nowMs = Date.now();
     updateWorkerRunLifecycle(runId, {
       phase: 'queued',
       last_heartbeat_at: new Date(nowMs).toISOString(),
+      spawn_acknowledged_at: null,
       active_container_name: null,
       no_container_since: null,
       expects_followup_container: false,
@@ -71,6 +84,7 @@ export class WorkerRunSupervisor {
     updateWorkerRunLifecycle(runId, {
       phase,
       last_heartbeat_at: new Date(nowMs).toISOString(),
+      spawn_acknowledged_at: new Date(nowMs).toISOString(),
       active_container_name: containerName,
       no_container_since: null,
       expects_followup_container: phase === 'completion_repair_active',
@@ -164,7 +178,9 @@ export class WorkerRunSupervisor {
       if (run.status === 'queued') {
         const chatJid = input.resolveChatJid(run.group_folder);
         const cursor = chatJid ? input.lastAgentTimestamp[chatJid] : undefined;
-        if (cursor && run.started_at <= cursor) {
+        const startupSuppression = this.shouldSuppressQueuedCursorFailure(startedMs, nowMs);
+        const spawnAcknowledged = !!toMs(run.spawn_acknowledged_at);
+        if (cursor && run.started_at <= cursor && !startupSuppression && !spawnAcknowledged) {
           completeWorkerRun(
             run.run_id,
             'failed',
@@ -294,4 +310,3 @@ export class WorkerRunSupervisor {
     return changed;
   }
 }
-

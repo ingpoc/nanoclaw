@@ -29,6 +29,8 @@ const supervisor = new WorkerRunSupervisor({
   noContainerGraceMs: 5 * 60 * 1000,
   repairHandoffGraceMs: 2 * 60 * 1000,
   leaseTtlMs: 60 * 1000,
+  processStartAtMs: Date.now() - 5 * 60 * 1000,
+  restartSuppressionWindowMs: 60 * 1000,
   ownerId: 'test-supervisor',
 });
 
@@ -121,5 +123,49 @@ describe('WorkerRunSupervisor.reconcile', () => {
     expect(row?.status).toBe('failed');
     expect(row?.phase).toBe('terminal');
     expect(row?.error_details).toContain('"reason":"queued_stale_before_spawn"');
+  });
+
+  it('does not fail queued run from cursor mismatch when spawn was already acknowledged', () => {
+    insertWorkerRun('run-super-5', 'jarvis-worker-5');
+    updateWorkerRunLifecycle('run-super-5', {
+      spawn_acknowledged_at: new Date().toISOString(),
+    });
+    const cursor = new Date(Date.now() + 60_000).toISOString();
+    mockHasRunningContainerWithPrefix.mockReturnValue(false);
+
+    const changed = supervisor.reconcile({
+      lastAgentTimestamp: { 'jid-5': cursor },
+      resolveChatJid: () => 'jid-5',
+    });
+
+    const row = getWorkerRun('run-super-5');
+    expect(changed).toBe(false);
+    expect(row?.status).toBe('queued');
+    expect(row?.error_details).toBeNull();
+  });
+
+  it('suppresses queued cursor stale failure during startup grace window', () => {
+    const startupSupervisor = new WorkerRunSupervisor({
+      hardTimeoutMs: 60 * 60 * 1000,
+      noContainerGraceMs: 5 * 60 * 1000,
+      repairHandoffGraceMs: 2 * 60 * 1000,
+      leaseTtlMs: 60 * 1000,
+      processStartAtMs: Date.now(),
+      restartSuppressionWindowMs: 60 * 1000,
+      ownerId: 'startup-supervisor',
+    });
+    insertWorkerRun('run-super-6', 'jarvis-worker-6');
+    const cursor = new Date(Date.now() + 60_000).toISOString();
+    mockHasRunningContainerWithPrefix.mockReturnValue(false);
+
+    const changed = startupSupervisor.reconcile({
+      lastAgentTimestamp: { 'jid-6': cursor },
+      resolveChatJid: () => 'jid-6',
+    });
+
+    const row = getWorkerRun('run-super-6');
+    expect(changed).toBe(false);
+    expect(row?.status).toBe('queued');
+    expect(row?.error_details).toBeNull();
   });
 });

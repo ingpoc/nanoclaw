@@ -63,8 +63,17 @@ queued -> running -> review_requested
 - completion artifacts (`branch_name`, `commit_sha`, `files_changed`, `test_summary`, `risk_summary`, `pr_url`)
 - dispatch/session lineage (`dispatch_repo`, `dispatch_branch`, `context_intent`, `parent_run_id`)
 - session continuity telemetry (`dispatch_session_id`, `selected_session_id`, `effective_session_id`, `session_selection_source`, `session_resume_status`, `session_resume_error`)
+- real-time progress (`last_progress_summary`, `last_progress_at`, `steer_count`)
 
-This keeps worker runs reproducible and review-auditable.
+`worker_steering_events` tracks each steer request (`steer_id`, `run_id`, `message`, `sent_at`, `acked_at`, `status`).
+
+This keeps worker runs reproducible, review-auditable, and steerable in-flight.
+
+## Bidirectional Worker Communication
+
+Workers emit progress events to `data/ipc/{folder}/progress/{run_id}/` (polled by host every 2s, forwarded to andy-developer as `[run-id] ↻ {summary}`).
+
+Andy-developer can steer an in-flight worker by writing a `steer_worker` IPC task. The host writes a steer event to `data/ipc/{folder}/steer/{run_id}.json`; the worker polls and injects it as a follow-up user turn within 500ms. See `groups/andy-developer/docs/worker-steering.md`.
 
 ## Policy Placement
 

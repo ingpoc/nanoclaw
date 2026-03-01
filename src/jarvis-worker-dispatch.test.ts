@@ -5,6 +5,7 @@ import {
   completeWorkerRun,
   getWorkerRun,
   getWorkerRuns,
+  recoverWorkerRunForCompletionAccept,
   recoverWorkerRunFromNoContainerFailure,
   updateWorkerRunLifecycle,
   updateWorkerRunStatus,
@@ -276,6 +277,45 @@ describe('worker run status transition guards', () => {
     expect(row?.error_details).toBeNull();
     expect(row?.recovered_from_reason).toBe('running_without_container');
     expect(row?.expects_followup_container).toBe(0);
+  });
+
+  it('can recover from queued_stale_before_spawn failure before completion accept', () => {
+    insertWorkerRun('run-guard-7', 'jarvis-worker-1');
+    completeWorkerRun(
+      'run-guard-7',
+      'failed',
+      'Auto-failed queued worker run before spawn (cursor past dispatch)',
+      JSON.stringify({ reason: 'queued_stale_before_spawn' }),
+    );
+
+    const recovered = recoverWorkerRunForCompletionAccept('run-guard-7');
+    const row = getWorkerRun('run-guard-7');
+
+    expect(recovered.recovered).toBe(true);
+    expect(recovered.reason).toBe('queued_stale_before_spawn');
+    expect(row?.status).toBe('running');
+    expect(row?.phase).toBe('finalizing');
+    expect(row?.completed_at).toBeNull();
+    expect(row?.error_details).toBeNull();
+    expect(row?.recovered_from_reason).toBe('queued_stale_before_spawn');
+  });
+
+  it('does not recover non-whitelisted failure reasons for completion accept', () => {
+    insertWorkerRun('run-guard-8', 'jarvis-worker-1');
+    completeWorkerRun(
+      'run-guard-8',
+      'failed',
+      'Worker execution failed',
+      JSON.stringify({ reason: 'worker execution failed' }),
+    );
+
+    const recovered = recoverWorkerRunForCompletionAccept('run-guard-8');
+    const row = getWorkerRun('run-guard-8');
+
+    expect(recovered.recovered).toBe(false);
+    expect(recovered.reason).toBe('worker execution failed');
+    expect(row?.status).toBe('failed');
+    expect(row?.phase).toBe('terminal');
   });
 });
 

@@ -9,9 +9,11 @@ import {
   MAIN_GROUP_FOLDER,
   TIMEZONE,
 } from './config.js';
+import { emitBridgeEvent } from './event-bridge.js';
 import { parseDispatchPayload, validateDispatchPayload } from './dispatch-validator.js';
 import { AvailableGroup } from './container-runner.js';
 import {
+  ackSteeringEvent,
   completeWorkerRun,
   createTask,
   deleteTask,
@@ -19,13 +21,15 @@ import {
   getWorkerRun,
   getLatestReusableWorkerSession,
   getTaskById,
+  insertSteeringEvent,
   insertWorkerRun,
   isNonRetryableWorkerStatus,
   updateTask,
+  updateWorkerRunProgress,
 } from './db.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
-import { isJarvisWorkerFolder, RegisteredGroup } from './types.js';
+import { isJarvisWorkerFolder, RegisteredGroup, WorkerProgressEvent, WorkerSteerEvent } from './types.js';
 
 export interface IpcDeps {
   sendMessage: (jid: string, text: string, sourceGroup: string) => Promise<void>;
@@ -43,6 +47,7 @@ export interface IpcDeps {
 
 let ipcWatcherRunning = false;
 const IPC_BASE_DIR = path.join(DATA_DIR, 'ipc');
+const PROGRESS_POLL_INTERVAL = 2000;
 
 interface DispatchBlockEvent {
   kind: 'dispatch_block';
@@ -366,6 +371,127 @@ export function queueAndyWorkerDispatchRun(
   };
 }
 
+function startProgressPoller(deps: IpcDeps): void {
+  const ipcBaseDir = IPC_BASE_DIR;
+
+  const pollProgressEvents = async () => {
+    try {
+      let groupFolders: string[];
+      try {
+        groupFolders = fs.readdirSync(ipcBaseDir).filter((f) => {
+          try {
+            return fs.statSync(path.join(ipcBaseDir, f)).isDirectory() && isJarvisWorkerFolder(f);
+          } catch {
+            return false;
+          }
+        });
+      } catch {
+        setTimeout(pollProgressEvents, PROGRESS_POLL_INTERVAL);
+        return;
+      }
+
+      const registeredGroups = deps.registeredGroups();
+
+      for (const workerFolder of groupFolders) {
+        const progressDir = path.join(ipcBaseDir, workerFolder, 'progress');
+        const steerDir = path.join(ipcBaseDir, workerFolder, 'steer');
+
+        // Process progress event files
+        if (fs.existsSync(progressDir)) {
+          let runDirs: string[];
+          try {
+            runDirs = fs.readdirSync(progressDir);
+          } catch {
+            runDirs = [];
+          }
+
+          for (const runId of runDirs) {
+            const runDir = path.join(progressDir, runId);
+            try {
+              if (!fs.statSync(runDir).isDirectory()) continue;
+            } catch {
+              continue;
+            }
+
+            let eventFiles: string[];
+            try {
+              eventFiles = fs.readdirSync(runDir).filter((f) => f.endsWith('.json')).sort();
+            } catch {
+              continue;
+            }
+
+            let latestSummary: string | null = null;
+            let latestTimestamp: string | null = null;
+
+            for (const file of eventFiles) {
+              const filePath = path.join(runDir, file);
+              try {
+                const event = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as WorkerProgressEvent;
+                latestSummary = event.summary;
+                latestTimestamp = event.timestamp;
+                try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+              } catch (err) {
+                logger.warn({ err, file, workerFolder }, 'Failed to process progress event file');
+              }
+            }
+
+            if (latestSummary && latestTimestamp) {
+              updateWorkerRunProgress(runId, latestSummary, latestTimestamp);
+              void emitBridgeEvent({
+                event_type: 'worker_progress',
+                summary: `[${workerFolder}] ↻ ${latestSummary}`,
+                metadata: { agent: workerFolder, tier: 'worker', run_id: runId, group_folder: workerFolder },
+              });
+
+              const andyJid = findGroupJidByFolder(registeredGroups, 'andy-developer');
+              if (andyJid) {
+                const shortId = runId.length > 6 ? runId.slice(-6) : runId;
+                try {
+                  await deps.sendMessage(andyJid, `[${shortId}] ↻ ${latestSummary}`, 'nanoclaw-system');
+                } catch (err) {
+                  logger.warn({ err, runId }, 'Failed to send progress notification to andy-developer');
+                }
+              }
+            }
+          }
+        }
+
+        // Process ack files for steering events
+        if (fs.existsSync(steerDir)) {
+          let ackedFiles: string[];
+          try {
+            ackedFiles = fs.readdirSync(steerDir).filter((f) => f.endsWith('.acked.json'));
+          } catch {
+            ackedFiles = [];
+          }
+
+          for (const file of ackedFiles) {
+            const filePath = path.join(steerDir, file);
+            try {
+              const ack = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as {
+                steer_id: string;
+                acked_at: string;
+              };
+              ackSteeringEvent(ack.steer_id, ack.acked_at);
+              try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+              logger.debug({ steer_id: ack.steer_id, workerFolder }, 'Steering event acked');
+            } catch (err) {
+              logger.warn({ err, file, workerFolder }, 'Failed to process steer ack file');
+            }
+          }
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, 'Error in worker progress poller');
+    }
+
+    setTimeout(pollProgressEvents, PROGRESS_POLL_INTERVAL);
+  };
+
+  pollProgressEvents();
+  logger.info('Worker progress poller started');
+}
+
 export function startIpcWatcher(deps: IpcDeps): void {
   if (ipcWatcherRunning) {
     logger.debug('IPC watcher already running, skipping duplicate start');
@@ -569,6 +695,7 @@ export function startIpcWatcher(deps: IpcDeps): void {
   };
 
   processIpcFiles();
+  startProgressPoller(deps);
   logger.info('IPC watcher started (per-group namespaces)');
 }
 
@@ -590,6 +717,9 @@ export async function processTaskIpc(
     trigger?: string;
     requiresTrigger?: boolean;
     containerConfig?: RegisteredGroup['containerConfig'];
+    // For steer_worker
+    run_id?: string;
+    message?: string;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -842,6 +972,82 @@ export async function processTaskIpc(
         );
       }
       break;
+
+    case 'steer_worker': {
+      const { run_id, message } = data;
+
+      if (!run_id || !message) {
+        logger.warn({ data }, 'steer_worker: missing run_id or message');
+        break;
+      }
+
+      if (sourceGroup !== 'andy-developer') {
+        logger.warn({ sourceGroup }, 'steer_worker: unauthorized source (only andy-developer allowed)');
+        break;
+      }
+
+      const workerRun = getWorkerRun(run_id);
+      if (!workerRun) {
+        logger.warn({ run_id }, 'steer_worker: run_id not found');
+        const andyJidNotFound = findGroupJidByFolder(registeredGroups, 'andy-developer');
+        if (andyJidNotFound) {
+          try {
+            await deps.sendMessage(andyJidNotFound, `✗ Steer failed: run_id \`${run_id}\` not found`, 'nanoclaw-system');
+          } catch { /* ignore */ }
+        }
+        break;
+      }
+
+      if (workerRun.status !== 'running') {
+        logger.warn({ run_id, status: workerRun.status }, 'steer_worker: run is not active');
+        const andyJidInactive = findGroupJidByFolder(registeredGroups, 'andy-developer');
+        if (andyJidInactive) {
+          try {
+            await deps.sendMessage(andyJidInactive, `✗ Steer failed: \`${run_id}\` is not running (status: ${workerRun.status})`, 'nanoclaw-system');
+          } catch { /* ignore */ }
+        }
+        break;
+      }
+
+      const steerId = `steer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const steerEvent: WorkerSteerEvent = {
+        kind: 'worker_steer',
+        run_id,
+        from_group: 'andy-developer',
+        timestamp: new Date().toISOString(),
+        message,
+        steer_id: steerId,
+      };
+
+      const steerDir = path.join(IPC_BASE_DIR, workerRun.group_folder, 'steer');
+      fs.mkdirSync(steerDir, { recursive: true });
+      fs.writeFileSync(path.join(steerDir, `${run_id}.json`), JSON.stringify(steerEvent, null, 2));
+
+      insertSteeringEvent({
+        steer_id: steerId,
+        run_id,
+        from_group: 'andy-developer',
+        message,
+        sent_at: steerEvent.timestamp,
+      });
+      void emitBridgeEvent({
+        event_type: 'worker_steered',
+        summary: `[andy-dev → ${workerRun.group_folder}] steer: ${message.slice(0, 80)}`,
+        metadata: { agent: workerRun.group_folder, tier: 'andy-developer', run_id, group_folder: workerRun.group_folder },
+      });
+
+      const andyJid = findGroupJidByFolder(registeredGroups, 'andy-developer');
+      if (andyJid) {
+        try {
+          await deps.sendMessage(andyJid, `↗ Steering sent to ${run_id}`, 'nanoclaw-system');
+        } catch (err) {
+          logger.warn({ err, run_id }, 'Failed to send steer confirmation to andy-developer');
+        }
+      }
+
+      logger.info({ run_id, steer_id: steerId, targetWorkerFolder: workerRun.group_folder }, 'Worker steering event dispatched');
+      break;
+    }
 
     default:
       logger.warn({ type: data.type }, 'Unknown IPC task type');

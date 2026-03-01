@@ -199,6 +199,9 @@ if [ -f "$DB_PATH" ] && have_cmd sqlite3; then
     selected_session_id
     effective_session_id
     session_resume_status
+    last_progress_summary
+    last_progress_at
+    steer_count
   )
   missing_cols=()
   for col in "${required_cols[@]}"; do
@@ -207,9 +210,15 @@ if [ -f "$DB_PATH" ] && have_cmd sqlite3; then
     fi
   done
   if [ "${#missing_cols[@]}" -eq 0 ]; then
-    pass "worker_runs schema includes session/dispatch columns"
+    pass "worker_runs schema includes session/dispatch/steering columns"
   else
     fail "worker_runs missing columns: ${missing_cols[*]}"
+  fi
+
+  if sqlite3 "$DB_PATH" "SELECT 1 FROM sqlite_master WHERE type='table' AND name='worker_steering_events';" 2>/dev/null | grep -q 1; then
+    pass "worker_steering_events table exists"
+  else
+    fail "worker_steering_events table missing"
   fi
 
   queued_stale="$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM worker_runs WHERE status='queued' AND julianday(started_at) < julianday('now', '-${STALE_QUEUED_MINUTES} minutes');" 2>/dev/null || echo 0)"

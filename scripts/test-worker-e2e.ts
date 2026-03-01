@@ -39,7 +39,9 @@ const ANDY_GROUP: RegisteredGroup = {
   added_at: new Date().toISOString(),
   requiresTrigger: false,
   containerConfig: {
-    timeout: 240_000,
+    timeout: 900_000,
+    noOutputTimeout: 300_000,
+    idleTimeout: 5_000,
   },
 };
 
@@ -50,7 +52,9 @@ const WORKER_GROUP: RegisteredGroup = {
   added_at: new Date().toISOString(),
   requiresTrigger: false,
   containerConfig: {
-    timeout: 240_000,
+    timeout: 900_000,
+    noOutputTimeout: 300_000,
+    idleTimeout: 5_000,
   },
 };
 
@@ -143,6 +147,7 @@ async function main() {
     `- acceptance_tests: ["test -f ${smokeFile}","grep -q 'smoke' ${smokeFile}"]`,
     '- output_contract.required_fields must include:',
     '  ["run_id","branch","commit_sha","files_changed","test_result","risk","pr_skipped_reason"]',
+    '- input must use /workspace/group only (never /workspace/group/workspace).',
     'The input field must instruct worker to:',
     `1) create ${smokeFile} containing "smoke"`,
     '2) run the acceptance tests',
@@ -171,15 +176,6 @@ async function main() {
     async (result) => {
       if (result.result) {
         andyText = String(result.result);
-        if (andyContainerName) {
-          try {
-            execSync(`container stop ${andyContainerName}`, {
-              stdio: 'ignore',
-            });
-          } catch {
-            // best-effort stop to avoid waiting for idle timeout
-          }
-        }
       }
     },
   );
@@ -229,15 +225,6 @@ async function main() {
     async (result) => {
       if (result.result) {
         workerText = String(result.result);
-        if (workerContainerName) {
-          try {
-            execSync(`container stop ${workerContainerName}`, {
-              stdio: 'ignore',
-            });
-          } catch {
-            // best-effort stop to avoid waiting for idle timeout
-          }
-        }
       }
     },
   );

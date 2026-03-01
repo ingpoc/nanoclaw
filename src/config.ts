@@ -102,3 +102,7 @@ export const TRIGGER_PATTERN = new RegExp(
 // Uses system timezone by default
 export const TIMEZONE =
   process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+export const EVENT_BRIDGE_URL =
+  process.env.EVENT_BRIDGE_URL || 'http://localhost:9851/events';
+export const EVENT_BRIDGE_ENABLED = process.env.EVENT_BRIDGE_ENABLED !== 'false';

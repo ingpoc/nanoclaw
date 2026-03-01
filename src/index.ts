@@ -63,7 +63,7 @@ import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
 import { startSchedulerLoop } from './task-scheduler.js';
-import { Channel, NewMessage, RegisteredGroup } from './types.js';
+import { Channel, isJarvisWorkerFolder, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
 import { WorkerRunSupervisor } from './worker-run-supervisor.js';
 
@@ -115,12 +115,8 @@ interface RunAgentResult {
   error?: string;
 }
 
-function isJarvisWorkerGroup(folder: string): boolean {
-  return folder.startsWith('jarvis-worker');
-}
-
 function isSyntheticWorkerGroup(group: RegisteredGroup): boolean {
-  return isJarvisWorkerGroup(group.folder);
+  return isJarvisWorkerFolder(group.folder);
 }
 
 function stripCodeFence(raw: string): string {
@@ -300,7 +296,7 @@ function buildAndyPromptWorkerContext(snapshot: WorkerRunsSnapshot): string {
     new Set(
       snapshot.recent
         .map((r) => r.group_folder)
-        .filter((folder) => isJarvisWorkerGroup(folder)),
+        .filter((folder) => isJarvisWorkerFolder(folder)),
     ),
   ).sort();
   const laneSummaryLines = workerLaneNames.length > 0
@@ -341,7 +337,7 @@ function buildAndyPromptWorkerContext(snapshot: WorkerRunsSnapshot): string {
     : '- none';
   const sessionLedgerLines = snapshot.recent.length > 0
     ? snapshot.recent
-      .filter((r) => isJarvisWorkerGroup(r.group_folder))
+      .filter((r) => isJarvisWorkerFolder(r.group_folder))
       .slice(0, 8)
       .map((r) => {
         const repo = r.dispatch_repo || '-';
@@ -409,7 +405,7 @@ function extractWorkerRunContext(
   group: RegisteredGroup,
   messages: NewMessage[],
 ): WorkerRunContext | null {
-  if (!isJarvisWorkerGroup(group.folder)) return null;
+  if (!isJarvisWorkerFolder(group.folder)) return null;
 
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const payload = parseDispatchPayload(messages[i].content);
@@ -547,7 +543,7 @@ function selectMessagesForExecution(
   group: RegisteredGroup,
   messages: NewMessage[],
 ): NewMessage[] {
-  if (!isJarvisWorkerGroup(group.folder) || messages.length <= 1) {
+  if (!isJarvisWorkerFolder(group.folder) || messages.length <= 1) {
     return messages;
   }
 

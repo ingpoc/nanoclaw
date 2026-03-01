@@ -28,7 +28,7 @@ import {
   stopRunningContainersByPrefix,
 } from './container-runtime.js';
 import { validateAdditionalMounts } from './mount-security.js';
-import { RegisteredGroup } from './types.js';
+import { isJarvisWorkerFolder, RegisteredGroup } from './types.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
@@ -414,7 +414,7 @@ export async function runContainerAgent(
     );
   }
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
-  const image = group.folder.startsWith('jarvis-worker')
+  const image = isJarvisWorkerFolder(group.folder)
     ? WORKER_CONTAINER_IMAGE
     : CONTAINER_IMAGE;
   const containerArgs = buildContainerArgs(mounts, containerName, image);

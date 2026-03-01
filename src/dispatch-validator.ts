@@ -249,6 +249,12 @@ export function requiresBrowserEvidence(payload: DispatchPayload): boolean {
 /**
  * Scan worker output for a <completion>...</completion> block and parse the JSON inside.
  * Returns typed contract or null if no valid block found.
+ *
+ * Fallback hierarchy:
+ * 1. <completion>...</completion> tag (primary, enforced by worker CLAUDE.md + pre-exit gate)
+ *    — with escape decode for models that emit \\n / \\" inside the block
+ * 2. Whole output as a quoted JSON string wrapping a completion tag (OpenCode encoding edge case)
+ * 3. Fenced JSON block or direct bare JSON (for analyze/research tasks without code changes)
  */
 export function parseCompletionContract(output: string): CompletionContract | null {
   const parseObject = (raw: string): CompletionContract | null => {
@@ -263,10 +269,10 @@ export function parseCompletionContract(output: string): CompletionContract | nu
     return null;
   };
 
+  // Decode escaped text (e.g. \\n → \n, \\" → ") to handle OpenCode encoding edge cases.
   const decodeEscapedText = (raw: string): string | null => {
     const trimmed = raw.trim();
     if (!trimmed) return null;
-
     // If the block is itself a JSON string, decode once.
     try {
       const parsed = JSON.parse(trimmed);
@@ -276,9 +282,6 @@ export function parseCompletionContract(output: string): CompletionContract | nu
     } catch {
       // continue
     }
-
-    // Heuristic decode for payloads like:
-    // \n{\n  \"run_id\":\"x\"\n}\n
     if (!/\\[nrt"\\]/.test(trimmed)) return null;
     const decoded = trimmed
       .replace(/\\r\\n/g, '\n')
@@ -287,26 +290,21 @@ export function parseCompletionContract(output: string): CompletionContract | nu
       .replace(/\\t/g, '\t')
       .replace(/\\"/g, '"')
       .replace(/\\\\/g, '\\');
-
-    if (decoded.trim() && decoded !== trimmed) {
-      return decoded;
-    }
-    return null;
+    return decoded.trim() && decoded !== trimmed ? decoded : null;
   };
 
   const parseObjectFlexible = (raw: string): CompletionContract | null => {
     const direct = parseObject(raw);
     if (direct) return direct;
-
     const decoded = decodeEscapedText(raw);
     if (decoded) {
       const decodedObj = parseObject(decoded);
       if (decodedObj) return decodedObj;
     }
-
     return null;
   };
 
+  // 1. Primary: <completion>...</completion> tag
   const match = output.match(/<completion>([\s\S]*?)<\/completion>/i);
   if (match) {
     const parsed = parseObjectFlexible(match[1]);
@@ -316,9 +314,8 @@ export function parseCompletionContract(output: string): CompletionContract | nu
   const trimmed = output.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   const directCandidate = fenced ? fenced[1].trim() : trimmed;
-  const direct = parseObjectFlexible(directCandidate);
-  if (direct) return direct;
 
+  // 2. Whole output as a quoted JSON string wrapping a completion tag
   const decodedDirect = decodeEscapedText(directCandidate);
   if (decodedDirect) {
     const completionInDecoded = decodedDirect.match(/<completion>([\s\S]*?)<\/completion>/i);
@@ -328,14 +325,8 @@ export function parseCompletionContract(output: string): CompletionContract | nu
     }
   }
 
-  const firstBrace = directCandidate.indexOf('{');
-  const lastBrace = directCandidate.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    const wrapped = parseObjectFlexible(directCandidate.slice(firstBrace, lastBrace + 1));
-    if (wrapped) return wrapped;
-  }
-
-  return null;
+  // 3. Fenced JSON or direct bare JSON (analyze/research tasks)
+  return parseObjectFlexible(directCandidate);
 }
 
 export function validateCompletionContract(

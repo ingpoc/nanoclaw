@@ -15,6 +15,12 @@ import {
   ASSISTANT_HAS_OWN_NUMBER,
   ASSISTANT_NAME,
   STORE_DIR,
+  WA_RECONNECT_BASE_DELAY_MS,
+  WA_RECONNECT_BURST_THRESHOLD,
+  WA_RECONNECT_BURST_WINDOW_MS,
+  WA_RECONNECT_COOLDOWN_MS,
+  WA_RECONNECT_JITTER_MS,
+  WA_RECONNECT_MAX_DELAY_MS,
 } from '../config.js';
 import { getLastGroupSync, setLastGroupSync, updateChatName } from '../db.js';
 import { logger } from '../logger.js';
@@ -40,6 +46,10 @@ export class WhatsAppChannel implements Channel {
   private connected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectInFlight = false;
+  private reconnectAttempt = 0;
+  private reconnectCloseEvents: number[] = [];
+  private reconnectCooldownUntil = 0;
+  private reconnectCooldownLoggedUntil = 0;
   private socketGeneration = 0;
   private lidToPhoneMap: Record<string, string> = {};
   private outgoingQueue: Array<{ jid: string; text: string }> = [];
@@ -64,8 +74,58 @@ export class WhatsAppChannel implements Channel {
     this.reconnectTimer = null;
   }
 
-  private scheduleReconnect(delayMs = 0): void {
+  private pruneReconnectCloseEvents(nowMs: number): void {
+    const cutoff = nowMs - WA_RECONNECT_BURST_WINDOW_MS;
+    this.reconnectCloseEvents = this.reconnectCloseEvents.filter((ts) => ts >= cutoff);
+  }
+
+  private scheduleReconnect(): void {
     if (this.reconnectInFlight || this.reconnectTimer) return;
+
+    const nowMs = Date.now();
+    this.pruneReconnectCloseEvents(nowMs);
+
+    const attempt = this.reconnectAttempt;
+    const exp = WA_RECONNECT_BASE_DELAY_MS * (2 ** Math.min(attempt, 16));
+    const bounded = Math.min(WA_RECONNECT_MAX_DELAY_MS, exp);
+    const jitter = WA_RECONNECT_JITTER_MS > 0
+      ? Math.floor(Math.random() * (WA_RECONNECT_JITTER_MS + 1))
+      : 0;
+    let delayMs = Math.max(0, bounded + jitter);
+
+    if (this.reconnectCloseEvents.length > WA_RECONNECT_BURST_THRESHOLD) {
+      this.reconnectCooldownUntil = Math.max(
+        this.reconnectCooldownUntil,
+        nowMs + WA_RECONNECT_COOLDOWN_MS,
+      );
+    }
+
+    if (this.reconnectCooldownUntil > nowMs) {
+      const cooldownRemainingMs = this.reconnectCooldownUntil - nowMs;
+      delayMs = Math.max(delayMs, cooldownRemainingMs);
+      if (this.reconnectCooldownLoggedUntil !== this.reconnectCooldownUntil) {
+        this.reconnectCooldownLoggedUntil = this.reconnectCooldownUntil;
+        logger.warn(
+          {
+            cooldownMs: WA_RECONNECT_COOLDOWN_MS,
+            cooldownRemainingMs,
+            closesInBurstWindow: this.reconnectCloseEvents.length,
+            burstWindowMs: WA_RECONNECT_BURST_WINDOW_MS,
+            threshold: WA_RECONNECT_BURST_THRESHOLD,
+          },
+          'Entering WhatsApp reconnect cooldown',
+        );
+      }
+    }
+    this.reconnectAttempt += 1;
+    logger.info(
+      {
+        attempt: this.reconnectAttempt,
+        delayMs,
+        closesInBurstWindow: this.reconnectCloseEvents.length,
+      },
+      'Scheduling WhatsApp reconnect',
+    );
 
     const run = async () => {
       this.reconnectTimer = null;
@@ -73,22 +133,16 @@ export class WhatsAppChannel implements Channel {
       try {
         await this.connectInternal();
       } catch (err) {
-        logger.error({ err }, 'Failed to reconnect, retrying in 5s');
+        logger.error({ err }, 'Failed to reconnect, retrying with backoff');
         this.reconnectInFlight = false;
-        this.scheduleReconnect(5000);
+        this.scheduleReconnect();
         return;
       }
       this.reconnectInFlight = false;
     };
-
-    if (delayMs > 0) {
-      this.reconnectTimer = setTimeout(() => {
-        void run();
-      }, delayMs);
-      return;
-    }
-
-    void run();
+    this.reconnectTimer = setTimeout(() => {
+      void run();
+    }, delayMs);
   }
 
   private async connectInternal(onFirstOpen?: () => void): Promise<void> {
@@ -144,6 +198,9 @@ export class WhatsAppChannel implements Channel {
         const reason = (
           lastDisconnect?.error as { output?: { statusCode?: number } }
         )?.output?.statusCode;
+        const nowMs = Date.now();
+        this.reconnectCloseEvents.push(nowMs);
+        this.pruneReconnectCloseEvents(nowMs);
         const shouldReconnect = reason !== DisconnectReason.loggedOut;
         logger.info(
           {
@@ -164,6 +221,9 @@ export class WhatsAppChannel implements Channel {
       } else if (connection === 'open') {
         this.clearReconnectTimer();
         this.reconnectInFlight = false;
+        this.reconnectAttempt = 0;
+        this.reconnectCooldownUntil = 0;
+        this.reconnectCooldownLoggedUntil = 0;
         this.connected = true;
         logger.info('Connected to WhatsApp');
 

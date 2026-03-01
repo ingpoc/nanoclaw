@@ -1,3 +1,7 @@
+export function isJarvisWorkerFolder(folder: string): boolean {
+  return folder.startsWith('jarvis-worker');
+}
+
 export interface AdditionalMount {
   hostPath: string; // Absolute path on host (supports ~ for home)
   containerPath?: string; // Optional — defaults to basename of hostPath. Mounted at /workspace/extra/{value}
@@ -29,7 +33,9 @@ export interface AllowedRoot {
 
 export interface ContainerConfig {
   additionalMounts?: AdditionalMount[];
-  timeout?: number; // Default: 300000 (5 minutes)
+  timeout?: number; // Hard container timeout (default from CONTAINER_TIMEOUT, 30 minutes)
+  noOutputTimeout?: number; // No-output fail-fast timeout (default from CONTAINER_NO_OUTPUT_TIMEOUT, 12 minutes)
+  idleTimeout?: number; // Idle stdin-close delay (default from IDLE_TIMEOUT, 5 minutes)
   model?: string;   // Claude model to use (e.g. 'claude-haiku-4-5-20251001')
   image?: string;   // Override container image (e.g. 'nanoclaw-worker:latest')
   secrets?: string[]; // Env var names to pass (defaults to all if not specified)
@@ -106,3 +112,23 @@ export type OnChatMetadata = (
   channel?: string,
   isGroup?: boolean,
 ) => void;
+
+export interface WorkerProgressEvent {
+  kind: 'worker_progress';
+  run_id: string;
+  group_folder: string;
+  timestamp: string;
+  phase: string;       // active phase label (e.g. "using bash", "thinking")
+  summary: string;     // 1-line human-readable progress summary
+  tool_used?: string;  // last tool call name if relevant
+  seq: number;         // monotonic sequence number
+}
+
+export interface WorkerSteerEvent {
+  kind: 'worker_steer';
+  run_id: string;
+  from_group: string;
+  timestamp: string;
+  message: string;     // plain text steering instruction
+  steer_id: string;    // unique id for ack tracking
+}

@@ -10,3 +10,4 @@
 - Runtime/auth/container failures route to `/debug`.
 - Incident triage, recurring issue investigation, and incident lifecycle tracking route to `/incident-debugger`.
 - Incident lifecycle state is tracked in `.claude/progress/incident.json` (open/resolved + notes).
+- Reliability validation can use `scripts/jarvis-ops.sh verify-worker-connectivity` after `preflight`/`trace`.

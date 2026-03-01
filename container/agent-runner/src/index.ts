@@ -22,6 +22,7 @@ import { fileURLToPath } from 'url';
 interface ContainerInput {
   prompt: string;
   sessionId?: string;
+  runId?: string;
   groupFolder: string;
   chatJid: string;
   isMain: boolean;
@@ -61,8 +62,31 @@ interface SDKUserMessage {
 
 const IPC_INPUT_DIR = '/workspace/ipc/input';
 const IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
+const IPC_PROGRESS_DIR = '/workspace/ipc/progress';
+const IPC_STEER_DIR = '/workspace/ipc/steer';
 const IPC_POLL_MS = 500;
+const PROGRESS_THROTTLE_MS = 5000;
 const OAUTH_FALLBACK_GROUPS = new Set(['main', 'andy-developer']);
+
+interface WorkerProgressEvent {
+  kind: 'worker_progress';
+  run_id: string;
+  group_folder: string;
+  timestamp: string;
+  phase: string;
+  summary: string;
+  tool_used?: string;
+  seq: number;
+}
+
+interface WorkerSteerEvent {
+  kind: 'worker_steer';
+  run_id: string;
+  from_group: string;
+  timestamp: string;
+  message: string;
+  steer_id: string;
+}
 const OAUTH_LIMIT_PATTERNS = [
   /you['’]?ve hit your limit/i,
   /\bmonthly usage limit\b/i,
@@ -226,8 +250,42 @@ function selectModelForQuery(
   return model;
 }
 
+// Must match AGENT_RUNNER_LOG_PREFIX in src/container-runner.ts (host side)
+const AGENT_RUNNER_LOG_PREFIX = '[agent-runner]';
+
 function log(message: string): void {
-  console.error(`[agent-runner] ${message}`);
+  console.error(`${AGENT_RUNNER_LOG_PREFIX} ${message}`);
+}
+
+function writeProgressEvent(event: WorkerProgressEvent): void {
+  const runDir = path.join(IPC_PROGRESS_DIR, event.run_id);
+  try {
+    fs.mkdirSync(runDir, { recursive: true });
+    const filename = `${event.timestamp.replace(/[:.]/g, '-')}-${event.seq}.json`;
+    fs.writeFileSync(path.join(runDir, filename), JSON.stringify(event));
+  } catch (err) {
+    // Non-fatal: don't fail the run if progress write fails
+    log(`Progress write failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function checkForSteering(runId: string): string | null {
+  const steerPath = path.join(IPC_STEER_DIR, `${runId}.json`);
+  if (!fs.existsSync(steerPath)) return null;
+  try {
+    const event = JSON.parse(fs.readFileSync(steerPath, 'utf-8')) as WorkerSteerEvent;
+    // Write ack so host knows it was consumed
+    fs.writeFileSync(
+      path.join(IPC_STEER_DIR, `${runId}.acked.json`),
+      JSON.stringify({ steer_id: event.steer_id, acked_at: new Date().toISOString() }),
+    );
+    try { fs.unlinkSync(steerPath); } catch { /* ignore */ }
+    log(`Steering received (steer_id=${event.steer_id}): ${event.message.slice(0, 100)}`);
+    return event.message;
+  } catch (err) {
+    log(`Failed to read steer event: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
 }
 
 function getSessionSummary(sessionId: string, transcriptPath: string): string | null {
@@ -478,6 +536,7 @@ async function runQuery(
   sessionResumeStatus: ContainerOutput['sessionResumeStatus'],
   sessionResumeError?: string,
   resumeAt?: string,
+  runId?: string,
 ): Promise<{
   newSessionId?: string;
   lastAssistantUuid?: string;
@@ -487,7 +546,11 @@ async function runQuery(
   const stream = new MessageStream();
   stream.push(prompt);
 
-  // Poll IPC for follow-up messages and _close sentinel during the query
+  // Progress emission state (throttled per runId)
+  let progressSeq = 0;
+  let lastProgressAt = 0;
+
+  // Poll IPC for follow-up messages, _close sentinel, and steering during the query
   let ipcPolling = true;
   let closedDuringQuery = false;
   const pollIpcDuringQuery = () => {
@@ -503,6 +566,14 @@ async function runQuery(
     for (const text of messages) {
       log(`Piping IPC message into active query (${text.length} chars)`);
       stream.push(text);
+    }
+    // Check for steering message and inject as follow-up
+    if (runId) {
+      const steerMsg = checkForSteering(runId);
+      if (steerMsg) {
+        log(`Injecting steering into active query (${steerMsg.length} chars)`);
+        stream.push(steerMsg);
+      }
     }
     setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
   };
@@ -539,6 +610,14 @@ async function runQuery(
   if (model) {
     log(`Using model: ${model}`);
   }
+
+  // Heartbeat: emit periodic stderr lines so the host can re-arm its
+  // no_output_timeout during long silent SDK phases (extended thinking, tool use).
+  // Must be shorter than CONTAINER_NO_OUTPUT_TIMEOUT on the host side.
+  const HEARTBEAT_INTERVAL_MS = 60_000;
+  const heartbeatInterval = setInterval(() => {
+    log('heartbeat');
+  }, HEARTBEAT_INTERVAL_MS);
 
   for await (const message of query({
     prompt: stream,
@@ -586,6 +665,30 @@ async function runQuery(
     const msgType = message.type === 'system' ? `system/${(message as { subtype?: string }).subtype}` : message.type;
     log(`[msg #${messageCount}] type=${msgType}`);
 
+    // Emit progress event for assistant messages (throttled to PROGRESS_THROTTLE_MS)
+    if (runId && message.type === 'assistant') {
+      const now = Date.now();
+      if (now - lastProgressAt >= PROGRESS_THROTTLE_MS) {
+        lastProgressAt = now;
+        const content = (message as { message?: { content?: Array<{ type: string; name?: string; text?: string }> } }).message?.content;
+        const toolUse = Array.isArray(content) ? content.find((c) => c.type === 'tool_use') : undefined;
+        const textPart = Array.isArray(content) ? content.find((c) => c.type === 'text') : undefined;
+        const event: WorkerProgressEvent = {
+          kind: 'worker_progress',
+          run_id: runId,
+          group_folder: containerInput.groupFolder,
+          timestamp: new Date().toISOString(),
+          phase: toolUse ? `using ${toolUse.name}` : 'thinking',
+          summary: toolUse
+            ? `Tool: ${toolUse.name}`
+            : (textPart?.text?.slice(0, 100) || 'Working...'),
+          tool_used: toolUse?.name,
+          seq: progressSeq++,
+        };
+        writeProgressEvent(event);
+      }
+    }
+
     if (message.type === 'assistant' && 'uuid' in message) {
       lastAssistantUuid = (message as { uuid: string }).uuid;
     }
@@ -624,6 +727,7 @@ async function runQuery(
     }
   }
 
+  clearInterval(heartbeatInterval);
   ipcPolling = false;
   log(`Query done. Messages: ${messageCount}, results: ${resultCount}, lastAssistantUuid: ${lastAssistantUuid || 'none'}, closedDuringQuery: ${closedDuringQuery}`);
   return { newSessionId, lastAssistantUuid, closedDuringQuery, fallbackRequested };
@@ -663,6 +767,17 @@ async function main(): Promise<void> {
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const mcpServerPath = path.join(__dirname, 'ipc-mcp-stdio.js');
+
+  // Worker runs pass runId explicitly from host; only fall back to parsing prompt
+  // for backward compatibility with older container-input payloads.
+  let runId: string | undefined = containerInput.runId;
+  if (!runId && containerInput.groupFolder.startsWith('jarvis-worker')) {
+    try {
+      const payload = JSON.parse(containerInput.prompt) as { run_id?: string };
+      runId = payload.run_id;
+    } catch { /* not a JSON dispatch payload */ }
+  }
+  if (runId) log(`Worker run_id: ${runId}`);
 
   let sessionId = containerInput.sessionId;
   fs.mkdirSync(IPC_INPUT_DIR, { recursive: true });
@@ -704,6 +819,7 @@ async function main(): Promise<void> {
           sessionResumeStatus,
           sessionResumeError,
           resumeAt,
+          runId,
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -763,6 +879,16 @@ async function main(): Promise<void> {
       });
 
       log('Query ended, waiting for next IPC message...');
+
+      // Drain any pending steer event between turns
+      if (runId) {
+        const steerBetweenTurns = checkForSteering(runId);
+        if (steerBetweenTurns) {
+          log(`Steer message received between turns, starting new query`);
+          prompt = steerBetweenTurns;
+          continue;
+        }
+      }
 
       // Wait for the next message or _close sentinel
       const nextMessage = await waitForIpcMessage();

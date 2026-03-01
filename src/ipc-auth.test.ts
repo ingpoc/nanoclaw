@@ -10,6 +10,10 @@ import {
   getRegisteredGroup,
   getWorkerRun,
   insertWorkerRun,
+  getProcessedMessageIds,
+  isMessageProcessed,
+  markMessageProcessed,
+  markMessagesProcessed,
   getTaskById,
   setRegisteredGroup,
   updateWorkerRunCompletion,
@@ -292,6 +296,42 @@ describe('schedule_task authorization', () => {
     expect(sendMessageCalls).toHaveLength(1);
     expect(sendMessageCalls[0].jid).toBe('andy@g.us');
     expect(sendMessageCalls[0].text).toContain('branch must match jarvis-<feature>');
+    expect(sendMessageCalls[0].sourceGroup).toBe('nanoclaw-system');
+  });
+
+  it('andy-developer duplicate worker schedule_task reports duplicate_run_id guidance (no resend template)', async () => {
+    insertWorkerRun('run-20260223-duplicate-001', 'jarvis-worker-1');
+    updateWorkerRunStatus('run-20260223-duplicate-001', 'review_requested');
+
+    const duplicatePayload = JSON.stringify({
+      run_id: 'run-20260223-duplicate-001',
+      task_type: '',
+      context_intent: '',
+      input: '',
+      repo: 'owner/repo',
+      branch: 'jarvis-duplicate',
+      acceptance_tests: [],
+      output_contract: null,
+    });
+
+    await processTaskIpc(
+      {
+        type: 'schedule_task',
+        prompt: duplicatePayload,
+        schedule_type: 'once',
+        schedule_value: '2025-06-01T00:00:00.000Z',
+        targetJid: 'jarvis-1@g.us',
+      },
+      'andy-developer',
+      false,
+      deps,
+    );
+
+    expect(getAllTasks()).toHaveLength(0);
+    expect(sendMessageCalls).toHaveLength(1);
+    expect(sendMessageCalls[0].jid).toBe('andy@g.us');
+    expect(sendMessageCalls[0].text).toContain('Dispatch ignored (duplicate run_id)');
+    expect(sendMessageCalls[0].text).not.toContain('Fix: resend using the template below');
     expect(sendMessageCalls[0].sourceGroup).toBe('nanoclaw-system');
   });
 
@@ -646,6 +686,32 @@ describe('andy worker dispatch payload guardrails', () => {
     );
 
     expect(result.valid).toBe(true);
+  });
+
+  it('blocks malformed replay dispatch as duplicate when run_id already completed', () => {
+    insertWorkerRun('run-20260223-replay-001', 'jarvis-worker-2');
+    updateWorkerRunStatus('run-20260223-replay-001', 'review_requested');
+
+    const malformedReplay = JSON.stringify({
+      run_id: 'run-20260223-replay-001',
+      task_type: '',
+      context_intent: '',
+      input: '',
+      repo: 'owner/repo',
+      branch: 'jarvis-replay',
+      acceptance_tests: [],
+      output_contract: null,
+    });
+
+    const result = validateAndyWorkerDispatchMessage(
+      'andy-developer',
+      groups['jarvis-2@g.us'],
+      malformedReplay,
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('duplicate run_id blocked');
+    expect(result.reason).toContain('already review_requested');
   });
 
   it('blocks continue dispatch when no reusable session exists for worker/repo/branch', () => {
@@ -1069,5 +1135,54 @@ describe('register_group success', () => {
     );
 
     expect(getRegisteredGroup('partial@g.us')).toBeUndefined();
+  });
+});
+
+// --- Per-message idempotency ---
+
+describe('per-message idempotency', () => {
+  it('returns false for unprocessed message', () => {
+    expect(isMessageProcessed('group@g.us', 'msg-001')).toBe(false);
+  });
+
+  it('returns true after marking message processed', () => {
+    markMessageProcessed('group@g.us', 'msg-002');
+    expect(isMessageProcessed('group@g.us', 'msg-002')).toBe(true);
+  });
+
+  it('stores run_id alongside processed message', () => {
+    markMessageProcessed('group@g.us', 'msg-003', 'run-123');
+    expect(isMessageProcessed('group@g.us', 'msg-003')).toBe(true);
+  });
+
+  it('handles duplicate markMessageProcessed calls gracefully', () => {
+    markMessageProcessed('group@g.us', 'msg-004');
+    // Should not throw (INSERT OR IGNORE)
+    markMessageProcessed('group@g.us', 'msg-004', 'run-456');
+    expect(isMessageProcessed('group@g.us', 'msg-004')).toBe(true);
+  });
+
+  it('isolates messages by chat_jid', () => {
+    markMessageProcessed('group-a@g.us', 'msg-005');
+    expect(isMessageProcessed('group-a@g.us', 'msg-005')).toBe(true);
+    expect(isMessageProcessed('group-b@g.us', 'msg-005')).toBe(false);
+  });
+
+  it('getProcessedMessageIds returns batch results', () => {
+    markMessageProcessed('batch@g.us', 'msg-a');
+    markMessageProcessed('batch@g.us', 'msg-c');
+    const processed = getProcessedMessageIds('batch@g.us', ['msg-a', 'msg-b', 'msg-c']);
+    expect(processed).toEqual(new Set(['msg-a', 'msg-c']));
+  });
+
+  it('getProcessedMessageIds returns empty set for empty input', () => {
+    expect(getProcessedMessageIds('batch@g.us', [])).toEqual(new Set());
+  });
+
+  it('markMessagesProcessed inserts batch atomically', () => {
+    markMessagesProcessed('txn@g.us', ['msg-x', 'msg-y', 'msg-z'], 'run-batch');
+    expect(isMessageProcessed('txn@g.us', 'msg-x')).toBe(true);
+    expect(isMessageProcessed('txn@g.us', 'msg-y')).toBe(true);
+    expect(isMessageProcessed('txn@g.us', 'msg-z')).toBe(true);
   });
 });

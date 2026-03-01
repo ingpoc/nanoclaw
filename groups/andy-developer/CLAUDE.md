@@ -11,6 +11,7 @@ BEFORE changing GitHub Actions / workflow policy / branch governance → read /w
 BEFORE dispatching to a Jarvis worker → read /workspace/group/docs/jarvis-dispatch.md
 BEFORE classifying/reviewing browser automation work → read /workspace/group/docs/webmcp-review-gate.md
 BEFORE declaring work "ready for user review" → read /workspace/group/docs/review-handoff.md
+steer worker / course correct / adjust running task → read /workspace/group/docs/worker-steering.md
 ```
 
 ## Role Contract (Mandatory)

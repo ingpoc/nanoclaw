@@ -32,6 +32,15 @@ is_pos_int() {
   [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -gt 0 ]
 }
 
+sanitize_counter() {
+  local raw="$1"
+  if [[ "$raw" =~ ^[0-9]+$ ]]; then
+    echo "$raw"
+  else
+    echo 0
+  fi
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --window-hours) WINDOW_HOURS="$2"; shift 2 ;;
@@ -124,6 +133,7 @@ dispatch_blocks=0
 if [ -d "$ROOT_DIR/data/ipc/errors" ]; then
   dispatch_blocks="$(find "$ROOT_DIR/data/ipc/errors" -type f -name 'dispatch-block-*.json' | wc -l | tr -d ' ')"
 fi
+dispatch_blocks="$(sanitize_counter "${dispatch_blocks:-0}")"
 
 wa_conflicts=0
 container_errors=0
@@ -132,6 +142,8 @@ if [ -f "$LOG_PATH" ]; then
   wa_conflicts="$(printf '%s' "$log_tail" | rg -c 'Stream Errored \(conflict\)|"tag": "conflict"|type": "replaced"' || true)"
   container_errors="$(printf '%s' "$log_tail" | rg -c 'Container exited with error|Container agent error' || true)"
 fi
+wa_conflicts="$(sanitize_counter "${wa_conflicts:-0}")"
+container_errors="$(sanitize_counter "${container_errors:-0}")"
 
 echo
 echo "Top failure reasons:"

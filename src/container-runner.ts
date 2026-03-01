@@ -9,6 +9,7 @@ import path from 'path';
 import {
   CONTAINER_IMAGE,
   CONTAINER_MAX_OUTPUT_SIZE,
+  CONTAINER_NO_OUTPUT_TIMEOUT,
   CONTAINER_PARSE_BUFFER_LIMIT,
   CONTAINER_TIMEOUT,
   DATA_DIR,
@@ -27,15 +28,19 @@ import {
   stopRunningContainersByPrefix,
 } from './container-runtime.js';
 import { validateAdditionalMounts } from './mount-security.js';
-import { RegisteredGroup } from './types.js';
+import { isJarvisWorkerFolder, RegisteredGroup } from './types.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
 
+// Must match AGENT_RUNNER_LOG_PREFIX in container/agent-runner/src/index.ts
+const AGENT_RUNNER_LOG_PREFIX = '[agent-runner]';
+
 export interface ContainerInput {
   prompt: string;
   sessionId?: string;
+  runId?: string;
   groupFolder: string;
   chatJid: string;
   isMain: boolean;
@@ -277,6 +282,11 @@ function buildVolumeMounts(
   fs.mkdirSync(path.join(groupIpcDir, 'messages'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'tasks'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'input'), { recursive: true });
+  // Worker groups get steer/ and progress/ subdirs for bidirectional steering
+  if (isJarvisWorkerFolder(group.folder)) {
+    fs.mkdirSync(path.join(groupIpcDir, 'steer'), { recursive: true });
+    fs.mkdirSync(path.join(groupIpcDir, 'progress'), { recursive: true });
+  }
   mounts.push({
     hostPath: groupIpcDir,
     containerPath: '/workspace/ipc',
@@ -410,7 +420,7 @@ export async function runContainerAgent(
     );
   }
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
-  const image = group.folder.startsWith('jarvis-worker')
+  const image = isJarvisWorkerFolder(group.folder)
     ? WORKER_CONTAINER_IMAGE
     : CONTAINER_IMAGE;
   const containerArgs = buildContainerArgs(mounts, containerName, image);
@@ -527,9 +537,15 @@ export async function runContainerAgent(
             if (parsed.sessionResumeError) {
               sessionResumeError = parsed.sessionResumeError;
             }
-            hadStreamingOutput = true;
-            // Activity detected — reset the hard timeout
-            resetTimeout();
+            if (!hadStreamingOutput) {
+              hadStreamingOutput = true;
+              if (noOutputTimeout) {
+                clearTimeout(noOutputTimeout);
+                noOutputTimeout = null;
+              }
+            }
+            // Activity detected — reset the hard timeout.
+            resetHardTimeout();
             // Call onOutput for all markers (including null results)
             // so idle timers start even for "silent" query completions.
             outputChain = outputChain.then(() => onOutput(parsed));
@@ -549,8 +565,15 @@ export async function runContainerAgent(
       for (const line of lines) {
         if (line) logger.debug({ container: group.folder }, line);
       }
-      // Don't reset timeout on stderr — SDK writes debug logs continuously.
-      // Timeout only resets on actual output (OUTPUT_MARKER in stdout).
+      // Re-arm no_output_timeout on our own [agent-runner] instrumentation lines
+      // (heartbeats, status logs) but NOT on SDK debug spam.
+      if (noOutputTimeout && chunk.includes(AGENT_RUNNER_LOG_PREFIX)) {
+        clearTimeout(noOutputTimeout);
+        noOutputTimeout = setTimeout(
+          () => stopForTimeout('no_output_timeout'),
+          configuredNoOutputTimeout,
+        );
+      }
       if (stderrTruncated) return;
       const remaining = CONTAINER_MAX_OUTPUT_SIZE - stderr.length;
       if (chunk.length > remaining) {
@@ -567,14 +590,22 @@ export async function runContainerAgent(
 
     let timedOut = false;
     let hadStreamingOutput = false;
-    const configTimeout = group.containerConfig?.timeout || CONTAINER_TIMEOUT;
-    // Grace period: hard timeout must be at least IDLE_TIMEOUT + 30s so the
+    let timeoutReason: 'no_output_timeout' | 'hard_timeout' | null = null;
+    const configuredIdleTimeout = group.containerConfig?.idleTimeout || IDLE_TIMEOUT;
+    const configuredNoOutputTimeout = group.containerConfig?.noOutputTimeout || CONTAINER_NO_OUTPUT_TIMEOUT;
+    const configuredHardTimeout = group.containerConfig?.timeout || CONTAINER_TIMEOUT;
+    // Grace period: hard timeout must be at least idle timeout + 30s so the
     // graceful _close sentinel has time to trigger before the hard kill fires.
-    const timeoutMs = Math.max(configTimeout, IDLE_TIMEOUT + 30_000);
+    const hardTimeoutMs = Math.max(configuredHardTimeout, configuredIdleTimeout + 30_000);
 
-    const killOnTimeout = () => {
+    const stopForTimeout = (reason: 'no_output_timeout' | 'hard_timeout') => {
+      if (timedOut) return;
       timedOut = true;
-      logger.error({ group: group.name, containerName }, 'Container timeout, stopping gracefully');
+      timeoutReason = reason;
+      logger.error(
+        { group: group.name, containerName, timeoutReason: reason },
+        'Container timeout, stopping gracefully',
+      );
       exec(stopContainer(containerName), { timeout: 15000 }, (err) => {
         if (err) {
           logger.warn({ group: group.name, containerName, err }, 'Graceful stop failed, force killing');
@@ -583,16 +614,24 @@ export async function runContainerAgent(
       });
     };
 
-    let timeout = setTimeout(killOnTimeout, timeoutMs);
+    let hardTimeout = setTimeout(() => stopForTimeout('hard_timeout'), hardTimeoutMs);
+    let noOutputTimeout: ReturnType<typeof setTimeout> | null = null;
+    if (configuredNoOutputTimeout > 0) {
+      noOutputTimeout = setTimeout(
+        () => stopForTimeout('no_output_timeout'),
+        configuredNoOutputTimeout,
+      );
+    }
 
-    // Reset the timeout whenever there's activity (streaming output)
-    const resetTimeout = () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(killOnTimeout, timeoutMs);
+    // Reset the hard timeout whenever there's activity (streaming output)
+    const resetHardTimeout = () => {
+      clearTimeout(hardTimeout);
+      hardTimeout = setTimeout(() => stopForTimeout('hard_timeout'), hardTimeoutMs);
     };
 
     container.on('close', (code) => {
-      clearTimeout(timeout);
+      clearTimeout(hardTimeout);
+      if (noOutputTimeout) clearTimeout(noOutputTimeout);
       const duration = Date.now() - startTime;
 
       if (timedOut) {
@@ -605,6 +644,11 @@ export async function runContainerAgent(
           `Container: ${containerName}`,
           `Duration: ${duration}ms`,
           `Exit Code: ${code}`,
+          `Timeout Reason: ${timeoutReason || 'unknown'}`,
+          `Configured Hard Timeout: ${configuredHardTimeout}ms`,
+          `Configured No-Output Timeout: ${configuredNoOutputTimeout}ms`,
+          `Configured Idle Timeout: ${configuredIdleTimeout}ms`,
+          `Effective Hard Timeout: ${hardTimeoutMs}ms`,
           `Had Streaming Output: ${hadStreamingOutput}`,
         ].join('\n'));
 
@@ -629,14 +673,16 @@ export async function runContainerAgent(
         }
 
         logger.error(
-          { group: group.name, containerName, duration, code },
+          { group: group.name, containerName, duration, code, timeoutReason },
           'Container timed out with no output',
         );
 
         resolve({
           status: 'error',
           result: null,
-          error: `Container timed out after ${configTimeout}ms`,
+          error: timeoutReason === 'no_output_timeout'
+            ? `Container no_output_timeout after ${configuredNoOutputTimeout}ms`
+            : `Container hard_timeout after ${hardTimeoutMs}ms`,
         });
         return;
       }
@@ -791,7 +837,8 @@ export async function runContainerAgent(
     });
 
     container.on('error', (err) => {
-      clearTimeout(timeout);
+      clearTimeout(hardTimeout);
+      if (noOutputTimeout) clearTimeout(noOutputTimeout);
       logger.error({ group: group.name, containerName, error: err }, 'Container spawn error');
       resolve({
         status: 'error',
@@ -839,6 +886,7 @@ export interface WorkerRunSnapshotEntry {
   run_id: string;
   group_folder: string;
   status: string;
+  phase?: string | null;
   started_at: string;
   completed_at: string | null;
   retry_count: number;
@@ -854,6 +902,13 @@ export interface WorkerRunSnapshotEntry {
   session_selection_source?: string | null;
   session_resume_status?: string | null;
   session_resume_error?: string | null;
+  last_heartbeat_at?: string | null;
+  active_container_name?: string | null;
+  no_container_since?: string | null;
+  expects_followup_container?: number | null;
+  supervisor_owner?: string | null;
+  lease_expires_at?: string | null;
+  recovered_from_reason?: string | null;
 }
 
 export interface DispatchBlockSnapshotEntry {

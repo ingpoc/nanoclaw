@@ -156,7 +156,7 @@ nanoclaw/
 ├── data/                          # Application state (gitignored)
 │   ├── sessions/                  # Per-group session data (.claude/ dirs with JSONL transcripts)
 │   ├── env/env                    # Copy of .env for container mounting
-│   └── ipc/                       # Container IPC (messages/, tasks/)
+│   └── ipc/                       # Container IPC (per-group: messages/, tasks/, input/, steer/, progress/)
 │
 ├── logs/                          # Runtime logs (gitignored)
 │   ├── nanoclaw.log               # Host stdout
@@ -230,23 +230,28 @@ Additional mounts appear at `/workspace/extra/{containerPath}` inside the contai
 Configure authentication in a `.env` file in the project root. Two options:
 
 **Option 1: Claude Subscription (OAuth token)**
+
 ```bash
 CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
 ```
+
 The token can be extracted from `~/.claude/.credentials.json` if you're logged in to Claude Code.
 
 **Option 2: Pay-per-use API Key**
+
 ```bash
 ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
 For NanoClaw agent lanes (`main`, `andy-developer`), lane selection is controlled by `OAUTH_API_FALLBACK_ENABLED`:
+
 - `true`: force API-key lane (`ANTHROPIC_API_KEY` + optional `ANTHROPIC_BASE_URL`)
 - `false`: force OAuth lane (`CLAUDE_CODE_OAUTH_TOKEN`)
 
 When OAuth lane is selected and both OAuth + API key are available, NanoClaw can retry with API key if OAuth returns subscription/limit errors. Jarvis worker lanes are unaffected (they run via OpenCode worker runtime).
 
 You can toggle OAuth->API fallback without code changes:
+
 ```bash
 OAUTH_API_FALLBACK_ENABLED=true   # default when omitted
 # or
@@ -256,6 +261,7 @@ OAUTH_API_FALLBACK_ENABLED=false  # disables fallback
 Only the authentication/fallback variables (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `OAUTH_API_FALLBACK_ENABLED`) are extracted from `.env` and written to `data/env/env`, then mounted into the container at `/workspace/env-dir/env` and sourced by the entrypoint script. This ensures other environment variables in `.env` are not exposed to the agent. This workaround is needed because some container runtimes lose `-e` environment variables when using `-i` (interactive mode with piped stdin).
 
 If API-key lane is active, NanoClaw can pin the model using:
+
 ```bash
 ANTHROPIC_DEFAULT_SONNET_MODEL=MiniMax-M2.5
 ```
@@ -269,12 +275,14 @@ ASSISTANT_NAME=Bot npm start
 ```
 
 Or edit the default in `src/config.ts`. This changes:
+
 - The trigger pattern (messages must start with `@YourName`)
 - The response prefix (`YourName:` added automatically)
 
 ### Placeholder Values in launchd
 
 Files with `{{PLACEHOLDER}}` values need to be configured:
+
 - `{{PROJECT_ROOT}}` - Absolute path to your nanoclaw installation
 - `{{NODE_PATH}}` - Path to node binary (detected via `which node`)
 - `{{HOME}}` - User's home directory
@@ -376,6 +384,7 @@ Sessions enable conversation continuity - Claude remembers what you talked about
 ### Trigger Word Matching
 
 Messages must start with the trigger pattern (default: `@Andy`):
+
 - `@Andy what's the weather?` → ✅ Triggers Claude
 - `@andy help me` → ✅ Triggers (case insensitive)
 - `Hey @Andy` → ❌ Ignored (trigger not at start)
@@ -464,12 +473,14 @@ Claude: [calls mcp__nanoclaw__schedule_task]
 ### Managing Tasks
 
 From any group:
+
 - `@Andy list my scheduled tasks` - View tasks for this group
 - `@Andy pause task [id]` - Pause a task
 - `@Andy resume task [id]` - Resume a paused task
 - `@Andy cancel task [id]` - Delete a task
 
 From main channel:
+
 - `@Andy list all tasks` - View tasks from all groups
 - `@Andy schedule task for "Family Chat": [prompt]` - Schedule for another group
 
@@ -482,6 +493,7 @@ From main channel:
 The `nanoclaw` MCP server is created dynamically per agent call with the current group's context.
 
 **Available Tools:**
+
 | Tool | Purpose |
 |------|---------|
 | `schedule_task` | Schedule a recurring or one-time task |
@@ -502,6 +514,7 @@ NanoClaw runs as a single macOS launchd service.
 ### Startup Sequence
 
 When NanoClaw starts, it:
+
 1. **Ensures container runtime is running** - Automatically starts it if needed; kills orphaned NanoClaw containers from previous runs
 2. Initializes the SQLite database (migrates from JSON files if they exist)
 3. Loads state from SQLite (registered groups, sessions, router state)
@@ -515,6 +528,7 @@ When NanoClaw starts, it:
 ### Service: com.nanoclaw
 
 **launchd/com.nanoclaw.plist:**
+
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "...">
@@ -576,6 +590,7 @@ tail -f logs/nanoclaw.log
 ### Container Isolation
 
 All agents run inside containers (lightweight Linux VMs), providing:
+
 - **Filesystem isolation**: Agents can only access mounted directories
 - **Safe Bash access**: Commands run inside the container, not on your Mac
 - **Network isolation**: Can be configured per-container if needed
@@ -587,6 +602,7 @@ All agents run inside containers (lightweight Linux VMs), providing:
 WhatsApp messages could contain malicious instructions attempting to manipulate Claude's behavior.
 
 **Mitigations:**
+
 - Container isolation limits blast radius
 - Only registered groups are processed
 - Trigger word required (reduces accidental processing)
@@ -595,6 +611,7 @@ WhatsApp messages could contain malicious instructions attempting to manipulate 
 - Claude's built-in safety training
 
 **Recommendations:**
+
 - Only register trusted groups
 - Review additional directory mounts carefully
 - Review scheduled tasks periodically
@@ -610,6 +627,7 @@ WhatsApp messages could contain malicious instructions attempting to manipulate 
 ### File Permissions
 
 The groups/ folder contains personal memory and should be protected:
+
 ```bash
 chmod 700 groups/
 ```
@@ -638,6 +656,7 @@ chmod 700 groups/
 ### Debug Mode
 
 Run manually for verbose output:
+
 ```bash
 npm run dev
 # or

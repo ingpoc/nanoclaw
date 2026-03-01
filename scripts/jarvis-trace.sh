@@ -10,6 +10,7 @@ LANE=""
 CHAT_JID=""
 RUN_ID=""
 SINCE=""
+UNTIL=""
 WINDOW_MINUTES="120"
 LOG_LINES="2500"
 JSON_MODE=0
@@ -24,6 +25,7 @@ Options:
   --chat-jid <jid>          Chat JID override
   --run-id <id>             Worker run_id filter
   --since <iso>             ISO timestamp lower bound
+  --until <iso>             ISO timestamp upper bound (default: now UTC)
   --window-minutes <n>      If --since omitted, use now-minus-window (default: 120)
   --log-lines <n>           Log tail lines to scan (default: 2500)
   --db <path>               SQLite DB path (default: store/messages.db)
@@ -44,6 +46,7 @@ while [ "$#" -gt 0 ]; do
     --chat-jid) CHAT_JID="$2"; shift 2 ;;
     --run-id) RUN_ID="$2"; shift 2 ;;
     --since) SINCE="$2"; shift 2 ;;
+    --until) UNTIL="$2"; shift 2 ;;
     --window-minutes) WINDOW_MINUTES="$2"; shift 2 ;;
     --log-lines) LOG_LINES="$2"; shift 2 ;;
     --db) DB_PATH="$2"; shift 2 ;;
@@ -84,28 +87,108 @@ PY
 )"
 fi
 
-trace_json="$(python3 - "$DB_PATH" "$LOG_PATH" "$LANE" "$CHAT_JID" "$RUN_ID" "$SINCE" "$LOG_LINES" "$ROOT_DIR/data/ipc/errors" <<'PY'
+if [ -z "$UNTIL" ]; then
+  UNTIL="$(python3 <<'PY'
+import datetime
+print(datetime.datetime.now(datetime.timezone.utc).isoformat())
+PY
+)"
+fi
+
+trace_json="$(python3 - "$DB_PATH" "$LOG_PATH" "$LANE" "$CHAT_JID" "$RUN_ID" "$SINCE" "$UNTIL" "$LOG_LINES" "$ROOT_DIR/data/ipc/errors" <<'PY'
 import datetime
 import glob
 import json
 import os
+import re
 import sqlite3
 import sys
+from collections import Counter
 
-(db_path, log_path, lane, chat_jid, run_id, since_raw, log_lines, errors_dir) = sys.argv[1:9]
+(db_path, log_path, lane, chat_jid, run_id, since_raw, until_raw, log_lines, errors_dir) = sys.argv[1:10]
 log_lines = int(log_lines)
 
 def parse_iso(value):
     if not value:
         return None
     try:
-        return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        dt = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt
     except Exception:
         return None
 
+def in_window(dt, start, end):
+    if dt is None:
+        return False
+    return start <= dt <= end
+
+def parse_json_obj(raw):
+    text = (raw or "").strip()
+    if not text:
+        return None
+    fenced = re.match(r"^```(?:json)?\s*([\s\S]*?)\s*```$", text, flags=re.IGNORECASE)
+    if fenced:
+        text = fenced.group(1).strip()
+    if text.startswith("{") and text.endswith("}"):
+        try:
+            obj = json.loads(text)
+            return obj if isinstance(obj, dict) else None
+        except Exception:
+            return None
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    try:
+        obj = json.loads(text[start:end + 1])
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+def looks_like_dispatch(payload):
+    return isinstance(payload, dict) and ("run_id" in payload or "task_type" in payload)
+
+def is_valid_dispatch(payload):
+    required = ["run_id", "task_type", "input", "repo", "branch", "acceptance_tests"]
+    if not isinstance(payload, dict):
+        return False
+    for k in required:
+        if k not in payload:
+            return False
+    if not isinstance(payload.get("acceptance_tests"), list) or len(payload.get("acceptance_tests") or []) == 0:
+        return False
+    if not isinstance(payload.get("run_id"), str) or not payload["run_id"].strip():
+        return False
+    if not isinstance(payload.get("repo"), str) or "/" not in payload["repo"]:
+        return False
+    if not isinstance(payload.get("branch"), str) or not payload["branch"].strip():
+        return False
+    return True
+
+def parse_error_reason(error_details):
+    if not error_details:
+        return None
+    try:
+        parsed = json.loads(error_details)
+        if isinstance(parsed, dict):
+            reason = parsed.get("reason")
+            if isinstance(reason, str) and reason:
+                return reason
+    except Exception:
+        return None
+    return None
+
 since_dt = parse_iso(since_raw)
+until_dt = parse_iso(until_raw)
+now_utc = datetime.datetime.now(datetime.timezone.utc)
 if since_dt is None:
-    since_dt = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2)
+    since_dt = now_utc - datetime.timedelta(hours=2)
+if until_dt is None:
+    until_dt = now_utc
+if until_dt < since_dt:
+    since_dt, until_dt = until_dt, since_dt
 
 conn = sqlite3.connect(db_path)
 conn.row_factory = sqlite3.Row
@@ -139,10 +222,11 @@ if resolved_chat:
         FROM messages
         WHERE chat_jid = ?
           AND timestamp >= ?
+          AND timestamp <= ?
         ORDER BY timestamp ASC
-        LIMIT 200
+        LIMIT 400
         """,
-        (resolved_chat, since_dt.isoformat()),
+        (resolved_chat, since_dt.isoformat(), until_dt.isoformat()),
     )
     msg_rows = [dict(r) for r in cur.fetchall()]
 
@@ -156,9 +240,11 @@ if run_id:
                session_resume_status
         FROM worker_runs
         WHERE run_id = ?
+          AND started_at >= ?
+          AND started_at <= ?
         ORDER BY started_at ASC
         """,
-        (run_id,),
+        (run_id, since_dt.isoformat(), until_dt.isoformat()),
     )
     run_rows = [dict(r) for r in cur.fetchall()]
 elif resolved_lane:
@@ -171,10 +257,11 @@ elif resolved_lane:
         FROM worker_runs
         WHERE group_folder = ?
           AND started_at >= ?
+          AND started_at <= ?
         ORDER BY started_at DESC
-        LIMIT 60
+        LIMIT 120
         """,
-        (resolved_lane, since_dt.isoformat()),
+        (resolved_lane, since_dt.isoformat(), until_dt.isoformat()),
     )
     run_rows = [dict(r) for r in cur.fetchall()]
 
@@ -182,11 +269,12 @@ blocks = []
 if os.path.isdir(errors_dir):
     for path in sorted(glob.glob(os.path.join(errors_dir, "dispatch-block-*.json"))):
         try:
-            data = json.loads(open(path, "r", encoding="utf-8").read())
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
         except Exception:
             continue
         ts = parse_iso(data.get("timestamp", ""))
-        if ts and ts < since_dt:
+        if ts and not in_window(ts, since_dt, until_dt):
             continue
         if run_id and data.get("run_id") != run_id:
             continue
@@ -218,6 +306,52 @@ wa_conflicts = sum(1 for l in log_tail if "conflict" in l.lower() and ("replaced
 schema_errors = sum(1 for l in log_tail if "SqliteError" in l or "no such column: dispatch_repo" in l)
 container_errors = sum(1 for l in log_tail if "Container exited with error" in l or "Container agent error" in l)
 
+log_time_re = re.compile(r"^\[(\d{2}):(\d{2}):(\d{2})\.(\d{3})\]")
+log_events = []
+for idx, raw_line in enumerate(log_tail):
+    text = raw_line.rstrip("\n")
+    m = log_time_re.match(text)
+    event_sec = None
+    if m:
+        hh, mm, ss, ms = [int(g) for g in m.groups()]
+        event_sec = hh * 3600 + mm * 60 + ss + (ms / 1000.0)
+    log_events.append({"idx": idx, "text": text, "sec": event_sec})
+
+no_output_events = [e for e in log_events if "Container timed out with no output" in e["text"]]
+wa_close_events = [e for e in log_events if "Connection closed" in e["text"]]
+no_output_with_wa_close = 0
+for evt in no_output_events:
+    if evt.get("sec") is None:
+        continue
+    matched = any(
+        close.get("sec") is not None and abs(close["sec"] - evt["sec"]) <= 120
+        for close in wa_close_events
+    )
+    if matched:
+        no_output_with_wa_close += 1
+
+dispatch_payload_messages = 0
+valid_dispatch_payload_messages = 0
+suppressed_reasons = Counter()
+for msg in msg_rows:
+    if msg.get("is_bot_message"):
+        continue
+    payload = parse_json_obj(msg.get("content"))
+    if looks_like_dispatch(payload):
+        dispatch_payload_messages += 1
+        if is_valid_dispatch(payload):
+            valid_dispatch_payload_messages += 1
+
+for run in run_rows:
+    reason = parse_error_reason(run.get("error_details"))
+    if reason:
+        suppressed_reasons[reason] += 1
+
+if dispatch_payload_messages > valid_dispatch_payload_messages:
+    suppressed_reasons["invalid_dispatch_payload"] += dispatch_payload_messages - valid_dispatch_payload_messages
+
+dispatch_enqueued_runs = len({r.get("run_id") for r in run_rows if r.get("run_id")})
+
 root_cause = "unknown"
 if resolved_chat and len(msg_rows) == 0:
     root_cause = "no_ingest"
@@ -225,6 +359,8 @@ if blocks:
     root_cause = "dispatch_blocked"
 if any((r.get("status") == "failed" and "running_without_container" in (r.get("error_details") or "")) for r in run_rows):
     root_cause = "container_stale"
+if no_output_events:
+    root_cause = "andy_no_output_timeout"
 if wa_conflicts > 8:
     root_cause = "wa_conflict_churn"
 if schema_errors > 0:
@@ -232,7 +368,7 @@ if schema_errors > 0:
 
 # Build simple timeline
 timeline = []
-for m in msg_rows[-20:]:
+for m in msg_rows[-40:]:
     timeline.append({
         "ts": m.get("timestamp"),
         "stage": "message_ingest",
@@ -243,7 +379,7 @@ for m in msg_rows[-20:]:
             "content_preview": (m.get("content") or "")[:160],
         },
     })
-for r in run_rows[:20]:
+for r in run_rows[:40]:
     timeline.append({
         "ts": r.get("started_at"),
         "stage": "worker_run",
@@ -256,7 +392,7 @@ for r in run_rows[:20]:
             "session_resume_status": r.get("session_resume_status"),
         },
     })
-for b in blocks[-20:]:
+for b in blocks[-40:]:
     timeline.append({
         "ts": b.get("timestamp"),
         "stage": "dispatch_block",
@@ -273,6 +409,7 @@ payload = {
         "chat_jid": chat_jid or None,
         "run_id": run_id or None,
         "since": since_dt.isoformat(),
+        "until": until_dt.isoformat(),
     },
     "resolved": {
         "lane": resolved_lane,
@@ -286,6 +423,12 @@ payload = {
         "wa_conflicts_in_tail": wa_conflicts,
         "schema_errors_in_tail": schema_errors,
         "container_errors_in_tail": container_errors,
+        "dispatch_payload_messages": dispatch_payload_messages,
+        "valid_dispatch_payload_messages": valid_dispatch_payload_messages,
+        "dispatch_enqueued_runs": dispatch_enqueued_runs,
+        "dispatch_suppressed_reasons": dict(suppressed_reasons),
+        "no_output_events_in_tail": len(no_output_events),
+        "no_output_events_with_wa_close_within_120s": no_output_with_wa_close,
     },
     "root_cause": root_cause,
     "timeline": timeline,
@@ -298,17 +441,29 @@ PY
 
 echo "== Jarvis Trace =="
 echo "since: $SINCE"
+echo "until: $UNTIL"
 python3 - "$trace_json" <<'PY'
 import json
 import sys
 obj = json.loads(sys.argv[1])
+metrics = obj["metrics"]
 print(f"resolved lane: {obj['resolved'].get('lane')}")
 print(f"resolved chat_jid: {obj['resolved'].get('chat_jid')}")
-print(f"messages: {obj['metrics']['messages']}")
-print(f"worker runs: {obj['metrics']['worker_runs']}")
-print(f"dispatch blocks: {obj['metrics']['dispatch_blocks']}")
-print(f"log matches: {obj['metrics']['log_matches']}")
+print(f"messages: {metrics['messages']}")
+print(f"worker runs: {metrics['worker_runs']}")
+print(f"dispatch blocks: {metrics['dispatch_blocks']}")
+print(f"dispatch payload messages: {metrics['dispatch_payload_messages']}")
+print(f"valid dispatch payload messages: {metrics['valid_dispatch_payload_messages']}")
+print(f"dispatch enqueued runs: {metrics['dispatch_enqueued_runs']}")
+print(f"no-output events in tail: {metrics['no_output_events_in_tail']}")
+print(f"no-output with WA close <=120s: {metrics['no_output_events_with_wa_close_within_120s']}")
+print(f"log matches: {metrics['log_matches']}")
 print(f"root cause: {obj.get('root_cause')}")
+reasons = metrics.get('dispatch_suppressed_reasons') or {}
+if reasons:
+    print('dispatch suppressed reasons:')
+    for key, val in sorted(reasons.items()):
+        print(f"  - {key}: {val}")
 print("timeline (latest 12 events):")
 for ev in obj.get('timeline', [])[-12:]:
     stage = ev.get('stage')

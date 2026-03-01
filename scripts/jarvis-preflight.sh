@@ -95,13 +95,20 @@ fail() {
 run_check() {
   local id="$1"
   local label="$2"
-  shift 2
-  if "$@" >"$TMP_OUT" 2>&1; then
-    pass "$id" "$label"
-    return 0
-  fi
-  local err
-  err="$(tr '\n' ' ' <"$TMP_OUT" | sed 's/[[:space:]]\+/ /g')"
+  local attempts="$3"
+  local sleep_sec="$4"
+  shift 4
+  local try err
+  for ((try=1; try<=attempts; try++)); do
+    if "$@" >"$TMP_OUT" 2>&1; then
+      pass "$id" "$label"
+      return 0
+    fi
+    if [ "$try" -lt "$attempts" ]; then
+      sleep "$sleep_sec"
+    fi
+  done
+  err="$(tr '\n' ' ' <"$TMP_OUT" | sed 's/[[:space:]]\+/ /g' | cut -c1-240)"
   fail "$id" "$label" "$err"
   return 1
 }
@@ -266,8 +273,8 @@ else
 fi
 
 if have_cmd container; then
-  run_check "runtime.system" "container system status" container system status
-  run_check "runtime.builder" "container builder status" container builder status
+  run_check "runtime.system" "container system status" 3 1 container system status
+  run_check "runtime.builder" "container builder status" 3 1 container builder status
 else
   fail "runtime.cli" "container CLI not found"
 fi

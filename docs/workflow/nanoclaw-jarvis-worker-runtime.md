@@ -44,6 +44,8 @@ Worker container mounts:
 | `/workspace/group` | `groups/jarvis-worker-*` | read-write |
 | `/workspace/global` | `groups/global` | read-only (if present) |
 | `/workspace/ipc` | `data/ipc/<group>` | read-write |
+| `/workspace/ipc/steer` | `data/ipc/<group>/steer` | read-write (worker reads steer events) |
+| `/workspace/ipc/progress` | `data/ipc/<group>/progress` | read-write (worker writes progress events) |
 | `/workspace/mcp-servers` | host MCP root | read-only (if present) |
 | `/home/node/.claude/skills` | staged from `container/skills` | read-only |
 | `/home/node/.claude/rules` | staged from `container/rules` | read-only |
@@ -129,9 +131,23 @@ group containers and stuck orphan cleanup:
    - Failed attempts are logged with full command history for debugging.
 
 Operational logs:
+
 - Success: `Stopped orphaned containers`
 - Pre-launch cleanup: `Stopped stale running containers before launch`
 - Failure with attempts: `Failed to stop some orphaned containers`
+
+## Timeout Semantics
+
+Worker/Andy container runtime now uses three timeout layers:
+
+1. `IDLE_TIMEOUT` (default `300000` ms): host closes stdin after output inactivity.
+2. `CONTAINER_NO_OUTPUT_TIMEOUT` (default `720000` ms): fail-fast when no streamed marker output appears.
+3. `CONTAINER_TIMEOUT` (default `1800000` ms): hard safety timeout (effective hard timeout is at least `IDLE_TIMEOUT + 30000`).
+
+Timeout artifacts include explicit reason codes:
+
+- `no_output_timeout`
+- `hard_timeout`
 
 ## Usage Stats
 

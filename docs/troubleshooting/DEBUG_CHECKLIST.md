@@ -6,9 +6,15 @@
 
 When agent teams spawns subagent CLI processes, they write to the same session JSONL. On subsequent `query()` resumes, the CLI reads the JSONL but may pick a stale branch tip (from before the subagent activity), causing the agent's response to land on a branch the host never receives a `result` for. **Fix**: pass `resumeSessionAt` with the last assistant message UUID to explicitly anchor each resume.
 
-### 2. IDLE_TIMEOUT == CONTAINER_TIMEOUT (both 30 min)
+### 2. [FIXED 2026-02-28] Timeout model separation (idle vs no-output vs hard timeout)
 
-Both timers fire at the same time, so containers always exit via hard SIGKILL (code 137) instead of graceful `_close` sentinel shutdown. The idle timeout should be shorter (e.g., 5 min) so containers wind down between messages, while container timeout stays at 30 min as a safety net for stuck agents.
+The runtime now separates three timeout paths:
+
+- `IDLE_TIMEOUT` (default `300000`) closes stdin after inactivity.
+- `CONTAINER_NO_OUTPUT_TIMEOUT` (default `720000`) fails fast when no streamed output appears.
+- `CONTAINER_TIMEOUT` (default `1800000`) remains the hard safety timeout.
+
+Timeout logs now include reason codes (`no_output_timeout` or `hard_timeout`) and effective timeout values for triage.
 
 ### 3. Cursor advanced before agent succeeds
 
@@ -157,6 +163,9 @@ bash scripts/jarvis-ops.sh incident enrich --id <incident-id> --cause "<root cau
 
 # Active worker-lane probe dispatch (jarvis-worker-*)
 bash scripts/jarvis-ops.sh probe
+
+# Connectivity gate (preflight + probe + DB pass/fail checks)
+bash scripts/jarvis-ops.sh verify-worker-connectivity
 
 # Recurring issue hotspots (failure reasons + lane ranking)
 bash scripts/jarvis-ops.sh hotspots --window-hours 72

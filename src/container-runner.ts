@@ -870,6 +870,7 @@ export interface WorkerRunSnapshotEntry {
   run_id: string;
   group_folder: string;
   status: string;
+  phase?: string | null;
   started_at: string;
   completed_at: string | null;
   retry_count: number;
@@ -885,6 +886,13 @@ export interface WorkerRunSnapshotEntry {
   session_selection_source?: string | null;
   session_resume_status?: string | null;
   session_resume_error?: string | null;
+  last_heartbeat_at?: string | null;
+  active_container_name?: string | null;
+  no_container_since?: string | null;
+  expects_followup_container?: number | null;
+  supervisor_owner?: string | null;
+  lease_expires_at?: string | null;
+  recovered_from_reason?: string | null;
 }
 
 export interface DispatchBlockSnapshotEntry {

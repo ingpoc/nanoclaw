@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-02-28T09:14:52.251571+00:00",
+  "updated_at": "2026-03-01T08:55:08.680076+00:00",
   "incidents": [
     {
       "id": "incident-worker-connectivity-block-20260227",
@@ -8,12 +8,12 @@
       "status": "open",
       "severity": "high",
       "created_at": "2026-02-27T13:02:09.098285+00:00",
-      "updated_at": "2026-02-28T00:00:00.000000+00:00",
+      "updated_at": "2026-03-01T08:55:08.680045+00:00",
       "summary": {
         "symptom": "Workers are not connected and I don't have access to restart them. To restart the push task: start worker containers manually via deployment system, then I will dispatch push task. Alternative: push branches manually from local environment.",
-        "suspected_cause": "dispatch_blocked_due_to_invalid_dispatch_payload (primary), with historical wa_conflict_churn noise in trace tail",
-        "impact": "Rework dispatches at 13:59Z were blocked before worker execution; workers themselves are currently healthy after recover+probe.",
-        "next_action": "Re-send rework using contract-compliant dispatch JSON for all affected run_ids; verify no new dispatch-block artifacts and that worker_runs move to review_requested/completed."
+        "suspected_cause": "running_without_container watchdog races with worker completion handoff/repair: run can be auto-failed in the gap between first container...",
+        "impact": "Valid worker output can be produced after auto-fail, but DB status remains failed because failed->review_requested transition is blocked; Andy reports workers disconnected and re-dispatch loops",
+        "next_action": "Implement watchdog guard for in-flight worker processing/repair handoff and optionally track no-container elapsed separately; then re-run probe + real multi-step dispatch and confirm no invalid transition logs"
       },
       "evidence": {
         "bundle_count": 3,
@@ -30,11 +30,6 @@
       },
       "notes": [
         {
-          "ts": "2026-02-27T13:55:34.903700+00:00",
-          "author": "operator",
-          "text": "2026-02-27 token propagation fix validated: push-w1-tokencheck-20260227 and push-w2-tokencheck-20260227 both reached review_requested. Test summary reports all 4 acceptance tests passed, tokens verified (GITHUB_TOKEN/GH_TOKEN present), and target branches pushed successfully for aadhaar-chain/flatwatch and ondc-buyer/ondc-seller."
-        },
-        {
           "ts": "2026-02-27T15:00:08.650944+00:00",
           "author": "operator",
           "text": "2026-02-27T13:59:27Z..13:59:44Z: four dispatches blocked by invalid_dispatch_payload (missing task_type/context_intent/input/acceptance_tests/output_contract). Restarted runtime via recover at ~2026-02-27T14:57Z; probe passed on both workers (run_ids probe-jarvis-worker-1-1772204266-25172 and probe-jarvis-worker-2-1772204311-31179)."
@@ -43,6 +38,11 @@
           "ts": "2026-02-28T00:00:00.000000+00:00",
           "author": "operator",
           "text": "Resolved. 5-layer enforcement deployed: (1) PreToolUse hook in andy-developer container blocks invalid dispatches, (2) worker completion retry with rework prompt, (3) container-runner always-merges settings + copies hooks, (4) ipc.ts run_id in block messages, (5) worker Pre-Exit Gate checklist. Additional fix: dispatch-validator.ts changed optional field guards from !== undefined to != null so explicit null values are treated as absent. E2E smoke test: PASS in 52.8s, status=review_requested. Branch: andy-developer-optimization."
+        },
+        {
+          "ts": "2026-03-01T08:54:58.372961+00:00",
+          "author": "operator",
+          "text": "2026-03-01 analysis: running_without_container failures are frequently triggered during worker completion handoff (primary run end -> repair run start) once run age > 5m. Example run phase1-auth-gateway-20260228 auto-failed at 11:48:52Z, then repair completed and contract validated but transition failed->review_requested was rejected. Also confirmed data/ipc/andy-developer/available_groups.json groups=[] is expected for non-main lanes."
         }
       ]
     }

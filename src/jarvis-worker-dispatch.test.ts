@@ -5,6 +5,8 @@ import {
   completeWorkerRun,
   getWorkerRun,
   getWorkerRuns,
+  recoverWorkerRunFromNoContainerFailure,
+  updateWorkerRunLifecycle,
   updateWorkerRunStatus,
   updateWorkerRunCompletion,
 } from './db.js';
@@ -197,6 +199,83 @@ describe('worker run status transition guards', () => {
     expect(row?.files_changed).toBeNull();
     expect(row?.test_summary).toBeNull();
     expect(row?.risk_summary).toBeNull();
+  });
+
+  it('new/retry lifecycle fields are initialized and reset', () => {
+    insertWorkerRun('run-guard-4', 'jarvis-worker-1');
+    let row = getWorkerRun('run-guard-4');
+    expect(row?.phase).toBe('queued');
+    expect(row?.last_heartbeat_at).toBeNull();
+    expect(row?.active_container_name).toBeNull();
+    expect(row?.no_container_since).toBeNull();
+    expect(row?.expects_followup_container).toBe(0);
+    expect(row?.lease_expires_at).toBeNull();
+
+    updateWorkerRunLifecycle('run-guard-4', {
+      phase: 'active',
+      last_heartbeat_at: '2026-03-01T00:00:00.000Z',
+      active_container_name: 'nanoclaw-jarvis-worker-1-x',
+      no_container_since: '2026-03-01T00:01:00.000Z',
+      expects_followup_container: true,
+      supervisor_owner: 'test-owner',
+      lease_expires_at: '2026-03-01T00:02:00.000Z',
+    });
+    completeWorkerRun('run-guard-4', 'failed', 'failed');
+    const retryState = insertWorkerRun('run-guard-4', 'jarvis-worker-1');
+    row = getWorkerRun('run-guard-4');
+
+    expect(retryState).toBe('retry');
+    expect(row?.status).toBe('queued');
+    expect(row?.phase).toBe('queued');
+    expect(row?.last_heartbeat_at).toBeNull();
+    expect(row?.active_container_name).toBeNull();
+    expect(row?.no_container_since).toBeNull();
+    expect(row?.expects_followup_container).toBe(0);
+    expect(row?.supervisor_owner).toBeNull();
+    expect(row?.lease_expires_at).toBeNull();
+    expect(row?.recovered_from_reason).toBeNull();
+  });
+
+  it('marking running promotes queued phase to active and terminal clears lifecycle', () => {
+    insertWorkerRun('run-guard-5', 'jarvis-worker-1');
+    updateWorkerRunLifecycle('run-guard-5', {
+      phase: 'spawning',
+      active_container_name: 'nanoclaw-jarvis-worker-1-a',
+      lease_expires_at: '2026-03-01T00:02:00.000Z',
+      expects_followup_container: true,
+    });
+    updateWorkerRunStatus('run-guard-5', 'running');
+    let row = getWorkerRun('run-guard-5');
+    expect(row?.phase).toBe('active');
+
+    updateWorkerRunStatus('run-guard-5', 'failed_contract');
+    row = getWorkerRun('run-guard-5');
+    expect(row?.phase).toBe('terminal');
+    expect(row?.active_container_name).toBeNull();
+    expect(row?.no_container_since).toBeNull();
+    expect(row?.expects_followup_container).toBe(0);
+    expect(row?.lease_expires_at).toBeNull();
+  });
+
+  it('can recover from running_without_container terminal failure before completion accept', () => {
+    insertWorkerRun('run-guard-6', 'jarvis-worker-1');
+    completeWorkerRun(
+      'run-guard-6',
+      'failed',
+      'Auto-failed worker run with no active container',
+      JSON.stringify({ reason: 'running_without_container' }),
+    );
+
+    const recovered = recoverWorkerRunFromNoContainerFailure('run-guard-6');
+    const row = getWorkerRun('run-guard-6');
+
+    expect(recovered).toBe(true);
+    expect(row?.status).toBe('running');
+    expect(row?.phase).toBe('finalizing');
+    expect(row?.completed_at).toBeNull();
+    expect(row?.error_details).toBeNull();
+    expect(row?.recovered_from_reason).toBe('running_without_container');
+    expect(row?.expects_followup_container).toBe(0);
   });
 });
 

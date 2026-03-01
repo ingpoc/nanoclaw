@@ -77,10 +77,17 @@
 
 | Repo | Branch | Status |
 |------|--------|--------|
+| aadhaar-chain | jarvis-phase1-auth | ✅ Implemented |
 | aadhaar-chain | jarvis-push-w1-rerun | ✅ Pushed |
 | flatwatch | jarvis-phase2-flatwatch-v2 | ⚠️ Implemented, not pushed |
 | ondc-buyer | jarvis-push-w2-rerun | ✅ Pushed |
 | ondc-seller | jarvis-phase4-v3 | ⚠️ Implemented, not pushed |
+
+### Phase 1.1 - Auth Gateway (COMPLETED)
+- ✅ JWT token federation with configurable audience/issuer
+- ✅ Refresh token rotation with replay attack prevention
+- ✅ Cross-platform token validation endpoint (/api/auth/validate-external)
+- ✅ Role management endpoints (buyer/seller/society_member)
 
 ---
 

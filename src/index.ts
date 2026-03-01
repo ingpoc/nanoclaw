@@ -37,6 +37,9 @@ import {
   getRouterState,
   initDatabase,
   insertWorkerRun,
+  getProcessedMessageIds,
+  isNonRetryableWorkerStatus,
+  markMessagesProcessed,
   recoverWorkerRunFromNoContainerFailure,
   setRegisteredGroup,
   setRouterState,
@@ -561,8 +564,13 @@ function selectMessagesForExecution(
   return messages;
 }
 
-function isActiveOrTerminalWorkerStatus(status: string): boolean {
-  return status === 'running' || status === 'review_requested' || status === 'done';
+
+function markBatchProcessed(
+  chatJid: string,
+  messages: Array<{ id: string }>,
+  runId?: string,
+): void {
+  markMessagesProcessed(chatJid, messages.map((m) => m.id), runId);
 }
 
 function shouldAllowNoCodeCompletion(runId: string): boolean {
@@ -679,7 +687,24 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   const missedMessages = getMessagesSince(chatJid, sinceTimestamp, ASSISTANT_NAME);
 
   if (missedMessages.length === 0) return true;
-  const messagesToProcess = selectMessagesForExecution(group, missedMessages);
+  const selectedMessages = selectMessagesForExecution(group, missedMessages);
+
+  // Per-message idempotency: skip messages already processed (defense against cursor rollback replays)
+  const alreadyProcessed = getProcessedMessageIds(chatJid, selectedMessages.map((m) => m.id));
+  const messagesToProcess = selectedMessages.filter(
+    (m) => !alreadyProcessed.has(m.id),
+  );
+  if (messagesToProcess.length === 0) {
+    // All messages already processed — advance cursor without re-running agent
+    const advanceTimestamp = selectedMessages[selectedMessages.length - 1].timestamp;
+    lastAgentTimestamp[chatJid] = advanceTimestamp;
+    saveState();
+    logger.debug(
+      { group: group.name, skippedCount: selectedMessages.length },
+      'All messages already processed (idempotency), advancing cursor',
+    );
+    return true;
+  }
   const batchLastTimestamp = messagesToProcess[messagesToProcess.length - 1].timestamp;
 
   // For non-main groups, check if trigger is required and present
@@ -705,7 +730,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   if (workerRun) {
     const existingRun = getWorkerRun(workerRun.runId);
-    if (existingRun && isActiveOrTerminalWorkerStatus(existingRun.status)) {
+    if (existingRun && isNonRetryableWorkerStatus(existingRun.status)) {
       lastAgentTimestamp[chatJid] = batchLastTimestamp;
       saveState();
       logger.warn(
@@ -1107,6 +1132,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     // If we already sent output to the user, don't roll back the cursor —
     // the user got their response and re-processing would send duplicates.
     if (outputSentToUser) {
+      // Mark as processed so cursor rollback elsewhere won't re-send
+      markBatchProcessed(chatJid, messagesToProcess, workerRun?.runId);
       logger.warn({ group: group.name }, 'Agent error after output was sent, skipping cursor rollback to prevent duplicates');
       return true;
     }
@@ -1116,6 +1143,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     logger.warn({ group: group.name }, 'Agent error, rolled back message cursor for retry');
     return false;
   }
+
+  // Mark all messages as processed (idempotency guard against future cursor rollbacks)
+  markBatchProcessed(chatJid, messagesToProcess, workerRun?.runId);
 
   const pendingAfter = getMessagesSince(
     chatJid,

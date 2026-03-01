@@ -34,6 +34,9 @@ import { RegisteredGroup } from './types.js';
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
 
+// Must match AGENT_RUNNER_LOG_PREFIX in container/agent-runner/src/index.ts
+const AGENT_RUNNER_LOG_PREFIX = '[agent-runner]';
+
 export interface ContainerInput {
   prompt: string;
   sessionId?: string;
@@ -556,8 +559,15 @@ export async function runContainerAgent(
       for (const line of lines) {
         if (line) logger.debug({ container: group.folder }, line);
       }
-      // Don't reset timeout on stderr — SDK writes debug logs continuously.
-      // Timeout only resets on actual output (OUTPUT_MARKER in stdout).
+      // Re-arm no_output_timeout on our own [agent-runner] instrumentation lines
+      // (heartbeats, status logs) but NOT on SDK debug spam.
+      if (noOutputTimeout && chunk.includes(AGENT_RUNNER_LOG_PREFIX)) {
+        clearTimeout(noOutputTimeout);
+        noOutputTimeout = setTimeout(
+          () => stopForTimeout('no_output_timeout'),
+          configuredNoOutputTimeout,
+        );
+      }
       if (stderrTruncated) return;
       const remaining = CONTAINER_MAX_OUTPUT_SIZE - stderr.length;
       if (chunk.length > remaining) {

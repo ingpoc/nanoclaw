@@ -16,9 +16,11 @@ import {
   createTask,
   deleteTask,
   findWorkerRunByEffectiveSessionId,
+  getWorkerRun,
   getLatestReusableWorkerSession,
   getTaskById,
   insertWorkerRun,
+  isNonRetryableWorkerStatus,
   updateTask,
 } from './db.js';
 import { isValidGroupFolder } from './group-folder.js';
@@ -83,6 +85,16 @@ function writeDispatchBlockEvent(
 }
 
 function buildDispatchBlockedMessage(event: DispatchBlockEvent): string {
+  if (event.reason_code === 'duplicate_run_id') {
+    return [
+      '*Dispatch ignored (duplicate run_id)*',
+      ...(event.run_id ? [`• Run ID: \`${event.run_id}\``] : []),
+      `• Target: \`${event.target_jid}\` (${event.target_folder || 'unknown-folder'})`,
+      `• Reason: ${event.reason_text}`,
+      '• Action: no resend needed unless you intentionally want a new run_id.',
+    ].join('\n');
+  }
+
   const template = {
     run_id: event.run_id || 'task-<timestamp>-001',
     task_type: 'implement',
@@ -256,6 +268,14 @@ export function validateAndyWorkerDispatchMessage(
     return { valid: false, reason: 'andy-developer -> jarvis-worker message must be strict JSON dispatch payload' };
   }
 
+  const existingRun = getWorkerRun(parsed.run_id);
+  if (existingRun && isNonRetryableWorkerStatus(existingRun.status)) {
+    return {
+      valid: false,
+      reason: `duplicate run_id blocked: ${parsed.run_id} already ${existingRun.status}`,
+    };
+  }
+
   const { valid, errors } = validateDispatchPayload(parsed);
   if (!valid) {
     return { valid: false, reason: `invalid dispatch payload: ${errors.join('; ')}` };
@@ -399,6 +419,7 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     : !dispatchValidation.valid
                       ? dispatchValidation.reason
                       : queueDecision.reason;
+                  const isDuplicateRunId = (reason || '').startsWith('duplicate run_id blocked:');
                   logger.warn(
                     {
                       chatJid: data.chatJid,
@@ -412,6 +433,8 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     const parsed = parseDispatchPayload(data.text);
                     const reasonCode: DispatchBlockEvent['reason_code'] = !canAccessTarget
                       ? 'target_authorization_failed'
+                      : isDuplicateRunId
+                        ? 'duplicate_run_id'
                       : !dispatchValidation.valid
                         ? (
                           dispatchValidation.reason?.includes('only andy-developer')
@@ -628,6 +651,31 @@ export async function processTaskIpc(
                 target_folder: targetFolder,
                 reason_code: 'invalid_dispatch_payload',
                 reason_text: reasonText,
+              },
+            );
+            break;
+          }
+          const existingRun = getWorkerRun(parsed.run_id);
+          if (existingRun && isNonRetryableWorkerStatus(existingRun.status)) {
+            const reasonText = `duplicate run_id blocked: ${parsed.run_id} already ${existingRun.status}`;
+            logger.warn(
+              { sourceGroup, targetFolder, reason: reasonText },
+              'Blocked schedule_task: duplicate worker dispatch run_id',
+            );
+            await notifyDispatchBlocked(
+              deps,
+              registeredGroups,
+              IPC_BASE_DIR,
+              {
+                kind: 'dispatch_block',
+                timestamp: new Date().toISOString(),
+                source_group: sourceGroup,
+                source_jid: findGroupJidByFolder(registeredGroups, sourceGroup),
+                target_jid: targetJid,
+                target_folder: targetFolder,
+                reason_code: 'duplicate_run_id',
+                reason_text: reasonText,
+                run_id: parsed.run_id,
               },
             );
             break;

@@ -226,8 +226,11 @@ function selectModelForQuery(
   return model;
 }
 
+// Must match AGENT_RUNNER_LOG_PREFIX in src/container-runner.ts (host side)
+const AGENT_RUNNER_LOG_PREFIX = '[agent-runner]';
+
 function log(message: string): void {
-  console.error(`[agent-runner] ${message}`);
+  console.error(`${AGENT_RUNNER_LOG_PREFIX} ${message}`);
 }
 
 function getSessionSummary(sessionId: string, transcriptPath: string): string | null {
@@ -540,6 +543,14 @@ async function runQuery(
     log(`Using model: ${model}`);
   }
 
+  // Heartbeat: emit periodic stderr lines so the host can re-arm its
+  // no_output_timeout during long silent SDK phases (extended thinking, tool use).
+  // Must be shorter than CONTAINER_NO_OUTPUT_TIMEOUT on the host side.
+  const HEARTBEAT_INTERVAL_MS = 60_000;
+  const heartbeatInterval = setInterval(() => {
+    log('heartbeat');
+  }, HEARTBEAT_INTERVAL_MS);
+
   for await (const message of query({
     prompt: stream,
     options: {
@@ -624,6 +635,7 @@ async function runQuery(
     }
   }
 
+  clearInterval(heartbeatInterval);
   ipcPolling = false;
   log(`Query done. Messages: ${messageCount}, results: ${resultCount}, lastAssistantUuid: ${lastAssistantUuid || 'none'}, closedDuringQuery: ${closedDuringQuery}`);
   return { newSessionId, lastAssistantUuid, closedDuringQuery, fallbackRequested };

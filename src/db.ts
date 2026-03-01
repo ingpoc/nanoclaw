@@ -110,6 +110,14 @@ function createSchema(database: Database.Database): void {
       recovered_from_reason TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_worker_runs_folder ON worker_runs(group_folder, started_at);
+
+    CREATE TABLE IF NOT EXISTS processed_messages (
+      chat_jid TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      processed_at TEXT NOT NULL,
+      run_id TEXT,
+      PRIMARY KEY (chat_jid, message_id)
+    );
   `);
 
   // Add context_mode column if it doesn't exist (migration for existing DBs)
@@ -814,6 +822,15 @@ function isTerminalWorkerRunStatus(status: WorkerRunStatus): boolean {
   return TERMINAL_WORKER_RUN_STATUSES.has(status);
 }
 
+/** Status set where a duplicate dispatch/execution should be blocked. */
+const NON_RETRYABLE_WORKER_STATUSES: Set<string> = new Set([
+  'queued', 'running', 'review_requested', 'done',
+]);
+
+export function isNonRetryableWorkerStatus(status: string): boolean {
+  return NON_RETRYABLE_WORKER_STATUSES.has(status);
+}
+
 function canTransitionWorkerRunStatus(
   current: WorkerRunStatus,
   next: WorkerRunStatus,
@@ -1279,6 +1296,55 @@ export function findWorkerRunByEffectiveSessionId(sessionId: string): WorkerRunR
      ORDER BY started_at DESC
      LIMIT 1`,
   ).get(sessionId) as WorkerRunRecord | undefined;
+}
+
+// --- Per-message idempotency ---
+
+export function isMessageProcessed(chatJid: string, messageId: string): boolean {
+  const row = db.prepare(
+    `SELECT 1 FROM processed_messages WHERE chat_jid = ? AND message_id = ?`,
+  ).get(chatJid, messageId);
+  return !!row;
+}
+
+/** Return the set of messageIds (from the given list) that have already been processed. */
+export function getProcessedMessageIds(chatJid: string, messageIds: string[]): Set<string> {
+  if (messageIds.length === 0) return new Set();
+  const placeholders = messageIds.map(() => '?').join(',');
+  const rows = db.prepare(
+    `SELECT message_id FROM processed_messages WHERE chat_jid = ? AND message_id IN (${placeholders})`,
+  ).all(chatJid, ...messageIds) as Array<{ message_id: string }>;
+  return new Set(rows.map((r) => r.message_id));
+}
+
+export function markMessageProcessed(
+  chatJid: string,
+  messageId: string,
+  runId?: string,
+): void {
+  db.prepare(
+    `INSERT OR IGNORE INTO processed_messages (chat_jid, message_id, processed_at, run_id)
+     VALUES (?, ?, ?, ?)`,
+  ).run(chatJid, messageId, new Date().toISOString(), runId ?? null);
+}
+
+export function markMessagesProcessed(
+  chatJid: string,
+  messageIds: string[],
+  runId?: string,
+): void {
+  if (messageIds.length === 0) return;
+  const now = new Date().toISOString();
+  const runIdVal = runId ?? null;
+  const insert = db.prepare(
+    `INSERT OR IGNORE INTO processed_messages (chat_jid, message_id, processed_at, run_id)
+     VALUES (?, ?, ?, ?)`,
+  );
+  db.transaction(() => {
+    for (const id of messageIds) {
+      insert.run(chatJid, id, now, runIdVal);
+    }
+  })();
 }
 
 // --- JSON migration ---

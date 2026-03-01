@@ -11,6 +11,7 @@ import { logger } from './logger.js';
 export interface WorkerRunSupervisorConfig {
   hardTimeoutMs: number;
   noContainerGraceMs: number;
+  queuedCursorGraceMs: number;
   repairHandoffGraceMs: number;
   leaseTtlMs: number;
   processStartAtMs: number;
@@ -180,7 +181,13 @@ export class WorkerRunSupervisor {
         const cursor = chatJid ? input.lastAgentTimestamp[chatJid] : undefined;
         const startupSuppression = this.shouldSuppressQueuedCursorFailure(startedMs, nowMs);
         const spawnAcknowledged = !!toMs(run.spawn_acknowledged_at);
-        if (cursor && run.started_at <= cursor && !startupSuppression && !spawnAcknowledged) {
+        if (
+          cursor
+          && run.started_at <= cursor
+          && ageMs >= this.config.queuedCursorGraceMs
+          && !startupSuppression
+          && !spawnAcknowledged
+        ) {
           completeWorkerRun(
             run.run_id,
             'failed',
@@ -192,6 +199,7 @@ export class WorkerRunSupervisor {
               started_at: run.started_at,
               cursor,
               stale_ms: ageMs,
+              queued_cursor_grace_ms: this.config.queuedCursorGraceMs,
             }),
           );
           changed = true;

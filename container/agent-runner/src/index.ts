@@ -22,6 +22,7 @@ import { fileURLToPath } from 'url';
 interface ContainerInput {
   prompt: string;
   sessionId?: string;
+  runId?: string;
   groupFolder: string;
   chatJid: string;
   isMain: boolean;
@@ -767,15 +768,16 @@ async function main(): Promise<void> {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const mcpServerPath = path.join(__dirname, 'ipc-mcp-stdio.js');
 
-  // Try to extract run_id from dispatch payload (jarvis workers only)
-  let runId: string | undefined;
-  if (containerInput.groupFolder.startsWith('jarvis-worker')) {
+  // Worker runs pass runId explicitly from host; only fall back to parsing prompt
+  // for backward compatibility with older container-input payloads.
+  let runId: string | undefined = containerInput.runId;
+  if (!runId && containerInput.groupFolder.startsWith('jarvis-worker')) {
     try {
       const payload = JSON.parse(containerInput.prompt) as { run_id?: string };
       runId = payload.run_id;
-      if (runId) log(`Worker run_id: ${runId}`);
     } catch { /* not a JSON dispatch payload */ }
   }
+  if (runId) log(`Worker run_id: ${runId}`);
 
   let sessionId = containerInput.sessionId;
   fs.mkdirSync(IPC_INPUT_DIR, { recursive: true });

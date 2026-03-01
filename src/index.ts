@@ -85,6 +85,7 @@ const ANDY_DEVELOPER_FOLDER = 'andy-developer';
 const ACTIVE_WORKER_RUN_STATUSES = ['queued', 'running', 'review_requested'] as const;
 const WORKER_RUN_STALE_MS = 2 * 60 * 60 * 1000;
 const WORKER_NO_CONTAINER_GRACE_MS = 15 * 60 * 1000; // 15 minutes to allow for container image pull
+const WORKER_QUEUED_CURSOR_GRACE_MS = 10 * 60 * 1000; // Avoid false pre-spawn stale failures during normal queueing
 const WORKER_REPAIR_HANDOFF_GRACE_MS = 2 * 60 * 1000;
 const WORKER_LEASE_TTL_MS = 90 * 1000;
 const WORKER_RESTART_SUPPRESSION_WINDOW_MS = 60 * 1000;
@@ -96,6 +97,7 @@ const SIMPLE_ANDY_GREETING_PATTERN = /^(hi|hello|hey|yo|hiya|sup|ping|what'?s up
 const workerRunSupervisor = new WorkerRunSupervisor({
   hardTimeoutMs: WORKER_RUN_STALE_MS,
   noContainerGraceMs: WORKER_NO_CONTAINER_GRACE_MS,
+  queuedCursorGraceMs: WORKER_QUEUED_CURSOR_GRACE_MS,
   repairHandoffGraceMs: WORKER_REPAIR_HANDOFF_GRACE_MS,
   leaseTtlMs: WORKER_LEASE_TTL_MS,
   processStartAtMs: PROCESS_START_AT_MS,
@@ -178,6 +180,12 @@ function commitCursor(chatJid: string, timestamp: string): void {
     lastAgentTimestamp[chatJid] = timestamp;
     saveState();
   }
+}
+
+function maxTimestamp(a: string | undefined, b: string | undefined): string | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return isAfterTimestamp(a, b) ? a : b;
 }
 
 function commitInFlightCursor(chatJid: string): void {
@@ -785,10 +793,16 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   if (channel && isSimpleAndyGreeting(group, messagesToProcess)) {
     markCursorInFlight(chatJid, batchLastTimestamp);
-    await channel.sendMessage(chatJid, `${ASSISTANT_NAME}: Hey, I'm here. How can I help?`);
-    markBatchProcessed(chatJid, messagesToProcess);
-    commitInFlightCursor(chatJid);
-    return true;
+    try {
+      await channel.sendMessage(chatJid, `${ASSISTANT_NAME}: Hey, I'm here. How can I help?`);
+      markBatchProcessed(chatJid, messagesToProcess);
+      commitInFlightCursor(chatJid);
+      return true;
+    } catch (err) {
+      clearInFlightCursor(chatJid);
+      logger.warn({ group: group.name, err }, 'Simple Andy greeting failed to send');
+      return false;
+    }
   }
 
   const workerRun = extractWorkerRunContext(group, messagesToProcess);
@@ -927,6 +941,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   await channel?.setTyping?.(chatJid, true);
   let hadError = false;
   let outputSentToUser = false;
+  let outputAckCursor: string | undefined;
 
   const sessionOverride = workerSessionSelection
     ? (workerSessionSelection.selectedSessionId ?? null)
@@ -968,6 +983,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         if (outboundText && channel) {
           await channel.sendMessage(chatJid, outboundText);
           outputSentToUser = true;
+          outputAckCursor = maxTimestamp(
+            outputAckCursor,
+            inFlightAgentTimestamp[chatJid] || batchLastTimestamp,
+          );
         }
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)
@@ -981,7 +1000,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (result.status === 'error') {
       hadError = true;
     }
-  }, sessionOverride, onSpawn);
+  }, sessionOverride, onSpawn, workerRun?.runId);
 
   const workerSpawnFailedBeforeRunning = !!workerRun
     && (runOutcome.status === 'error' || hadError)
@@ -1047,7 +1066,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           containerName,
           'completion_repair_active',
         );
-      });
+      }, workerRun.runId);
       if (repairSpawned) {
         workerRunSupervisor.markContainerExited(workerRun.runId, 'finalizing');
       }
@@ -1238,9 +1257,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     // If we already sent output to the user, don't roll back the cursor —
     // the user got their response and re-processing would send duplicates.
     if (outputSentToUser) {
-      // Mark as processed and commit only this batch's cursor to avoid duplicate replies.
+      // Mark as processed and commit through the latest cursor that already produced output.
       markBatchProcessed(chatJid, messagesToProcess, workerRun?.runId);
-      commitCursor(chatJid, batchLastTimestamp);
+      commitCursor(chatJid, outputAckCursor || batchLastTimestamp);
       clearInFlightCursor(chatJid);
       logger.warn({ group: group.name }, 'Agent error after output was sent, skipping cursor rollback to prevent duplicates');
       return true;
@@ -1278,6 +1297,7 @@ async function runAgent(
   onOutput?: (output: ContainerOutput) => Promise<void>,
   sessionOverride?: string | null,
   onSpawn?: (containerName: string) => void,
+  workerRunId?: string,
 ): Promise<RunAgentResult> {
   const isMain = group.folder === MAIN_GROUP_FOLDER;
   const sessionId = sessionOverride === undefined
@@ -1336,6 +1356,7 @@ async function runAgent(
       {
         prompt: effectivePrompt,
         sessionId,
+        runId: workerRunId,
         groupFolder: group.folder,
         chatJid,
         isMain,

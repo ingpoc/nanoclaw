@@ -40,6 +40,7 @@ const AGENT_RUNNER_LOG_PREFIX = '[agent-runner]';
 export interface ContainerInput {
   prompt: string;
   sessionId?: string;
+  runId?: string;
   groupFolder: string;
   chatJid: string;
   isMain: boolean;

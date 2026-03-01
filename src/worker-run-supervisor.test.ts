@@ -27,6 +27,7 @@ import { WorkerRunSupervisor } from './worker-run-supervisor.js';
 const supervisor = new WorkerRunSupervisor({
   hardTimeoutMs: 60 * 60 * 1000,
   noContainerGraceMs: 5 * 60 * 1000,
+  queuedCursorGraceMs: 0,
   repairHandoffGraceMs: 2 * 60 * 1000,
   leaseTtlMs: 60 * 1000,
   processStartAtMs: Date.now() - 5 * 60 * 1000,
@@ -148,6 +149,7 @@ describe('WorkerRunSupervisor.reconcile', () => {
     const startupSupervisor = new WorkerRunSupervisor({
       hardTimeoutMs: 60 * 60 * 1000,
       noContainerGraceMs: 5 * 60 * 1000,
+      queuedCursorGraceMs: 0,
       repairHandoffGraceMs: 2 * 60 * 1000,
       leaseTtlMs: 60 * 1000,
       processStartAtMs: Date.now(),
@@ -164,6 +166,32 @@ describe('WorkerRunSupervisor.reconcile', () => {
     });
 
     const row = getWorkerRun('run-super-6');
+    expect(changed).toBe(false);
+    expect(row?.status).toBe('queued');
+    expect(row?.error_details).toBeNull();
+  });
+
+  it('does not fail queued run from cursor mismatch before queued cursor grace expires', () => {
+    const graceSupervisor = new WorkerRunSupervisor({
+      hardTimeoutMs: 60 * 60 * 1000,
+      noContainerGraceMs: 5 * 60 * 1000,
+      queuedCursorGraceMs: 5 * 60 * 1000,
+      repairHandoffGraceMs: 2 * 60 * 1000,
+      leaseTtlMs: 60 * 1000,
+      processStartAtMs: Date.now() - 10 * 60 * 1000,
+      restartSuppressionWindowMs: 60 * 1000,
+      ownerId: 'grace-supervisor',
+    });
+    insertWorkerRun('run-super-7', 'jarvis-worker-7');
+    const cursor = new Date(Date.now() + 60_000).toISOString();
+    mockHasRunningContainerWithPrefix.mockReturnValue(false);
+
+    const changed = graceSupervisor.reconcile({
+      lastAgentTimestamp: { 'jid-7': cursor },
+      resolveChatJid: () => 'jid-7',
+    });
+
+    const row = getWorkerRun('run-super-7');
     expect(changed).toBe(false);
     expect(row?.status).toBe('queued');
     expect(row?.error_details).toBeNull();

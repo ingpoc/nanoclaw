@@ -15,6 +15,16 @@ Single Node.js process that connects to WhatsApp, routes messages to Claude Agen
 
 Folder-level docs index: [`docs/README.md`](docs/README.md)
 
+## Mission-Aligned Engineering Contract
+
+- Ground every task in [`docs/MISSION.md`](docs/MISSION.md) and make alignment explicit in reasoning and decisions.
+- Think from first principles: define requirements, constraints, invariants, and tradeoffs before selecting an implementation.
+- Operate as an expert with a clear technical opinion on the correct path; explain why it is the best mission-aligned approach.
+- Prioritize reliability, optimization, and efficiency as core defaults for design, implementation, and validation.
+- Use the most relevant internal skills/tools first, and verify outcomes with concrete evidence.
+- If a better mission-aligned approach exists, surface it proactively and reason with the user before execution.
+- Do not rely on assumptions when facts are retrievable; gather repo facts from code/docs and use DeepWiki for repository documentation when additional context is needed.
+
 ## Docs Index
 
 ```text

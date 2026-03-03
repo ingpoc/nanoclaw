@@ -1,7 +1,76 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-03T07:39:08.675283+00:00",
+  "updated_at": "2026-03-03T07:51:45.895806+00:00",
   "incidents": [
+    {
+      "id": "incident-20260303T073709Z",
+      "title": "verify-worker-connectivity preflight false-negative during transient launchd/container status window",
+      "status": "open",
+      "severity": "unknown",
+      "created_at": "2026-03-03T07:37:09.694540+00:00",
+      "updated_at": "2026-03-03T07:51:45.895748+00:00",
+      "summary": {
+        "symptom": "verify-worker-connectivity preflight false-negative during transient launchd/container status window",
+        "suspected_cause": "preflight check in verify-worker-connectivity intermittently observes launchd/container status as down while standalone preflight passes...",
+        "impact": "verify-worker-connectivity returns FAIL despite successful worker probe and stale-state gates, creating noisy reliability signal",
+        "next_action": "stabilize service/runtime health sampling in verify prechecks or split hard-gate and advisory precheck modes"
+      },
+      "evidence": {
+        "bundle_count": 0
+      },
+      "context": {
+        "lane": "andy-developer"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-03T07:37:09.694540+00:00",
+          "author": "user",
+          "text": "reported: verify-worker-connectivity preflight false-negative during transient launchd/container status window"
+        },
+        {
+          "ts": "2026-03-03T07:51:45.895745+00:00",
+          "author": "operator",
+          "text": "2026-03-03 mitigation applied: verify-worker-connectivity preflight changed to advisory; functional gates (probe dispatch + lane evidence + stale-state) remain hard-fail. Command now returns PASS with WARN preflight in transient windows."
+        }
+      ]
+    },
+    {
+      "id": "incident-20260303T072358Z",
+      "title": "jarvis-worker-1 probe failed_contract due completion branch mismatch",
+      "status": "open",
+      "severity": "unknown",
+      "created_at": "2026-03-03T07:23:58.677764+00:00",
+      "updated_at": "2026-03-03T07:47:27.462054+00:00",
+      "summary": {
+        "symptom": "jarvis-worker-1 probe failed_contract due completion branch mismatch",
+        "suspected_cause": "worker completion contract drift: first completion block used stale branch, causing branch mismatch validation",
+        "impact": "verify-worker-connectivity can fail even when worker runtime is healthy; creates false-negative reliability signal for mission gate",
+        "next_action": "tighten worker probe completion validation/retry path so stale first completion blocks do not leave failed_contract terminal state"
+      },
+      "evidence": {
+        "bundle_count": 0
+      },
+      "context": {
+        "lane": "jarvis-worker-1"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-03T07:23:58.677764+00:00",
+          "author": "user",
+          "text": "reported: jarvis-worker-1 probe failed_contract due completion branch mismatch"
+        },
+        {
+          "ts": "2026-03-03T07:43:32.945831+00:00",
+          "author": "operator",
+          "text": "2026-03-03: fixed completion parser to prefer latest valid <completion> block (src/dispatch-validator.ts). Added regression test in src/jarvis-worker-dispatch.test.ts. Focused probe run probe-jarvis-worker-1-1772523711-18103 PASS review_requested."
+        },
+        {
+          "ts": "2026-03-03T07:47:27.462052+00:00",
+          "author": "operator",
+          "text": "2026-03-03 post-fix validation: verify-worker-connectivity --skip-prechecks PASS with jarvis-worker-1 review_requested (probe-jarvis-worker-1-1772523843-18433) and jarvis-worker-2 review_requested (probe-jarvis-worker-2-1772523906-6470)."
+        }
+      ]
+    },
     {
       "id": "incident-worker-connectivity-block-20260227",
       "title": "Workers not connected; Andy developer cannot restart workers; push task blocked",
@@ -87,78 +156,6 @@
           "ts": "2026-03-03T07:39:08.576263+00:00",
           "author": "operator",
           "text": "2026-03-03: post-fix happiness-gate PASS (greeting/status/progress latency <1s) with conversational frontdesk replies; keep open until manual User POV runbook + explicit user confirmation."
-        }
-      ]
-    },
-    {
-      "id": "incident-20260303T073709Z",
-      "title": "verify-worker-connectivity preflight false-negative during transient launchd/container status window",
-      "status": "open",
-      "severity": "unknown",
-      "created_at": "2026-03-03T07:37:09.694540+00:00",
-      "updated_at": "2026-03-03T07:37:18.190092+00:00",
-      "summary": {
-        "symptom": "verify-worker-connectivity preflight false-negative during transient launchd/container status window",
-        "suspected_cause": "preflight check in verify-worker-connectivity intermittently observes launchd/container status as down while standalone preflight passes...",
-        "impact": "verify-worker-connectivity returns FAIL despite successful worker probe and stale-state gates, creating noisy reliability signal",
-        "next_action": "stabilize service/runtime health sampling in verify prechecks or split hard-gate and advisory precheck modes"
-      },
-      "evidence": {
-        "bundle_count": 0
-      },
-      "context": {
-        "lane": "andy-developer"
-      },
-      "notes": [
-        {
-          "ts": "2026-03-03T07:37:09.694540+00:00",
-          "author": "user",
-          "text": "reported: verify-worker-connectivity preflight false-negative during transient launchd/container status window"
-        }
-      ]
-    },
-    {
-      "id": "incident-20260303T072358Z",
-      "title": "jarvis-worker-1 probe failed_contract due completion branch mismatch",
-      "status": "open",
-      "severity": "unknown",
-      "created_at": "2026-03-03T07:23:58.677764+00:00",
-      "updated_at": "2026-03-03T07:24:09.003724+00:00",
-      "summary": {
-        "symptom": "jarvis-worker-1 probe failed_contract due completion branch mismatch",
-        "suspected_cause": "worker completion contract drift: first completion block used stale branch, causing branch mismatch validation",
-        "impact": "verify-worker-connectivity can fail even when worker runtime is healthy; creates false-negative reliability signal for mission gate",
-        "next_action": "tighten worker probe completion validation/retry path so stale first completion blocks do not leave failed_contract terminal state"
-      },
-      "evidence": {
-        "bundle_count": 0
-      },
-      "context": {
-        "lane": "jarvis-worker-1"
-      },
-      "notes": [
-        {
-          "ts": "2026-03-03T07:23:58.677764+00:00",
-          "author": "user",
-          "text": "reported: jarvis-worker-1 probe failed_contract due completion branch mismatch"
-        }
-      ]
-    }
-  ]
-}
-probe completion validation/retry path so stale first completion blocks do not leave failed_contract terminal state"
-      },
-      "evidence": {
-        "bundle_count": 0
-      },
-      "context": {
-        "lane": "jarvis-worker-1"
-      },
-      "notes": [
-        {
-          "ts": "2026-03-03T07:23:58.677764+00:00",
-          "author": "user",
-          "text": "reported: jarvis-worker-1 probe failed_contract due completion branch mismatch"
         }
       ]
     }

@@ -699,6 +699,16 @@ Done!
     expect(contract?.run_id).toBe('task-4');
     expect(contract?.branch).toBe('jarvis-e');
   });
+
+  it('prefers the latest valid completion block when multiple blocks are present', () => {
+    const output = [
+      '<completion>{"run_id":"task-5","branch":"jarvis-old","commit_sha":"deadbeef","files_changed":["a.ts"],"test_result":"pass","risk":"low","pr_skipped_reason":"n/a"}</completion>',
+      '<completion>{"run_id":"task-5","branch":"jarvis-new","commit_sha":"deadbeef","files_changed":["a.ts"],"test_result":"pass","risk":"low","pr_skipped_reason":"n/a"}</completion>',
+    ].join('\n');
+    const contract = parseCompletionContract(output);
+    expect(contract?.run_id).toBe('task-5');
+    expect(contract?.branch).toBe('jarvis-new');
+  });
 });
 
 describe('completion contract validation', () => {

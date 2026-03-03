@@ -88,6 +88,9 @@ fail() {
   local msg="$2"
   local evidence="${3:-}"
   echo "[FAIL] $msg"
+  if [ -n "$evidence" ]; then
+    echo "  detail: $evidence"
+  fi
   fail_count=$((fail_count + 1))
   record_check "fail" "critical" "$id" "$msg" "$evidence"
 }
@@ -256,25 +259,32 @@ else
 fi
 
 if have_cmd launchctl; then
-  service_line="$( (launchctl list || true) | awk '$3=="com.nanoclaw"{print $1" "$2" "$3}' )"
-  if [ -z "$service_line" ]; then
+  uid_val="$(id -u)"
+  launch_dump="$(launchctl print "gui/$uid_val/com.nanoclaw" 2>/dev/null || true)"
+  if [ -z "$launch_dump" ]; then
     fail "service.launchd.registered" "launchd service com.nanoclaw not registered"
-  else
-    service_pid="$(awk '{print $1}' <<<"$service_line")"
-    service_status="$(awk '{print $2}' <<<"$service_line")"
+  elif echo "$launch_dump" | grep -q "state = running"; then
+    service_pid="$(echo "$launch_dump" | awk -F'= ' '/^[[:space:]]*pid =/{print $2; exit}' | tr -d ' ')"
     if [[ "$service_pid" =~ ^[0-9]+$ ]] && [ "$service_pid" -gt 0 ]; then
       pass "service.launchd.running" "launchd service com.nanoclaw running (pid=$service_pid)"
     else
-      fail "service.launchd.running" "launchd service com.nanoclaw not running (pid=$service_pid status=$service_status)"
+      pass "service.launchd.running" "launchd service com.nanoclaw running"
     fi
+  else
+    service_state="$(echo "$launch_dump" | awk -F'= ' '/^[[:space:]]*state =/{print $2; exit}' | tr -d ' ')"
+    fail "service.launchd.running" "launchd service com.nanoclaw not running (state=${service_state:-unknown})"
   fi
 else
   warn "service.launchd.available" "launchctl not available; skipping service check"
 fi
 
 if have_cmd container; then
-  run_check "runtime.system" "container system status" 3 1 container system status
-  run_check "runtime.builder" "container builder status" 3 1 container builder status
+  if ! run_check "runtime.system" "container system status" 5 2 container system status; then
+    :
+  fi
+  if ! run_check "runtime.builder" "container builder status" 5 2 container builder status; then
+    :
+  fi
 else
   fail "runtime.cli" "container CLI not found"
 fi

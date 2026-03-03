@@ -36,9 +36,11 @@ RUN mkdir -p /usr/local/lib/node_modules \
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Worker runner (plain Node.js, no container-time dependency install)
+# Worker runner (compiled from runner/src/*.ts → runner/dist/*.js)
+# Uses async spawn + heartbeat instead of blocking spawnSync.
 WORKDIR /app
-COPY runner/index.js /app/index.js
+COPY runner/dist/index.js /app/index.js
+COPY runner/dist/lib.js /app/lib.js
 
 # OpenCode config via OPENCODE_CONFIG_CONTENT env var (highest precedence).
 # Keep a pinned free model; load group CLAUDE.md and skill path deterministically.

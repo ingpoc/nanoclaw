@@ -85,12 +85,15 @@ export const WORKER_PROBE_QUEUED_STALE_MS = parseInt(
   process.env.WORKER_PROBE_QUEUED_STALE_MS || '180000',
   10,
 );
+// Must be > PROBE_NO_OUTPUT_TIMEOUT_MS (115s) + enough margin for model execution.
+// With 60s heartbeat interval, 360s allows ~6 heartbeats before supervisor kill.
+// Inequality: no_output_timeout (115s) < probe_running_stale (360s) < verify_timeout (480s)
 export const WORKER_PROBE_RUNNING_STALE_MS = parseInt(
-  process.env.WORKER_PROBE_RUNNING_STALE_MS || '180000',
+  process.env.WORKER_PROBE_RUNNING_STALE_MS || '360000',
   10,
 );
 export const VERIFY_WORKER_PROBE_TIMEOUT_SEC = parseInt(
-  process.env.VERIFY_WORKER_PROBE_TIMEOUT_SEC || '240',
+  process.env.VERIFY_WORKER_PROBE_TIMEOUT_SEC || '480',
   10,
 );
 export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(

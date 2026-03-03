@@ -55,7 +55,8 @@
       "Bash(node-gyp rebuild:*)",
       "Bash(chmod +x:*)",
       "Bash(find:*)",
-      "Bash(~/.zshrc:*)"
+      "Bash(~/.zshrc:*)",
+      "Bash(./container/worker/build.sh:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

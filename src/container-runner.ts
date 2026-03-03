@@ -18,6 +18,7 @@ import {
   WORKER_MIN_NO_OUTPUT_TIMEOUT_MS,
   TIMEZONE,
   WORKER_CONTAINER_IMAGE,
+  WORKER_PROBE_RUNNING_STALE_MS,
 } from './config.js';
 import { readEnvFile } from './env.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -40,6 +41,21 @@ const AGENT_RUNNER_LOG_PREFIX = '[agent-runner]';
 // Probe runs are liveness checks; they must fail fast so verify-worker-connectivity
 // can complete deterministically without leaving long-lived in-flight probes.
 const PROBE_NO_OUTPUT_TIMEOUT_MS = 115_000;
+
+// Timeout inequality guard: called once before first probe dispatch.
+// no_output_timeout (115s) < probe_running_watchdog (360s) < verify_timeout
+let _timeoutInvariantChecked = false;
+export function assertProbeTimeoutInvariant(): void {
+  if (_timeoutInvariantChecked) return;
+  _timeoutInvariantChecked = true;
+  if (WORKER_PROBE_RUNNING_STALE_MS <= PROBE_NO_OUTPUT_TIMEOUT_MS) {
+    throw new Error(
+      `WORKER_PROBE_RUNNING_STALE_MS (${WORKER_PROBE_RUNNING_STALE_MS}) must be > ` +
+        `PROBE_NO_OUTPUT_TIMEOUT_MS (${PROBE_NO_OUTPUT_TIMEOUT_MS}). ` +
+        `Otherwise supervisor kills probes before container-level timeout fires.`,
+    );
+  }
+}
 
 
 export interface ContainerInput {
@@ -603,6 +619,7 @@ export async function runContainerAgent(
     const configuredIdleTimeout = group.containerConfig?.idleTimeout || IDLE_TIMEOUT;
     const requestedNoOutputTimeout = group.containerConfig?.noOutputTimeout || CONTAINER_NO_OUTPUT_TIMEOUT;
     const isProbeRun = Boolean(input.runId && input.runId.startsWith('probe-'));
+    if (isProbeRun) assertProbeTimeoutInvariant();
     const configuredNoOutputTimeout = isJarvisWorkerFolder(group.folder)
       ? (isProbeRun
         ? PROBE_NO_OUTPUT_TIMEOUT_MS

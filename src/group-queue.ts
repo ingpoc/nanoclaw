@@ -18,6 +18,7 @@ const DEAD_LETTER_RETRY_MS = 5 * 60 * 1000;
 
 interface GroupState {
   active: boolean;
+  activeSinceMs: number | null;
   idleWaiting: boolean;
   isTaskContainer: boolean;
   pendingMessages: boolean;
@@ -83,6 +84,7 @@ export class GroupQueue {
     if (!state) {
       state = {
         active: false,
+        activeSinceMs: null,
         idleWaiting: false,
         isTaskContainer: false,
         pendingMessages: false,
@@ -110,6 +112,23 @@ export class GroupQueue {
 
   setProcessMessagesFn(fn: (groupJid: string) => Promise<boolean>): void {
     this.processMessagesFn = fn;
+  }
+
+  getRuntimeState(groupJid: string): {
+    active: boolean;
+    activeSinceMs: number | null;
+    idleWaiting: boolean;
+    isTaskContainer: boolean;
+    pendingMessages: boolean;
+  } {
+    const state = this.getGroup(groupJid);
+    return {
+      active: state.active,
+      activeSinceMs: state.activeSinceMs,
+      idleWaiting: state.idleWaiting,
+      isTaskContainer: state.isTaskContainer,
+      pendingMessages: state.pendingMessages,
+    };
   }
 
   enqueueMessageCheck(groupJid: string): void {
@@ -248,6 +267,7 @@ export class GroupQueue {
   ): Promise<void> {
     const state = this.getGroup(groupJid);
     state.active = true;
+    state.activeSinceMs = Date.now();
     state.idleWaiting = false;
     state.isTaskContainer = false;
     state.pendingMessages = false;
@@ -280,6 +300,7 @@ export class GroupQueue {
         );
       }
       state.active = false;
+      state.activeSinceMs = null;
       state.process = null;
       state.containerName = null;
       state.groupFolder = null;
@@ -291,6 +312,7 @@ export class GroupQueue {
   private async runTask(groupJid: string, task: QueuedTask): Promise<void> {
     const state = this.getGroup(groupJid);
     state.active = true;
+    state.activeSinceMs = Date.now();
     state.idleWaiting = false;
     state.isTaskContainer = true;
     this.activeCount++;
@@ -306,6 +328,7 @@ export class GroupQueue {
       logger.error({ groupJid, taskId: task.id, err }, 'Error running task');
     } finally {
       state.active = false;
+      state.activeSinceMs = null;
       state.isTaskContainer = false;
       state.process = null;
       state.containerName = null;
@@ -398,17 +421,49 @@ export class GroupQueue {
     }
   }
 
-  async shutdown(_gracePeriodMs: number): Promise<void> {
+  private listActiveStates(): Array<{ jid: string; state: GroupState }> {
+    const active: Array<{ jid: string; state: GroupState }> = [];
+    for (const [jid, state] of this.groups) {
+      if (state.active && state.process && !state.process.killed && state.containerName) {
+        active.push({ jid, state });
+      }
+    }
+    return active;
+  }
+
+  private async waitForDrain(gracePeriodMs: number): Promise<void> {
+    if (gracePeriodMs <= 0) return;
+
+    const deadline = Date.now() + gracePeriodMs;
+    while (Date.now() < deadline) {
+      if (this.listActiveStates().length === 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+
+  async shutdown(gracePeriodMs: number): Promise<void> {
     this.shuttingDown = true;
+
+    const requestedCloseSentinels: string[] = [];
+    for (const { jid, state } of this.listActiveStates()) {
+      // Only ask idle agent lanes to close gracefully. Active worker runs should
+      // get a chance to finish during the drain window.
+      if (state.groupFolder && state.idleWaiting) {
+        this.closeStdin(jid);
+        requestedCloseSentinels.push(jid);
+      }
+    }
+
+    await this.waitForDrain(gracePeriodMs);
 
     const stoppedContainers: string[] = [];
     const failedStops: Array<{ name: string; attempts: string[] }> = [];
     const signaledGroups: string[] = [];
 
-    // Explicitly stop active containers during shutdown. Detached containers from
-    // previous NanoClaw processes can consume IPC inputs and create "no reply"
-    // behavior because their output is no longer wired to the current host process.
-    for (const [jid, state] of this.groups) {
+    // After drain window, force-stop any remaining containers to avoid detached
+    // orphan agents outliving the host process.
+    const remaining = this.listActiveStates();
+    for (const { jid, state } of remaining) {
       if (!state.process || state.process.killed || !state.containerName) continue;
 
       if (state.groupFolder) {
@@ -433,6 +488,9 @@ export class GroupQueue {
     logger.info(
       {
         activeCount: this.activeCount,
+        gracePeriodMs,
+        requestedCloseSentinels,
+        forcedStopCount: remaining.length,
         stoppedContainers,
         failedStops,
         signaledGroups,

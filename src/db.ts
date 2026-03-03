@@ -92,7 +92,9 @@ function createSchema(database: Database.Database): void {
       files_changed TEXT,
       dispatch_repo TEXT,
       dispatch_branch TEXT,
+      request_id TEXT,
       context_intent TEXT,
+      dispatch_payload TEXT,
       parent_run_id TEXT,
       dispatch_session_id TEXT,
       selected_session_id TEXT,
@@ -111,6 +113,29 @@ function createSchema(database: Database.Database): void {
       recovered_from_reason TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_worker_runs_folder ON worker_runs(group_folder, started_at);
+
+    CREATE TABLE IF NOT EXISTS andy_requests (
+      request_id TEXT PRIMARY KEY,
+      chat_jid TEXT NOT NULL,
+      source_group_folder TEXT NOT NULL,
+      user_message_id TEXT NOT NULL UNIQUE,
+      user_prompt TEXT NOT NULL,
+      intent TEXT NOT NULL,
+      state TEXT NOT NULL,
+      worker_run_id TEXT,
+      worker_group_folder TEXT,
+      coordinator_session_id TEXT,
+      last_status_text TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      closed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_andy_requests_chat_state
+      ON andy_requests(chat_jid, state, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_andy_requests_worker_run
+      ON andy_requests(worker_run_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_andy_requests_created
+      ON andy_requests(created_at DESC);
 
     CREATE TABLE IF NOT EXISTS processed_messages (
       chat_jid TEXT NOT NULL,
@@ -152,7 +177,9 @@ function createSchema(database: Database.Database): void {
     `ALTER TABLE worker_runs ADD COLUMN risk_summary TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN dispatch_repo TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN dispatch_branch TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN request_id TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN context_intent TEXT`,
+    `ALTER TABLE worker_runs ADD COLUMN dispatch_payload TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN parent_run_id TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN dispatch_session_id TEXT`,
     `ALTER TABLE worker_runs ADD COLUMN selected_session_id TEXT`,
@@ -200,6 +227,8 @@ function createSchema(database: Database.Database): void {
       ON worker_runs(group_folder, dispatch_repo, dispatch_branch, started_at);
     CREATE INDEX IF NOT EXISTS idx_worker_runs_effective_session
       ON worker_runs(effective_session_id, started_at);
+    CREATE INDEX IF NOT EXISTS idx_worker_runs_request_id
+      ON worker_runs(request_id, started_at);
   `);
 
   // Add is_bot_message column if it doesn't exist (migration for existing DBs)
@@ -782,7 +811,9 @@ export interface WorkerRunRecord {
   risk_summary: string | null;
   dispatch_repo: string | null;
   dispatch_branch: string | null;
+  request_id: string | null;
   context_intent: string | null;
+  dispatch_payload: string | null;
   parent_run_id: string | null;
   dispatch_session_id: string | null;
   selected_session_id: string | null;
@@ -803,11 +834,43 @@ export interface WorkerRunRecord {
 export interface WorkerRunDispatchMetadata {
   dispatch_repo?: string;
   dispatch_branch?: string;
+  request_id?: string;
   context_intent?: 'continue' | 'fresh';
+  dispatch_payload?: string;
   parent_run_id?: string;
   dispatch_session_id?: string;
   selected_session_id?: string;
   session_selection_source?: 'explicit' | 'auto_repo_branch' | 'new';
+}
+
+export type AndyRequestIntent = 'status_query' | 'work_intake' | 'other';
+
+export type AndyRequestState =
+  | 'received'
+  | 'queued_for_coordinator'
+  | 'coordinator_active'
+  | 'worker_queued'
+  | 'worker_running'
+  | 'worker_review_requested'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export interface AndyRequestRecord {
+  request_id: string;
+  chat_jid: string;
+  source_group_folder: string;
+  user_message_id: string;
+  user_prompt: string;
+  intent: AndyRequestIntent | string;
+  state: AndyRequestState | string;
+  worker_run_id: string | null;
+  worker_group_folder: string | null;
+  coordinator_session_id: string | null;
+  last_status_text: string | null;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
 }
 
 export interface WorkerRunSessionMetadata {
@@ -906,7 +969,9 @@ export function insertWorkerRun(
              risk_summary = NULL,
              dispatch_repo = NULL,
              dispatch_branch = NULL,
+             request_id = NULL,
              context_intent = NULL,
+             dispatch_payload = NULL,
              parent_run_id = NULL,
              dispatch_session_id = NULL,
              selected_session_id = NULL,
@@ -947,7 +1012,9 @@ export function updateWorkerRunDispatchMetadata(
     `UPDATE worker_runs
      SET dispatch_repo = ?,
          dispatch_branch = ?,
+         request_id = ?,
          context_intent = ?,
+         dispatch_payload = ?,
          parent_run_id = ?,
          dispatch_session_id = ?,
          selected_session_id = ?,
@@ -956,7 +1023,9 @@ export function updateWorkerRunDispatchMetadata(
   ).run(
     metadata.dispatch_repo ?? null,
     metadata.dispatch_branch ?? null,
+    metadata.request_id ?? null,
     metadata.context_intent ?? null,
+    metadata.dispatch_payload ?? null,
     metadata.parent_run_id ?? null,
     metadata.dispatch_session_id ?? null,
     metadata.selected_session_id ?? null,
@@ -1096,6 +1165,90 @@ export function recoverWorkerRunForCompletionAccept(
   );
 }
 
+export function acceptWorkerRunCompletion(
+  runId: string,
+  data: {
+    branch_name?: string;
+    pr_url?: string;
+    commit_sha?: string;
+    files_changed?: string[];
+    test_summary?: string;
+    risk_summary?: string;
+    effective_session_id?: string | null;
+    session_resume_status?: string | null;
+    session_resume_error?: string | null;
+  },
+): { ok: boolean; recovered: boolean } {
+  return db.transaction((): { ok: boolean; recovered: boolean } => {
+    const run = getWorkerRun(runId);
+    if (!run) return { ok: false, recovered: false };
+
+    let recovered = false;
+    if (run.status === 'failed' || run.status === 'failed_contract') {
+      const reason = getWorkerFailureReason(run.error_details);
+      if (!reason || !COMPLETION_RECOVERABLE_FAILURE_REASONS.has(reason)) {
+        return { ok: false, recovered: false };
+      }
+      db.prepare(
+        `UPDATE worker_runs
+         SET status = 'running',
+             completed_at = NULL,
+             result_summary = NULL,
+             error_details = NULL,
+             phase = 'finalizing',
+             active_container_name = NULL,
+             no_container_since = NULL,
+             expects_followup_container = 0,
+             lease_expires_at = NULL,
+             recovered_from_reason = ?
+         WHERE run_id = ?`,
+      ).run(reason, runId);
+      recovered = true;
+    } else if (run.status !== 'running' && run.status !== 'queued') {
+      return { ok: false, recovered: false };
+    }
+
+    db.prepare(
+      `UPDATE worker_runs
+       SET branch_name = ?,
+           pr_url = ?,
+           commit_sha = ?,
+           files_changed = ?,
+           test_summary = ?,
+           risk_summary = ?,
+           effective_session_id = COALESCE(?, effective_session_id),
+           session_resume_status = COALESCE(?, session_resume_status),
+           session_resume_error = COALESCE(?, session_resume_error)
+       WHERE run_id = ?`,
+    ).run(
+      data.branch_name ?? null,
+      data.pr_url ?? null,
+      data.commit_sha ?? null,
+      data.files_changed ? JSON.stringify(data.files_changed) : null,
+      data.test_summary ?? null,
+      data.risk_summary ?? null,
+      data.effective_session_id ?? null,
+      data.session_resume_status ?? null,
+      data.session_resume_error ?? null,
+      runId,
+    );
+
+    db.prepare(
+      `UPDATE worker_runs
+       SET status = 'review_requested',
+           completed_at = COALESCE(completed_at, ?),
+           phase = 'terminal',
+           active_container_name = NULL,
+           no_container_since = NULL,
+           expects_followup_container = 0,
+           lease_expires_at = NULL
+       WHERE run_id = ? AND status IN ('running', 'queued')`,
+    ).run(new Date().toISOString(), runId);
+
+    return { ok: true, recovered };
+  })();
+}
+
 export function recoverWorkerRunFromNoContainerFailure(runId: string): boolean {
   const result = recoverWorkerRunForCompletionReason(
     runId,
@@ -1150,6 +1303,31 @@ export function updateWorkerRunStatus(runId: string, status: WorkerRunStatus): v
       ).run(status, runId);
     }
   }
+}
+
+export function requeueWorkerRunForReplay(runId: string, reason: string): boolean {
+  const run = getWorkerRun(runId);
+  if (!run) return false;
+  if (isTerminalWorkerRunStatus(run.status as WorkerRunStatus)) return false;
+
+  db.prepare(
+    `UPDATE worker_runs
+     SET status = 'queued',
+         phase = 'queued',
+         completed_at = NULL,
+         active_container_name = NULL,
+         no_container_since = NULL,
+         expects_followup_container = 0,
+         supervisor_owner = NULL,
+         lease_expires_at = NULL,
+         recovered_from_reason = ?,
+         error_details = NULL,
+         result_summary = NULL,
+         last_heartbeat_at = ?,
+         retry_count = retry_count + 1
+     WHERE run_id = ?`,
+  ).run(reason, new Date().toISOString(), runId);
+  return true;
 }
 
 export function updateWorkerRunCompletion(
@@ -1260,7 +1438,9 @@ export function getWorkerRun(runId: string): {
   risk_summary: string | null;
   dispatch_repo: string | null;
   dispatch_branch: string | null;
+  request_id: string | null;
   context_intent: string | null;
+  dispatch_payload: string | null;
   parent_run_id: string | null;
   dispatch_session_id: string | null;
   selected_session_id: string | null;
@@ -1279,7 +1459,7 @@ export function getWorkerRun(runId: string): {
 } | undefined {
   return db
     .prepare(
-      `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, spawn_acknowledged_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
+      `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, request_id, context_intent, dispatch_payload, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, spawn_acknowledged_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
        FROM worker_runs
        WHERE run_id = ?`,
     )
@@ -1315,7 +1495,7 @@ export function getWorkerRuns(options?: {
 
   return db
     .prepare(
-      `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, spawn_acknowledged_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
+      `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, request_id, context_intent, dispatch_payload, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, spawn_acknowledged_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
        FROM worker_runs
        ${where}
        ORDER BY started_at DESC
@@ -1330,7 +1510,7 @@ export function getLatestReusableWorkerSession(
   branch: string,
 ): WorkerRunRecord | undefined {
   return db.prepare(
-    `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, spawn_acknowledged_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
+    `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, request_id, context_intent, dispatch_payload, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, spawn_acknowledged_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
      FROM worker_runs
      WHERE group_folder = ?
        AND dispatch_repo = ?
@@ -1344,7 +1524,7 @@ export function getLatestReusableWorkerSession(
 
 export function findWorkerRunByEffectiveSessionId(sessionId: string): WorkerRunRecord | undefined {
   return db.prepare(
-    `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, context_intent, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, spawn_acknowledged_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
+    `SELECT run_id, group_folder, status, phase, started_at, completed_at, retry_count, result_summary, error_details, branch_name, pr_url, commit_sha, files_changed, test_summary, risk_summary, dispatch_repo, dispatch_branch, request_id, context_intent, dispatch_payload, parent_run_id, dispatch_session_id, selected_session_id, effective_session_id, session_selection_source, session_resume_status, session_resume_error, last_heartbeat_at, spawn_acknowledged_at, active_container_name, no_container_since, expects_followup_container, supervisor_owner, lease_expires_at, recovered_from_reason
      FROM worker_runs
      WHERE effective_session_id = ?
      ORDER BY started_at DESC
@@ -1399,6 +1579,176 @@ export function markMessagesProcessed(
       insert.run(chatJid, id, now, runIdVal);
     }
   })();
+}
+
+function isTerminalAndyRequestState(state: AndyRequestState | string): boolean {
+  return state === 'completed' || state === 'failed' || state === 'cancelled';
+}
+
+export function createAndyRequestIfAbsent(input: {
+  request_id: string;
+  chat_jid: string;
+  source_group_folder: string;
+  user_message_id: string;
+  user_prompt: string;
+  intent: AndyRequestIntent;
+  state?: AndyRequestState;
+}): { request_id: string; created: boolean } {
+  const existing = db.prepare(
+    `SELECT request_id FROM andy_requests WHERE user_message_id = ?`,
+  ).get(input.user_message_id) as { request_id: string } | undefined;
+  if (existing) {
+    return { request_id: existing.request_id, created: false };
+  }
+
+  const now = new Date().toISOString();
+  const state = input.state ?? 'received';
+  db.prepare(
+    `INSERT INTO andy_requests (
+      request_id,
+      chat_jid,
+      source_group_folder,
+      user_message_id,
+      user_prompt,
+      intent,
+      state,
+      created_at,
+      updated_at,
+      closed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    input.request_id,
+    input.chat_jid,
+    input.source_group_folder,
+    input.user_message_id,
+    input.user_prompt,
+    input.intent,
+    state,
+    now,
+    now,
+    isTerminalAndyRequestState(state) ? now : null,
+  );
+
+  return { request_id: input.request_id, created: true };
+}
+
+export function getAndyRequestByMessageId(messageId: string): AndyRequestRecord | undefined {
+  return db.prepare(
+    `SELECT request_id, chat_jid, source_group_folder, user_message_id, user_prompt, intent, state, worker_run_id, worker_group_folder, coordinator_session_id, last_status_text, created_at, updated_at, closed_at
+     FROM andy_requests
+     WHERE user_message_id = ?`,
+  ).get(messageId) as AndyRequestRecord | undefined;
+}
+
+export function getAndyRequestById(requestId: string): AndyRequestRecord | undefined {
+  return db.prepare(
+    `SELECT request_id, chat_jid, source_group_folder, user_message_id, user_prompt, intent, state, worker_run_id, worker_group_folder, coordinator_session_id, last_status_text, created_at, updated_at, closed_at
+     FROM andy_requests
+     WHERE request_id = ?`,
+  ).get(requestId) as AndyRequestRecord | undefined;
+}
+
+export function getLatestAndyRequestForChat(chatJid: string): AndyRequestRecord | undefined {
+  return db.prepare(
+    `SELECT request_id, chat_jid, source_group_folder, user_message_id, user_prompt, intent, state, worker_run_id, worker_group_folder, coordinator_session_id, last_status_text, created_at, updated_at, closed_at
+     FROM andy_requests
+     WHERE chat_jid = ?
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+  ).get(chatJid) as AndyRequestRecord | undefined;
+}
+
+export function listActiveAndyRequests(chatJid: string, limit = 5): AndyRequestRecord[] {
+  const boundedLimit = Math.max(1, Math.min(limit, 20));
+  return db.prepare(
+    `SELECT request_id, chat_jid, source_group_folder, user_message_id, user_prompt, intent, state, worker_run_id, worker_group_folder, coordinator_session_id, last_status_text, created_at, updated_at, closed_at
+     FROM andy_requests
+     WHERE chat_jid = ? AND state NOT IN ('completed', 'failed', 'cancelled')
+     ORDER BY updated_at DESC
+     LIMIT ?`,
+  ).all(chatJid, boundedLimit) as AndyRequestRecord[];
+}
+
+export function updateAndyRequestState(
+  requestId: string,
+  state: AndyRequestState,
+  lastStatusText?: string | null,
+): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE andy_requests
+     SET state = ?,
+         last_status_text = COALESCE(?, last_status_text),
+         updated_at = ?,
+         closed_at = CASE
+           WHEN ? IN ('completed', 'failed', 'cancelled') THEN COALESCE(closed_at, ?)
+           ELSE NULL
+         END
+     WHERE request_id = ?`,
+  ).run(
+    state,
+    lastStatusText ?? null,
+    now,
+    state,
+    now,
+    requestId,
+  );
+}
+
+export function linkAndyRequestToWorkerRun(
+  requestId: string,
+  runId: string,
+  workerGroupFolder: string,
+  nextState: AndyRequestState = 'worker_queued',
+): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE andy_requests
+     SET worker_run_id = ?,
+         worker_group_folder = ?,
+         state = ?,
+         updated_at = ?,
+         closed_at = NULL
+     WHERE request_id = ?`,
+  ).run(runId, workerGroupFolder, nextState, now, requestId);
+}
+
+export function updateAndyRequestByWorkerRun(
+  runId: string,
+  state: AndyRequestState,
+  lastStatusText?: string | null,
+): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE andy_requests
+     SET state = ?,
+         last_status_text = COALESCE(?, last_status_text),
+         updated_at = ?,
+         closed_at = CASE
+           WHEN ? IN ('completed', 'failed', 'cancelled') THEN COALESCE(closed_at, ?)
+           ELSE NULL
+         END
+     WHERE worker_run_id = ?`,
+  ).run(
+    state,
+    lastStatusText ?? null,
+    now,
+    state,
+    now,
+    runId,
+  );
+}
+
+export function setAndyRequestCoordinatorSession(
+  requestId: string,
+  sessionId: string | null,
+): void {
+  db.prepare(
+    `UPDATE andy_requests
+     SET coordinator_session_id = ?,
+         updated_at = ?
+     WHERE request_id = ?`,
+  ).run(sessionId, new Date().toISOString(), requestId);
 }
 
 // --- Worker steering events ---

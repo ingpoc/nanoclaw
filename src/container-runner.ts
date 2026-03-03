@@ -15,6 +15,7 @@ import {
   DATA_DIR,
   GROUPS_DIR,
   IDLE_TIMEOUT,
+  WORKER_MIN_NO_OUTPUT_TIMEOUT_MS,
   TIMEZONE,
   WORKER_CONTAINER_IMAGE,
 } from './config.js';
@@ -37,6 +38,7 @@ const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
 // Must match AGENT_RUNNER_LOG_PREFIX in container/agent-runner/src/index.ts
 const AGENT_RUNNER_LOG_PREFIX = '[agent-runner]';
 
+
 export interface ContainerInput {
   prompt: string;
   sessionId?: string;
@@ -46,6 +48,10 @@ export interface ContainerInput {
   isMain: boolean;
   isScheduledTask?: boolean;
   assistantName?: string;
+  opsExtended?: boolean;
+  schedulerEnabled?: boolean;
+  workerSteeringEnabled?: boolean;
+  dynamicGroupRegistrationEnabled?: boolean;
   secrets?: Record<string, string>;
 }
 
@@ -592,8 +598,23 @@ export async function runContainerAgent(
     let hadStreamingOutput = false;
     let timeoutReason: 'no_output_timeout' | 'hard_timeout' | null = null;
     const configuredIdleTimeout = group.containerConfig?.idleTimeout || IDLE_TIMEOUT;
-    const configuredNoOutputTimeout = group.containerConfig?.noOutputTimeout || CONTAINER_NO_OUTPUT_TIMEOUT;
+    const requestedNoOutputTimeout = group.containerConfig?.noOutputTimeout || CONTAINER_NO_OUTPUT_TIMEOUT;
+    const configuredNoOutputTimeout = isJarvisWorkerFolder(group.folder)
+      ? Math.max(requestedNoOutputTimeout, WORKER_MIN_NO_OUTPUT_TIMEOUT_MS)
+      : requestedNoOutputTimeout;
     const configuredHardTimeout = group.containerConfig?.timeout || CONTAINER_TIMEOUT;
+    if (configuredNoOutputTimeout !== requestedNoOutputTimeout) {
+      logger.info(
+        {
+          group: group.name,
+          folder: group.folder,
+          requestedNoOutputTimeout,
+          effectiveNoOutputTimeout: configuredNoOutputTimeout,
+          minWorkerNoOutputTimeout: WORKER_MIN_NO_OUTPUT_TIMEOUT_MS,
+        },
+        'Raised worker no-output timeout to minimum safety floor',
+      );
+    }
     // Grace period: hard timeout must be at least idle timeout + 30s so the
     // graceful _close sentinel has time to trigger before the hard kill fires.
     const hardTimeoutMs = Math.max(configuredHardTimeout, configuredIdleTimeout + 30_000);
@@ -608,7 +629,10 @@ export async function runContainerAgent(
       );
       exec(stopContainer(containerName), { timeout: 15000 }, (err) => {
         if (err) {
-          logger.warn({ group: group.name, containerName, err }, 'Graceful stop failed, force killing');
+          logger.warn(
+            { group: group.name, containerName, err },
+            'Graceful stop failed, force killing',
+          );
           container.kill('SIGKILL');
         }
       });
@@ -689,7 +713,8 @@ export async function runContainerAgent(
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const logFile = path.join(logsDir, `container-${timestamp}.log`);
-      const isVerbose = process.env.LOG_LEVEL === 'debug' || process.env.LOG_LEVEL === 'trace';
+      const isVerbose =
+        process.env.LOG_LEVEL === 'debug' || process.env.LOG_LEVEL === 'trace';
 
       const logLines = [
         `=== Container Run Log ===`,

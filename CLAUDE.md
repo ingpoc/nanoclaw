@@ -24,6 +24,8 @@ Folder-level docs index: [`docs/README.md`](docs/README.md)
 - Use the most relevant internal skills/tools first, and verify outcomes with concrete evidence.
 - If a better mission-aligned approach exists, surface it proactively and reason with the user before execution.
 - Do not rely on assumptions when facts are retrievable; gather repo facts from code/docs and use DeepWiki for repository documentation when additional context is needed.
+- Any issue discovered during work must be logged/updated in `.claude/progress/incident.json` through the incident workflow before closure.
+- Any new feature request not already mapped must be feature-tracked and work-item tracked before implementation.
 
 ## Docs Index
 
@@ -77,6 +79,7 @@ Mandatory preflight:
 - Runtime/auth/container issue debugging starts with `/debug`
 - Incident triage, recurring-issue investigation, and incident lifecycle tracking starts with `/incident-debugger`
 - Incident registry is `.claude/progress/incident.json` (open/resolved state and lifecycle notes)
+- Feature inventory/touch-set discipline starts with `feature-tracking`, then `nanoclaw-orchestrator` work-item tracking
 - For browser/docs/repo tasks, use intent-matched MCP routing from `docs/operations/skills-vs-docs-map.md` (`chrome-devtools` preferred for browser tasks)
 
 Primary ops:

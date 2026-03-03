@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-03T11:27:36.231242+00:00",
+  "updated_at": "2026-03-03T18:24:15.264095+00:00",
   "incidents": [
     {
       "id": "incident-worker-connectivity-block-20260227",
@@ -8,7 +8,7 @@
       "status": "open",
       "severity": "high",
       "created_at": "2026-02-27T13:02:09.098285+00:00",
-      "updated_at": "2026-03-03T11:27:36.231173+00:00",
+      "updated_at": "2026-03-03T18:24:15.264018+00:00",
       "summary": {
         "symptom": "Workers are not connected and I don't have access to restart them. To restart the push task: start worker containers manually via deployment system, then I will dispatch push task. Alternative: push branches manually from local environment.",
         "suspected_cause": "unknown",
@@ -30,19 +30,19 @@
       },
       "notes": [
         {
-          "ts": "2026-03-03T11:03:38.587917+00:00",
-          "author": "operator",
-          "text": "2026-03-03 16:32 IST: Replay-loop fix active (log shows 'Agent error after worker run terminalized...'). However worker execution path still unstable: probe containers emit no completion/stdout and hit stale_probe_run_watchdog/exit 137; verify-worker-connectivity remains FAIL (jarvis-worker-2 probe run probe-jarvis-worker-2-1772535666-8018 timed out in 120s while still running)."
-        },
-        {
-          "ts": "2026-03-03T11:04:43.115313+00:00",
-          "author": "operator",
-          "text": "2026-03-03 health check: preflight PASS(12/12, main lane inactivity warning); reliability WARN on recent container errors (18) and one running worker probe; status shows top failure reasons stale_probe_queued_watchdog=9, stale_probe_run_watchdog=4, worker execution failed=4; running_without_container historical count=14."
-        },
-        {
           "ts": "2026-03-03T11:27:36.231168+00:00",
           "author": "operator",
           "text": "2026-03-03 patch applied: coupled watchdog timeout path with runtime fallback stops (GroupQueue abort now supports activeContainerName/groupFolder fallback and supervisor passes run lifecycle metadata). Probe watchdog/no-output budgets tightened (110s/115s) to keep verify-worker-connectivity deterministic. Evidence after restart (pid 67118): probe runs now terminalize failed_timeout with timeout_ms=110000 and abort.detail=runtime_container_stop_fallback; stale queued/running counts remain 0; no in-flight probe backlog persists after probe/verify runs."
+        },
+        {
+          "ts": "2026-03-03T15:49:57.013215+00:00",
+          "author": "operator",
+          "text": "2026-03-03 live post-refactor validation: verify-worker-connectivity FAILED. Probe runs probe-jarvis-worker-1-1772552703-12783 and probe-jarvis-worker-2-1772552823-26146 both terminalized failed_timeout with reason stale_probe_run_watchdog (~110s). Logs show runtime_container_stop_fallback stopVerified=true, then generation-guarded terminal update rejected and completion path attempted failed_runtime with missing completion block; final status remained failed_timeout."
+        },
+        {
+          "ts": "2026-03-03T18:24:15.264013+00:00",
+          "author": "operator",
+          "text": "2026-03-03 implementation validation: applied terminal-is-final race fix (no ungated completion fallback), probe watchdog moved to env-backed 180s with verify guard 240s. After daemon restart (pid 88861), verify-worker-connectivity still FAILS but reason shifted from stale_probe_run_watchdog to worker_execution_timeout (container no_output_timeout after 115000ms) for probe runs probe-jarvis-worker-1-1772561978-20667 and probe-jarvis-worker-2-1772562102-29270. No new 'falling back to ungated completion' or invalid completion transition logs for these runs."
         }
       ]
     },

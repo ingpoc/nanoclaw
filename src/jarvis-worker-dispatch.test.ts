@@ -7,6 +7,7 @@ import {
   getWorkerRun,
   getWorkerRuns,
   getAndyRequestById,
+  markRunTerminal,
   linkAndyRequestToWorkerRun,
   recoverWorkerRunForCompletionAccept,
   recoverWorkerRunFromNoContainerFailure,
@@ -159,6 +160,61 @@ describe('completeWorkerRun (legacy helper)', () => {
 describe('worker run status transition guards', () => {
   beforeEach(() => {
     _initTestDatabase();
+  });
+
+  it('markRunTerminal reports applied when generation and status are active', () => {
+    insertWorkerRun('run-terminal-1', 'jarvis-worker-1');
+    const generation = getWorkerRun('run-terminal-1')?.run_generation ?? -1;
+    const outcome = markRunTerminal(
+      'run-terminal-1',
+      generation,
+      'failed_timeout',
+      'timed out',
+    );
+    const row = getWorkerRun('run-terminal-1');
+
+    expect(outcome).toBe('applied');
+    expect(row?.status).toBe('failed_timeout');
+    expect(row?.phase).toBe('terminal');
+  });
+
+  it('markRunTerminal reports already_terminal when run already completed', () => {
+    insertWorkerRun('run-terminal-2', 'jarvis-worker-1');
+    completeWorkerRun('run-terminal-2', 'failed_runtime', 'already failed');
+    const generation = getWorkerRun('run-terminal-2')?.run_generation ?? -1;
+    const outcome = markRunTerminal(
+      'run-terminal-2',
+      generation,
+      'failed_timeout',
+      'should not overwrite',
+    );
+
+    expect(outcome).toBe('already_terminal');
+    expect(getWorkerRun('run-terminal-2')?.status).toBe('failed_runtime');
+  });
+
+  it('markRunTerminal reports generation_mismatch for stale generation values', () => {
+    insertWorkerRun('run-terminal-3', 'jarvis-worker-1');
+    const outcome = markRunTerminal(
+      'run-terminal-3',
+      999,
+      'failed_timeout',
+      'stale generation',
+    );
+
+    expect(outcome).toBe('generation_mismatch');
+    expect(getWorkerRun('run-terminal-3')?.status).toBe('queued');
+  });
+
+  it('markRunTerminal reports not_found for missing runs', () => {
+    const outcome = markRunTerminal(
+      'run-terminal-missing',
+      0,
+      'failed_timeout',
+      'missing run',
+    );
+
+    expect(outcome).toBe('not_found');
   });
 
   it('does not allow reopening a terminal run via updateWorkerRunStatus', () => {

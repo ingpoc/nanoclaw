@@ -17,6 +17,8 @@ import {
   RUNTIME_OPS_EXTENDED,
   SHUTDOWN_DRAIN_MS,
   TRIGGER_PATTERN,
+  WORKER_PROBE_QUEUED_STALE_MS,
+  WORKER_PROBE_RUNNING_STALE_MS,
 } from './config.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import {
@@ -54,6 +56,7 @@ import {
   initDatabase,
   insertWorkerRun,
   getProcessedMessageIds,
+  isTerminalWorkerRunStatus,
   isNonRetryableWorkerStatus,
   markMessagesProcessed,
   markRunRunning,
@@ -111,10 +114,6 @@ const MISSION_CORE_FOLDERS = new Set([
 ]);
 const ACTIVE_WORKER_RUN_STATUSES = ['queued', 'provisioning', 'running', 'stopping'] as const;
 const WORKER_RUN_STALE_MS = 2 * 60 * 60 * 1000;
-// Keep probe watchdog strictly below verify-worker-connectivity (120s) so
-// failed probes terminalize before gate timeout and do not leave in-flight locks.
-const WORKER_PROBE_QUEUED_STALE_MS = 110 * 1000;
-const WORKER_PROBE_RUNNING_STALE_MS = 110 * 1000;
 const WORKER_QUEUED_CURSOR_GRACE_MS = 10 * 60 * 1000; // Avoid false pre-spawn stale failures during normal queueing
 const WORKER_LEASE_TTL_MS = 90 * 1000;
 const WORKER_RESTART_SUPPRESSION_WINDOW_MS = 60 * 1000;
@@ -1486,25 +1485,58 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     workerRunSupervisor.markContainerExited(workerRun.runId, 'completion_validating');
   }
 
+  const markStoredRunTerminalized = (): boolean => {
+    if (!workerRun) return false;
+    const storedRun = getWorkerRun(workerRun.runId);
+    if (storedRun && isTerminalWorkerRunStatus(storedRun.status)) {
+      workerRunTerminalized = true;
+      return true;
+    }
+    return false;
+  };
+
   const finalizeWorkerRun = (
     status: 'failed_runtime' | 'failed_timeout' | 'failed_contract',
     summary: string,
     details?: string,
   ): void => {
     if (!workerRun) return;
-    workerRunTerminalized = true;
-    if (workerRunGeneration !== undefined) {
-      const ok = markRunTerminal(workerRun.runId, workerRunGeneration, status, summary, details);
-      if (ok) return;
+    if (workerRunGeneration === undefined) {
       logger.warn(
-        { runId: workerRun.runId, status, generation: workerRunGeneration },
-        'Generation-guarded terminal update rejected; falling back to ungated completion',
+        { runId: workerRun.runId, status },
+        'Missing worker generation during terminal update; skipping terminal mutation',
       );
+      markStoredRunTerminalized();
+      return;
     }
-    completeWorkerRun(workerRun.runId, status, summary, details);
+
+    const outcome = markRunTerminal(workerRun.runId, workerRunGeneration, status, summary, details);
+    if (outcome === 'applied' || outcome === 'already_terminal') {
+      workerRunTerminalized = true;
+      return;
+    }
+
+    const nowTerminal = markStoredRunTerminalized();
+    if (nowTerminal) return;
+
+    logger.warn(
+      { runId: workerRun.runId, status, generation: workerRunGeneration, outcome },
+      'Generation-guarded terminal update rejected; terminal state not changed',
+    );
   };
 
   if (workerRun) {
+    const skipWorkerCompletionProcessing = markStoredRunTerminalized();
+    if (skipWorkerCompletionProcessing) {
+      workerRunSupervisor.markTerminal(workerRun.runId);
+      refreshWorkerRunSnapshotsForGroups();
+      logger.warn(
+        { runId: workerRun.runId, group: group.name },
+        'Skipping completion/repair flow because run is already terminalized',
+      );
+    }
+
+    if (!skipWorkerCompletionProcessing) {
     let completion = parseCompletionContract(workerOutputBuffer);
     let completionCheck = validateCompletionContract(completion, {
       expectedRunId: workerRun.runId,
@@ -1779,6 +1811,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       );
       workerRunSupervisor.markTerminal(workerRun.runId);
       refreshWorkerRunSnapshotsForGroups();
+    }
     }
   }
 

@@ -144,6 +144,17 @@ Worker/Andy container runtime now uses three timeout layers:
 2. `CONTAINER_NO_OUTPUT_TIMEOUT` (default `720000` ms): fail-fast when no streamed marker output appears.
 3. `CONTAINER_TIMEOUT` (default `1800000` ms): hard safety timeout (effective hard timeout is at least `IDLE_TIMEOUT + 30000`).
 
+Probe watchdog controls for worker lanes:
+
+1. `WORKER_PROBE_QUEUED_STALE_MS` (default `180000` ms): stale threshold for queued/provisioning probe runs.
+2. `WORKER_PROBE_RUNNING_STALE_MS` (default `180000` ms): stale threshold for running/stopping probe runs.
+3. `VERIFY_WORKER_PROBE_TIMEOUT_SEC` (default `240` s): verify gate timeout per probe lane.
+
+Verification guardrail:
+
+- `--probe-timeout-sec` must be greater than `WORKER_PROBE_RUNNING_STALE_MS` plus safety margin.
+- Current default inequality is `240s > 180s + 10s`, which avoids deterministic false-negative probe failures.
+
 Timeout artifacts include explicit reason codes:
 
 - `no_output_timeout`

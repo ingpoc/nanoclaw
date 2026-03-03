@@ -81,6 +81,18 @@ export const WORKER_MIN_NO_OUTPUT_TIMEOUT_MS = parseInt(
   process.env.WORKER_MIN_NO_OUTPUT_TIMEOUT_MS || '900000',
   10,
 );
+export const WORKER_PROBE_QUEUED_STALE_MS = parseInt(
+  process.env.WORKER_PROBE_QUEUED_STALE_MS || '180000',
+  10,
+);
+export const WORKER_PROBE_RUNNING_STALE_MS = parseInt(
+  process.env.WORKER_PROBE_RUNNING_STALE_MS || '180000',
+  10,
+);
+export const VERIFY_WORKER_PROBE_TIMEOUT_SEC = parseInt(
+  process.env.VERIFY_WORKER_PROBE_TIMEOUT_SEC || '240',
+  10,
+);
 export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
   process.env.CONTAINER_MAX_OUTPUT_SIZE || '10485760',
   10,

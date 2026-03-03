@@ -918,8 +918,8 @@ const TERMINAL_WORKER_RUN_STATUSES: Set<WorkerRunStatus> = new Set([
   'failed_contract',
 ]);
 
-function isTerminalWorkerRunStatus(status: WorkerRunStatus): boolean {
-  return TERMINAL_WORKER_RUN_STATUSES.has(status);
+export function isTerminalWorkerRunStatus(status: string): boolean {
+  return TERMINAL_WORKER_RUN_STATUSES.has(status as WorkerRunStatus);
 }
 
 /** Status set where a duplicate dispatch/execution should be blocked. */
@@ -1239,7 +1239,7 @@ export function markRunTerminal(
   status: Extract<WorkerRunStatus, 'review_requested' | 'done' | 'failed_contract' | 'failed_runtime' | 'failed_timeout'>,
   resultSummary?: string,
   errorDetails?: string,
-): boolean {
+): 'applied' | 'already_terminal' | 'generation_mismatch' | 'not_found' {
   const result = db.prepare(
     `UPDATE worker_runs
      SET status = ?,
@@ -1262,7 +1262,13 @@ export function markRunTerminal(
     runId,
     generation,
   );
-  return result.changes > 0;
+  if (result.changes > 0) return 'applied';
+
+  const current = getWorkerRun(runId);
+  if (!current) return 'not_found';
+  if (isTerminalWorkerRunStatus(current.status)) return 'already_terminal';
+  if (current.run_generation !== generation) return 'generation_mismatch';
+  return 'generation_mismatch';
 }
 
 export function recoverWorkerRunForCompletionAccept(

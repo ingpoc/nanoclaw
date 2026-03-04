@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# Prevent pyenv shim rehash failures from polluting gate command exits in restricted environments.
+export PYENV_REHASH_DISABLE="${PYENV_REHASH_DISABLE:-1}"
+
 RUN_BUILD=1
 RUN_TESTS=1
 RUN_CONNECTIVITY=1
@@ -122,7 +125,7 @@ run_check() {
   log_file="$(mktemp "/tmp/jarvis-acceptance-${check_id}.XXXXXX")"
 
   set +e
-  bash -lc "$command_str" >"$log_file" 2>&1
+  TMPDIR="/tmp" PYENV_REHASH_DISABLE="${PYENV_REHASH_DISABLE:-1}" bash -c "$command_str" >"$log_file" 2>&1
   exit_code=$?
   set -e
 

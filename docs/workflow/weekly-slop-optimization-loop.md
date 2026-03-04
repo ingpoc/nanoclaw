@@ -49,25 +49,19 @@ bash scripts/check-tooling-governance.sh
 Find unreferenced docs:
 
 ```bash
-find docs -type f -name '*.md' | sort > /tmp/docs-all.txt
-refs=/tmp/docs-refs.txt; : > "$refs"
-for f in CLAUDE.md AGENTS.md DOCS.md docs/README.md $(find docs .claude/rules -type f -name '*.md' | sort); do
-  rg -o --no-filename 'docs/[A-Za-z0-9._/-]+\.md' "$f" >> "$refs" || true
-done
-sort -u "$refs" -o "$refs"
-comm -23 /tmp/docs-all.txt "$refs"
+bash scripts/workflow/slop-inventory.sh --list-unreferenced-docs
 ```
 
 Find unreferenced scripts:
 
 ```bash
-find scripts -type f \( -name '*.sh' -o -name '*.ts' \) | sort > /tmp/scripts-all.txt
-refs=/tmp/scripts-refs.txt; : > "$refs"
-for f in CLAUDE.md AGENTS.md DOCS.md package.json $(find docs .claude/rules .github/workflows scripts -type f \( -name '*.md' -o -name '*.yml' -o -name '*.yaml' -o -name '*.sh' -o -name '*.ts' \) | sort); do
-  rg -o --no-filename 'scripts/[A-Za-z0-9._/-]+\.(sh|ts)' "$f" >> "$refs" || true
-done
-sort -u "$refs" -o "$refs"
-comm -23 /tmp/scripts-all.txt "$refs"
+bash scripts/workflow/slop-inventory.sh --list-unreferenced-scripts
+```
+
+Optional combined summary (counts + lists):
+
+```bash
+bash scripts/workflow/slop-inventory.sh --summary
 ```
 
 Check exact-duplicate scripts:

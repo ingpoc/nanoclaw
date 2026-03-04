@@ -149,7 +149,11 @@ if [ "$SKIP_PROBE" -eq 0 ]; then
   fi
 fi
 
-mapfile -t lanes < <(sqlite3 "$DB_PATH" "SELECT folder FROM registered_groups WHERE folder LIKE 'jarvis-worker-%' ORDER BY folder;")
+lanes=()
+while IFS= read -r lane; do
+  [ -n "$lane" ] || continue
+  lanes+=("$lane")
+done < <(sqlite3 "$DB_PATH" "SELECT folder FROM registered_groups WHERE folder LIKE 'jarvis-worker-%' ORDER BY folder;")
 if [ "${#lanes[@]}" -eq 0 ]; then
   echo "[FAIL] no registered jarvis-worker lanes found"
   exit 1

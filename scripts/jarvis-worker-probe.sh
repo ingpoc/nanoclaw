@@ -80,7 +80,11 @@ if [ -n "$DISPATCH_FILE" ] && [ ! -f "$DISPATCH_FILE" ]; then
   exit 1
 fi
 
-mapfile -t lane_rows < <(
+lane_rows=()
+while IFS= read -r lane_row; do
+  [ -n "$lane_row" ] || continue
+  lane_rows+=("$lane_row")
+done < <(
   sqlite3 -separator '|' "$DB_PATH" \
     "SELECT folder, jid FROM registered_groups WHERE folder LIKE 'jarvis-worker-%' ORDER BY folder;"
 )

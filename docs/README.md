@@ -11,6 +11,7 @@ docs/
   operations/       # role authority and change-management matrix
   reference/        # baseline requirements/spec/security documents
   troubleshooting/  # debug playbooks and platform-specific fixes
+  research/         # workflow research intake and weekly optimization evidence
 ```
 
 ## Start Points
@@ -35,6 +36,7 @@ docs/
 - Container debugging flow: `docs/workflow/nanoclaw-container-debugging.md`
 - User review readiness gate: `docs/workflow/nanoclaw-github-control-plane.md` (QA handoff section) + `docs/troubleshooting/DEBUG_CHECKLIST.md` (runtime recovery)
 - Ops scripts quick entrypoint: `scripts/jarvis-ops.sh` (`preflight`, `reliability`, `acceptance-gate`, `status`, `trace`, `verify-worker-connectivity`, `dispatch-lint`, `db-doctor`, `incident`, `probe`, `hotspots`, `incident-bundle`, `recover`, `smoke`, `watch`)
+- Message timeline helper script: `scripts/jarvis-message-timeline.sh` (invoked by `scripts/jarvis-ops.sh message-timeline`)
 - Tooling governance lint (hooks/subagents/built-ins): `bash scripts/check-tooling-governance.sh`
 - Operational ownership: `docs/operations/roles-classification.md`
 - Workflow setup + update ownership: `docs/operations/workflow-setup-responsibility-map.md`
@@ -56,6 +58,7 @@ docs/
 - Mission statement: `docs/MISSION.md`
 - Changelog: `docs/CHANGELOG.md`
 - Archive index: `docs/archives/CHANGELOG-2026-02-26.md`
+- Research intake + weekly optimization evidence: `docs/research/README.md`
 
 ## Authority
 

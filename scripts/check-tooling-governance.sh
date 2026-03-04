@@ -71,9 +71,10 @@ function hasExecBit(relPath) {
 
 const budget = readJson("docs/operations/tooling-governance-budget.json", "tooling governance budget");
 const settings = readJson(".claude/settings.local.json", "claude settings");
+let allow = [];
 
 if (settings) {
-  const allow = Array.isArray(settings?.permissions?.allow) ? settings.permissions.allow : [];
+  allow = Array.isArray(settings?.permissions?.allow) ? settings.permissions.allow : [];
   metrics.allow_entries = allow.length;
   metrics.wildcard_allow_entries = allow.filter((entry) => String(entry).includes(":*")).length;
 
@@ -88,6 +89,41 @@ if (settings) {
     if (Number.isFinite(maxWildcard) && metrics.wildcard_allow_entries > maxWildcard) {
       addError(
         `wildcard permissions exceeded budget (${metrics.wildcard_allow_entries} > ${maxWildcard}); prune or raise budget intentionally`
+      );
+    }
+  }
+}
+
+const seenAllowEntries = new Set();
+for (const rawEntry of allow) {
+  const entry = String(rawEntry).trim();
+  if (!entry) {
+    continue;
+  }
+
+  if (seenAllowEntries.has(entry)) {
+    addError(`duplicate permissions.allow entry: ${entry}`);
+    continue;
+  }
+  seenAllowEntries.add(entry);
+
+  // PID-pinned kill entries are stale-by-design and should not persist in project policy.
+  if (/^Bash\(kill\s+[0-9]+:\*\)$/.test(entry)) {
+    addError(`stale PID-scoped permission entry: ${entry}`);
+  }
+
+  const bashWildcardMatch = entry.match(/^Bash\((.*):\*\)$/);
+  if (!bashWildcardMatch) {
+    continue;
+  }
+
+  const commandExpr = bashWildcardMatch[1].trim();
+  for (const match of commandExpr.matchAll(/(?:^|[\s|;&])(\.?\/[A-Za-z0-9._/-]+\.(?:sh|ts))(?=$|[\s|;&])/g)) {
+    const localPathToken = match[1];
+    const normalizedRelPath = localPathToken.replace(/^\.\//, "");
+    if (!exists(normalizedRelPath)) {
+      addError(
+        `permissions.allow references missing local script path: ${localPathToken} (entry: ${entry})`
       );
     }
   }

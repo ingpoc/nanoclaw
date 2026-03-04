@@ -63,6 +63,13 @@ Canonical classification for repository docs.
 
 - `docs/archives/CHANGELOG-2026-02-26.md`: historical changelog snapshot prior to current changelog flow
 
+## `docs/research/`
+
+- `docs/research/README.md`: index for workflow optimization research intake and weekly evidence artifacts
+- `docs/research/EXPERT-WORKFLOW-RESEARCH-YYYY-MM-DD.md`: external high-signal workflow research intake
+- `docs/research/WORKFLOW-ANALYSIS-YYYY-MM-DD.md`: NanoClaw-specific workflow translation and gap analysis
+- `docs/research/WEEKLY-SLOP-OPTIMIZATION-YYYY-MM-DD.md`: deterministic weekly slop findings, actions, and ratchet queue
+
 ## Worker-Local Workflow Docs
 
 - `groups/jarvis-worker-*/docs/workflow/execution-loop.md`

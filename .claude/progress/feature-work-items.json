@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-04T09:27:43.276Z",
+  "updated_at": "2026-03-04T09:49:34.795Z",
   "items": [
     {
       "id": "work-jarvis-worker-lifecycle-1772518124323",
@@ -101,6 +101,19 @@
       ],
       "created_at": "2026-03-04T09:27:22.279Z",
       "updated_at": "2026-03-04T09:27:43.276Z"
+    },
+    {
+      "id": "work-ops-reliability-tooling-1772617771896",
+      "title": "Bash-compat worker connectivity + slop workflow hardening",
+      "feature_id": "ops-reliability-tooling",
+      "status": "implementing",
+      "request": "Fix worker connectivity mapfile break, harden slop inventory to avoid routed-script false positives, and prune stale governance config entries.",
+      "notes": [
+        "2026-03-04T09:49:34.795Z: Linked incidents: incident-worker-connectivity-block-20260227; implementing bash-compat fix + workflow slop detector hardening + stale allowlist pruning."
+      ],
+      "evidence": [],
+      "created_at": "2026-03-04T09:49:31.896Z",
+      "updated_at": "2026-03-04T09:49:34.795Z"
     }
   ]
 }

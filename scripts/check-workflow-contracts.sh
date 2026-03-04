@@ -79,6 +79,10 @@ if [ ! -x "scripts/check-tooling-governance.sh" ]; then
   errors+=("Missing executable tooling governance checker: scripts/check-tooling-governance.sh")
 fi
 
+if [ ! -x "scripts/workflow/slop-inventory.sh" ]; then
+  errors+=("Missing executable slop inventory helper: scripts/workflow/slop-inventory.sh")
+fi
+
 if ! rg -q 'docs/workflow/nanoclaw-development-loop.md' CLAUDE.md; then
   errors+=("CLAUDE.md is missing development-loop trigger reference")
 fi

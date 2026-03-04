@@ -1,7 +1,51 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-04T09:27:13.705274+00:00",
+  "updated_at": "2026-03-04T09:35:02.357312+00:00",
   "incidents": [
+    {
+      "id": "incident-worker-connectivity-block-20260227",
+      "title": "Workers not connected; Andy developer cannot restart workers; push task blocked",
+      "status": "open",
+      "severity": "high",
+      "created_at": "2026-02-27T13:02:09.098285+00:00",
+      "updated_at": "2026-03-04T09:35:02.357214+00:00",
+      "summary": {
+        "symptom": "Workers are not connected and I don't have access to restart them. To restart the push task: start worker containers manually via deployment system, then I will dispatch push task. Alternative: push branches manually from local environment.",
+        "suspected_cause": "unknown",
+        "impact": "Valid worker output can be produced after auto-fail, but DB status remains failed because failed->review_requested transition is blocked; Andy reports workers disconnected and re-dispatch loops",
+        "next_action": "Implement watchdog guard for in-flight worker processing/repair handoff and optionally track no-container elapsed separately; then re-run probe + real multi-step dispatch and confirm no invalid transition logs"
+      },
+      "evidence": {
+        "bundle_count": 5,
+        "last_bundle_dir": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260303T070438Z",
+        "last_manifest_path": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260303T070438Z/manifest.json",
+        "last_root_cause": "unknown",
+        "last_status": "warn",
+        "last_checked_at": "2026-03-03T07:04:47.530612+00:00",
+        "non_zero_command_count": 2,
+        "debug_summary": "root_cause=unknown; messages=58; worker_runs=0; dispatch_blocks=0; non_zero_commands=2"
+      },
+      "context": {
+        "lane": "andy-developer"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-03T15:49:57.013215+00:00",
+          "author": "operator",
+          "text": "2026-03-03 live post-refactor validation: verify-worker-connectivity FAILED. Probe runs probe-jarvis-worker-1-1772552703-12783 and probe-jarvis-worker-2-1772552823-26146 both terminalized failed_timeout with reason stale_probe_run_watchdog (~110s). Logs show runtime_container_stop_fallback stopVerified=true, then generation-guarded terminal update rejected and completion path attempted failed_runtime with missing completion block; final status remained failed_timeout."
+        },
+        {
+          "ts": "2026-03-03T18:24:15.264013+00:00",
+          "author": "operator",
+          "text": "2026-03-03 implementation validation: applied terminal-is-final race fix (no ungated completion fallback), probe watchdog moved to env-backed 180s with verify guard 240s. After daemon restart (pid 88861), verify-worker-connectivity still FAILS but reason shifted from stale_probe_run_watchdog to worker_execution_timeout (container no_output_timeout after 115000ms) for probe runs probe-jarvis-worker-1-1772561978-20667 and probe-jarvis-worker-2-1772562102-29270. No new 'falling back to ungated completion' or invalid completion transition logs for these runs."
+        },
+        {
+          "ts": "2026-03-04T09:35:02.357210+00:00",
+          "author": "codex",
+          "text": "2026-03-04 optimization workflow run: acceptance-gate failed at worker_connectivity (exit 127). Evidence: data/diagnostics/acceptance/acceptance-20260304T093428Z.json. Failure detail shows bash compatibility issue: mapfile command not found in scripts/jarvis-worker-probe.sh:83 and scripts/jarvis-verify-worker-connectivity.sh:152."
+        }
+      ]
+    },
     {
       "id": "incident-tooling-governance-drift-20260304",
       "title": "Hook/subagent/built-in governance drift risk",
@@ -88,50 +132,6 @@
           "ts": "2026-03-04T08:07:39.300927+00:00",
           "author": "user",
           "text": "reported: npm run format:check reports style issues across multiple src/*.ts files"
-        }
-      ]
-    },
-    {
-      "id": "incident-worker-connectivity-block-20260227",
-      "title": "Workers not connected; Andy developer cannot restart workers; push task blocked",
-      "status": "open",
-      "severity": "high",
-      "created_at": "2026-02-27T13:02:09.098285+00:00",
-      "updated_at": "2026-03-03T18:24:15.264018+00:00",
-      "summary": {
-        "symptom": "Workers are not connected and I don't have access to restart them. To restart the push task: start worker containers manually via deployment system, then I will dispatch push task. Alternative: push branches manually from local environment.",
-        "suspected_cause": "unknown",
-        "impact": "Valid worker output can be produced after auto-fail, but DB status remains failed because failed->review_requested transition is blocked; Andy reports workers disconnected and re-dispatch loops",
-        "next_action": "Implement watchdog guard for in-flight worker processing/repair handoff and optionally track no-container elapsed separately; then re-run probe + real multi-step dispatch and confirm no invalid transition logs"
-      },
-      "evidence": {
-        "bundle_count": 5,
-        "last_bundle_dir": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260303T070438Z",
-        "last_manifest_path": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260303T070438Z/manifest.json",
-        "last_root_cause": "unknown",
-        "last_status": "warn",
-        "last_checked_at": "2026-03-03T07:04:47.530612+00:00",
-        "non_zero_command_count": 2,
-        "debug_summary": "root_cause=unknown; messages=58; worker_runs=0; dispatch_blocks=0; non_zero_commands=2"
-      },
-      "context": {
-        "lane": "andy-developer"
-      },
-      "notes": [
-        {
-          "ts": "2026-03-03T11:27:36.231168+00:00",
-          "author": "operator",
-          "text": "2026-03-03 patch applied: coupled watchdog timeout path with runtime fallback stops (GroupQueue abort now supports activeContainerName/groupFolder fallback and supervisor passes run lifecycle metadata). Probe watchdog/no-output budgets tightened (110s/115s) to keep verify-worker-connectivity deterministic. Evidence after restart (pid 67118): probe runs now terminalize failed_timeout with timeout_ms=110000 and abort.detail=runtime_container_stop_fallback; stale queued/running counts remain 0; no in-flight probe backlog persists after probe/verify runs."
-        },
-        {
-          "ts": "2026-03-03T15:49:57.013215+00:00",
-          "author": "operator",
-          "text": "2026-03-03 live post-refactor validation: verify-worker-connectivity FAILED. Probe runs probe-jarvis-worker-1-1772552703-12783 and probe-jarvis-worker-2-1772552823-26146 both terminalized failed_timeout with reason stale_probe_run_watchdog (~110s). Logs show runtime_container_stop_fallback stopVerified=true, then generation-guarded terminal update rejected and completion path attempted failed_runtime with missing completion block; final status remained failed_timeout."
-        },
-        {
-          "ts": "2026-03-03T18:24:15.264013+00:00",
-          "author": "operator",
-          "text": "2026-03-03 implementation validation: applied terminal-is-final race fix (no ungated completion fallback), probe watchdog moved to env-backed 180s with verify guard 240s. After daemon restart (pid 88861), verify-worker-connectivity still FAILS but reason shifted from stale_probe_run_watchdog to worker_execution_timeout (container no_output_timeout after 115000ms) for probe runs probe-jarvis-worker-1-1772561978-20667 and probe-jarvis-worker-2-1772562102-29270. No new 'falling back to ungated completion' or invalid completion transition logs for these runs."
         }
       ]
     },

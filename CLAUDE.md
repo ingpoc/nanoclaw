@@ -42,7 +42,7 @@ BEFORE optimizing development workflow strategy/cadence based on external resear
 BEFORE running weekly docs/scripts/config/code slop cleanup during optimization cycles → read docs/workflow/weekly-slop-optimization-loop.md
 BEFORE reviewing hooks/subagents or built-in tool routing governance → read docs/workflow/weekly-slop-optimization-loop.md and docs/operations/tooling-governance-budget.json
 BEFORE running parallel Claude/Codex worktrees or assigning implementation/review across tools → read docs/workflow/unified-codex-claude-loop.md
-BEFORE defining subagent fanout for plan/review/verification → read docs/operations/subagent-catalog.md
+BEFORE defining subagent fanout for plan/review/verification → read docs/operations/subagent-catalog.md and docs/operations/subagent-routing.md
 BEFORE deciding Claude-vs-Codex execution adapter behavior → read docs/operations/claude-codex-adapter-matrix.md
 BEFORE changing core orchestrator/channel/IPC/scheduler behavior → read docs/reference/REQUIREMENTS.md, docs/reference/SPEC.md, docs/reference/SECURITY.md
 BEFORE changing high-level orchestration methodology → read docs/architecture/harness-engineering-alignment.md

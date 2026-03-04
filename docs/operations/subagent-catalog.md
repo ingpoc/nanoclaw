@@ -50,3 +50,19 @@ Each subagent response must include:
 1. Subagents never approve their own output.
 2. Subagent conclusions without concrete file/line evidence are invalid.
 3. High-risk failures from `verify-app` or `contract-auditor` block finalization.
+
+## Implementation Map
+
+Catalog roles map to 3 agent definition files in `.claude/agents/`:
+
+| Catalog Role | Agent File | Model | Notes |
+|---|---|---|---|
+| `plan-architect` (research) | `scout.md` | haiku | Research/scan phase only; plan synthesis stays Opus |
+| `feature-worker` | `implementer.md` | sonnet | Bounded execution with approved plan |
+| `verify-app` | `verifier.md` | haiku | Deterministic gate execution |
+| `contract-auditor` | `verifier.md` | haiku | Invariant compliance checks |
+| `incident-regression` | — | opus | Requires cross-codepath judgment; not delegated |
+| `code-simplifier` (discovery) | `scout.md` | haiku | Hotspot/duplication scanning only |
+| `docs-sync-checker` (scan) | `scout.md` | haiku | Stale reference detection |
+
+Routing details: `docs/operations/subagent-routing.md`

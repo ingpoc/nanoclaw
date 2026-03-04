@@ -78,6 +78,7 @@ const IPC_ERRORS_DIR = path.join(process.cwd(), 'data', 'ipc', 'errors');
 
 const VALID_WORKER_DISPATCH_PROMPT = JSON.stringify({
   run_id: 'run-20260223-001',
+  request_id: 'req-20260223-001',
   task_type: 'implement',
   context_intent: 'fresh',
   input: 'Implement and validate the requested feature',
@@ -231,7 +232,9 @@ describe('schedule_task authorization', () => {
     expect(getAllTasks()).toHaveLength(0);
     expect(sendMessageCalls).toHaveLength(1);
     expect(sendMessageCalls[0].jid).toBe('main@g.us');
-    expect(sendMessageCalls[0].text).toContain('only andy-developer may schedule worker dispatch tasks');
+    expect(sendMessageCalls[0].text).toContain(
+      'only andy-developer may schedule worker dispatch tasks',
+    );
     expect(sendMessageCalls[0].sourceGroup).toBe('nanoclaw-system');
   });
 
@@ -253,13 +256,16 @@ describe('schedule_task authorization', () => {
     expect(allTasks.length).toBe(0);
     expect(sendMessageCalls).toHaveLength(1);
     expect(sendMessageCalls[0].jid).toBe('andy@g.us');
-    expect(sendMessageCalls[0].text).toContain('requires strict JSON dispatch payload');
+    expect(sendMessageCalls[0].text).toContain(
+      'requires strict JSON dispatch payload',
+    );
     expect(sendMessageCalls[0].sourceGroup).toBe('nanoclaw-system');
   });
 
   it('andy-developer receives payload validation errors for invalid worker dispatch JSON', async () => {
     const invalidDispatch = JSON.stringify({
       run_id: 'run-20260223-002',
+      request_id: 'req-20260223-002',
       task_type: 'implement',
       context_intent: 'fresh',
       input: 'Implement and validate the requested feature',
@@ -295,7 +301,9 @@ describe('schedule_task authorization', () => {
     expect(getAllTasks()).toHaveLength(0);
     expect(sendMessageCalls).toHaveLength(1);
     expect(sendMessageCalls[0].jid).toBe('andy@g.us');
-    expect(sendMessageCalls[0].text).toContain('branch must match jarvis-<feature>');
+    expect(sendMessageCalls[0].text).toContain(
+      'branch must match jarvis-<feature>',
+    );
     expect(sendMessageCalls[0].sourceGroup).toBe('nanoclaw-system');
   });
 
@@ -330,8 +338,12 @@ describe('schedule_task authorization', () => {
     expect(getAllTasks()).toHaveLength(0);
     expect(sendMessageCalls).toHaveLength(1);
     expect(sendMessageCalls[0].jid).toBe('andy@g.us');
-    expect(sendMessageCalls[0].text).toContain('Dispatch ignored (duplicate run_id)');
-    expect(sendMessageCalls[0].text).not.toContain('Fix: resend using the template below');
+    expect(sendMessageCalls[0].text).toContain(
+      'Dispatch ignored (duplicate run_id)',
+    );
+    expect(sendMessageCalls[0].text).not.toContain(
+      'Fix: resend using the template below',
+    );
     expect(sendMessageCalls[0].sourceGroup).toBe('nanoclaw-system');
   });
 
@@ -436,7 +448,12 @@ describe('pause_task authorization', () => {
       created_at: '2024-01-01T00:00:00.000Z',
     });
 
-    await processTaskIpc({ type: 'pause_task', taskId: 'task-worker' }, 'andy-developer', false, deps);
+    await processTaskIpc(
+      { type: 'pause_task', taskId: 'task-worker' },
+      'andy-developer',
+      false,
+      deps,
+    );
     expect(getTaskById('task-worker')!.status).toBe('paused');
   });
 
@@ -503,7 +520,12 @@ describe('resume_task authorization', () => {
       created_at: '2024-01-01T00:00:00.000Z',
     });
 
-    await processTaskIpc({ type: 'resume_task', taskId: 'task-worker-paused' }, 'andy-developer', false, deps);
+    await processTaskIpc(
+      { type: 'resume_task', taskId: 'task-worker-paused' },
+      'andy-developer',
+      false,
+      deps,
+    );
     expect(getTaskById('task-worker-paused')!.status).toBe('active');
   });
 
@@ -581,7 +603,12 @@ describe('cancel_task authorization', () => {
       created_at: '2024-01-01T00:00:00.000Z',
     });
 
-    await processTaskIpc({ type: 'cancel_task', taskId: 'task-worker-cancel' }, 'andy-developer', false, deps);
+    await processTaskIpc(
+      { type: 'cancel_task', taskId: 'task-worker-cancel' },
+      'andy-developer',
+      false,
+      deps,
+    );
     expect(getTaskById('task-worker-cancel')).toBeUndefined();
   });
 
@@ -668,7 +695,11 @@ describe('refresh_groups authorization', () => {
 // The logic: isMain || (targetGroup && targetGroup.folder === sourceGroup)
 
 describe('IPC message authorization', () => {
-  function isMessageAuthorized(sourceGroup: string, isMain: boolean, targetChatJid: string): boolean {
+  function isMessageAuthorized(
+    sourceGroup: string,
+    isMain: boolean,
+    targetChatJid: string,
+  ): boolean {
     const targetGroup = groups[targetChatJid];
     return canIpcAccessTarget(sourceGroup, isMain, targetGroup);
   }
@@ -688,7 +719,9 @@ describe('IPC message authorization', () => {
   });
 
   it('non-main group cannot send to unregistered JID', () => {
-    expect(isMessageAuthorized('other-group', false, 'unknown@g.us')).toBe(false);
+    expect(isMessageAuthorized('other-group', false, 'unknown@g.us')).toBe(
+      false,
+    );
   });
 
   it('main group can send to unregistered JID', () => {
@@ -697,12 +730,18 @@ describe('IPC message authorization', () => {
   });
 
   it('andy-developer can send to jarvis worker', () => {
-    expect(isMessageAuthorized('andy-developer', false, 'jarvis-1@g.us')).toBe(true);
+    expect(isMessageAuthorized('andy-developer', false, 'jarvis-1@g.us')).toBe(
+      true,
+    );
   });
 
   it('andy-developer cannot send to non-worker groups', () => {
-    expect(isMessageAuthorized('andy-developer', false, 'other@g.us')).toBe(false);
-    expect(isMessageAuthorized('andy-developer', false, 'main@g.us')).toBe(false);
+    expect(isMessageAuthorized('andy-developer', false, 'other@g.us')).toBe(
+      false,
+    );
+    expect(isMessageAuthorized('andy-developer', false, 'main@g.us')).toBe(
+      false,
+    );
   });
 });
 
@@ -715,7 +754,9 @@ describe('andy worker dispatch payload guardrails', () => {
     );
 
     expect(result.valid).toBe(false);
-    expect(result.reason).toContain('dispatch payload to andy-developer chat blocked');
+    expect(result.reason).toContain(
+      'dispatch payload to andy-developer chat blocked',
+    );
   });
 
   it('allows andy-developer plain status messages to its own chat', () => {
@@ -767,6 +808,7 @@ describe('andy worker dispatch payload guardrails', () => {
   it('blocks continue dispatch when no reusable session exists for worker/repo/branch', () => {
     const payload = JSON.stringify({
       run_id: 'run-20260223-continue-001',
+      request_id: 'req-20260223-continue-001',
       task_type: 'fix',
       context_intent: 'continue',
       input: 'Continue fixing the same branch task',
@@ -793,7 +835,9 @@ describe('andy worker dispatch payload guardrails', () => {
     );
 
     expect(result.valid).toBe(false);
-    expect(result.reason).toContain('context_intent=continue requires a reusable prior session');
+    expect(result.reason).toContain(
+      'context_intent=continue requires a reusable prior session',
+    );
   });
 
   it('blocks continue dispatch when explicit session_id belongs to another worker lane', () => {
@@ -809,6 +853,7 @@ describe('andy worker dispatch payload guardrails', () => {
 
     const payload = JSON.stringify({
       run_id: 'run-20260223-continue-002',
+      request_id: 'req-20260223-continue-002',
       task_type: 'fix',
       context_intent: 'continue',
       session_id: 'sess-owned-by-worker-1',
@@ -852,6 +897,7 @@ describe('andy worker dispatch payload guardrails', () => {
 
     const payload = JSON.stringify({
       run_id: 'run-20260223-continue-003',
+      request_id: 'req-20260223-continue-003',
       task_type: 'fix',
       context_intent: 'continue',
       input: 'Continue with recent context',
@@ -1223,7 +1269,11 @@ describe('per-message idempotency', () => {
   it('getProcessedMessageIds returns batch results', () => {
     markMessageProcessed('batch@g.us', 'msg-a');
     markMessageProcessed('batch@g.us', 'msg-c');
-    const processed = getProcessedMessageIds('batch@g.us', ['msg-a', 'msg-b', 'msg-c']);
+    const processed = getProcessedMessageIds('batch@g.us', [
+      'msg-a',
+      'msg-b',
+      'msg-c',
+    ]);
     expect(processed).toEqual(new Set(['msg-a', 'msg-c']));
   });
 

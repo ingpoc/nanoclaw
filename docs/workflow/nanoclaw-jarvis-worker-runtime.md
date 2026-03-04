@@ -176,3 +176,12 @@ Token counts are zero-filled until OpenCode exposes deterministic per-call usage
 1. Worker behavior is contract-driven (`dispatch-validator.ts`), not prompt-only.
 2. Non-worker groups remain on the Claude Agent SDK runtime path.
 3. Worker-specific behavior is bounded by folder/image detection and does not alter main-group orchestration semantics.
+
+## Agent Routing
+
+| Step | Agent | Mode | Notes |
+|------|-------|------|-------|
+| Runtime architecture decisions | opus | — | Requires cross-system judgment |
+| Config mapping | scout | fg | Read worker config, env vars, model fallback chains |
+| Dockerfile reads | scout | fg | Scan container definitions and mount paths |
+| Build verification | verifier | fg | `./container/worker/build.sh` exit code |

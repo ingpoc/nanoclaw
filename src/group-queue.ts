@@ -48,10 +48,19 @@ export class GroupQueue {
 
   private deadLetterFile(groupJid: string): string {
     const safe = groupJid.replace(/[^a-zA-Z0-9_.-]/g, '_');
-    return path.join(DATA_DIR, 'dead-letter', 'message-retries', `${safe}.json`);
+    return path.join(
+      DATA_DIR,
+      'dead-letter',
+      'message-retries',
+      `${safe}.json`,
+    );
   }
 
-  private persistDeadLetter(groupJid: string, retryCount: number, delayMs: number): void {
+  private persistDeadLetter(
+    groupJid: string,
+    retryCount: number,
+    delayMs: number,
+  ): void {
     try {
       const file = this.deadLetterFile(groupJid);
       const dir = path.dirname(file);
@@ -67,7 +76,10 @@ export class GroupQueue {
       fs.writeFileSync(temp, JSON.stringify(payload, null, 2));
       fs.renameSync(temp, file);
     } catch (err) {
-      logger.warn({ groupJid, err }, 'Failed to persist dead-letter retry state');
+      logger.warn(
+        { groupJid, err },
+        'Failed to persist dead-letter retry state',
+      );
     }
   }
 
@@ -258,7 +270,9 @@ export class GroupQueue {
         aborted: stopResult.stopped,
         stopVerified: stopResult.stopped,
         stopAttempts: stopResult.attempts,
-        detail: stopResult.stopped ? detailPrefix : `${detailPrefix}_stop_failed`,
+        detail: stopResult.stopped
+          ? detailPrefix
+          : `${detailPrefix}_stop_failed`,
       };
     };
 
@@ -302,7 +316,8 @@ export class GroupQueue {
       };
     };
 
-    const fallbackContainerName = `${options?.activeContainerName ?? ''}`.trim();
+    const fallbackContainerName =
+      `${options?.activeContainerName ?? ''}`.trim();
     if (fallbackContainerName && !fallbackContainerName.startsWith('prefix:')) {
       const fallback = runtimeStopByContainer(
         fallbackContainerName,
@@ -602,7 +617,12 @@ export class GroupQueue {
   private listActiveStates(): Array<{ jid: string; state: GroupState }> {
     const active: Array<{ jid: string; state: GroupState }> = [];
     for (const [jid, state] of this.groups) {
-      if (state.active && state.process && !state.process.killed && state.containerName) {
+      if (
+        state.active &&
+        state.process &&
+        !state.process.killed &&
+        state.containerName
+      ) {
         active.push({ jid, state });
       }
     }
@@ -642,7 +662,8 @@ export class GroupQueue {
     // orphan agents outliving the host process.
     const remaining = this.listActiveStates();
     for (const { jid, state } of remaining) {
-      if (!state.process || state.process.killed || !state.containerName) continue;
+      if (!state.process || state.process.killed || !state.containerName)
+        continue;
 
       if (state.groupFolder) {
         this.closeStdin(jid);
@@ -652,7 +673,10 @@ export class GroupQueue {
       if (stopResult.stopped) {
         stoppedContainers.push(state.containerName);
       } else {
-        failedStops.push({ name: state.containerName, attempts: stopResult.attempts });
+        failedStops.push({
+          name: state.containerName,
+          attempts: stopResult.attempts,
+        });
       }
 
       try {

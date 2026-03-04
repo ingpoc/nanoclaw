@@ -63,3 +63,11 @@ A change is complete only when:
 1. Acceptance gate summary status is `pass`.
 2. Contract/runtime/docs updates are synchronized in the same change set.
 3. Any linked incident is updated with verification and next action/resolution state.
+
+## Agent Routing
+
+| Step | Agent | Mode | Notes |
+|------|-------|------|-------|
+| Pass/fail judgment | opus | — | Final acceptance decision stays with Opus |
+| Full gate sequence | verifier | bg | Run all acceptance gates in background |
+| Evidence collection | scout | fg | Gather pre-gate artifacts and state |

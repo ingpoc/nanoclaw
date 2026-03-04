@@ -82,3 +82,11 @@ Treat any failure as blocking for release:
 - UX latency/quality failure: fix router/frontdesk handling before release.
 - Internal correctness failure: fix state transitions/side effects before release.
 - Human satisfaction failure: tighten response style/behavior, then re-test.
+
+## Agent Routing
+
+| Step | Agent | Mode | Notes |
+|------|-------|------|-------|
+| User satisfaction judgment | opus | — | Subjective quality assessment |
+| Probe scripts | verifier | bg | `bash scripts/jarvis-ops.sh happiness-gate` |
+| Evidence collection | scout | fg | Gather UX latency/quality data |

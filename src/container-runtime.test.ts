@@ -61,7 +61,9 @@ describe('stopContainerWithVerification', () => {
     const result = stopContainerWithVerification('nanoclaw-test-123');
 
     expect(result.stopped).toBe(true);
-    expect(result.attempts.some((a) => a.includes('verified stopped'))).toBe(true);
+    expect(result.attempts.some((a) => a.includes('verified stopped'))).toBe(
+      true,
+    );
   });
 
   it('escalates through stop/kill commands when container remains running', () => {
@@ -274,9 +276,7 @@ describe('cleanupOrphans', () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         count: 1,
-        failures: [
-          expect.objectContaining({ name: 'nanoclaw-a-1' }),
-        ],
+        failures: [expect.objectContaining({ name: 'nanoclaw-a-1' })],
       }),
       'Failed to stop some orphaned containers',
     );

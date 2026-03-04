@@ -102,3 +102,12 @@ When work is marked ready for user testing:
 6. Andy sends handoff block with repo path, branch/commit, and user-run install/start/health/stop commands.
 
 If preflight fails or lane state is inconsistent, do not mark ready; return blocker/rework path first.
+
+## Agent Routing
+
+| Step | Agent | Mode | Notes |
+|------|-------|------|-------|
+| Policy decisions | opus | — | Governance changes require judgment |
+| Workflow YAML reads | scout | fg | Scan `.github/workflows/` for drift |
+| Drift detection | scout | fg | Compare current vs expected governance state |
+| CI status checks | verifier | fg | `gh run list` exit codes |

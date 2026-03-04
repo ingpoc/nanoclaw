@@ -15,8 +15,14 @@ interface RuntimeContainer {
 }
 
 /** Returns CLI args for a readonly bind mount. */
-export function readonlyMountArgs(hostPath: string, containerPath: string): string[] {
-  return ['--mount', `type=bind,source=${hostPath},target=${containerPath},readonly`];
+export function readonlyMountArgs(
+  hostPath: string,
+  containerPath: string,
+): string[] {
+  return [
+    '--mount',
+    `type=bind,source=${hostPath},target=${containerPath},readonly`,
+  ];
 }
 
 /** Returns the shell command to stop a container by name. */
@@ -51,7 +57,9 @@ function parseContainersFromJson(output: string): RuntimeContainer[] {
           ? obj.state
           : '';
     const id =
-      obj.configuration && typeof obj.configuration === 'object' && typeof (obj.configuration as { id?: unknown }).id === 'string'
+      obj.configuration &&
+      typeof obj.configuration === 'object' &&
+      typeof (obj.configuration as { id?: unknown }).id === 'string'
         ? (obj.configuration as { id: string }).id
         : typeof obj.id === 'string'
           ? obj.id
@@ -112,9 +120,7 @@ function listContainers(): RuntimeContainer[] {
 }
 
 function isContainerRunning(name: string): boolean {
-  return listContainers().some(
-    (c) => c.id === name && c.state === 'running',
-  );
+  return listContainers().some((c) => c.id === name && c.state === 'running');
 }
 
 function formatErr(err: unknown): string {
@@ -139,7 +145,9 @@ export interface StopContainersByPrefixResult {
  * Stop a container and verify it is no longer running.
  * Escalates from graceful stop to SIGKILL/kill when needed.
  */
-export function stopContainerWithVerification(name: string): StopContainerResult {
+export function stopContainerWithVerification(
+  name: string,
+): StopContainerResult {
   const attempts: string[] = [];
   const commands = [
     stopContainer(name),
@@ -203,7 +211,10 @@ export function ensureContainerRuntimeRunning(): void {
   } catch {
     logger.info('Starting container runtime...');
     try {
-      execSync(`${CONTAINER_RUNTIME_BIN} system start`, { stdio: 'pipe', timeout: 30000 });
+      execSync(`${CONTAINER_RUNTIME_BIN} system start`, {
+        stdio: 'pipe',
+        timeout: 30000,
+      });
       logger.info('Container runtime started');
     } catch (err) {
       logger.error({ err }, 'Failed to start container runtime');
@@ -239,11 +250,17 @@ export function ensureContainerRuntimeRunning(): void {
 /** Kill orphaned NanoClaw containers from previous runs. */
 export function cleanupOrphans(): void {
   try {
-    const { matched: orphans, stopped, failures: failed } =
-      stopRunningContainersByPrefix('nanoclaw-');
+    const {
+      matched: orphans,
+      stopped,
+      failures: failed,
+    } = stopRunningContainersByPrefix('nanoclaw-');
 
     if (stopped.length > 0) {
-      logger.info({ count: stopped.length, names: stopped }, 'Stopped orphaned containers');
+      logger.info(
+        { count: stopped.length, names: stopped },
+        'Stopped orphaned containers',
+      );
     }
     if (failed.length > 0) {
       logger.warn(

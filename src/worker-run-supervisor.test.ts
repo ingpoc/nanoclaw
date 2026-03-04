@@ -104,7 +104,9 @@ describe('WorkerRunSupervisor.reconcile', () => {
     expect(row?.status).toBe('running');
     expect(row?.phase).toBe('completion_repair_active');
     expect(row?.no_container_since).toBeNull();
-    expect(row?.active_container_name).toContain('prefix:nanoclaw-jarvis-worker-3-');
+    expect(row?.active_container_name).toContain(
+      'prefix:nanoclaw-jarvis-worker-3-',
+    );
   });
 
   it('fails queued run when group cursor is already past dispatch timestamp', () => {
@@ -121,7 +123,9 @@ describe('WorkerRunSupervisor.reconcile', () => {
     expect(changed).toBe(true);
     expect(row?.status).toBe('failed_timeout');
     expect(row?.phase).toBe('terminal');
-    expect(row?.error_details).toContain('"reason":"queued_stale_before_spawn"');
+    expect(row?.error_details).toContain(
+      '"reason":"queued_stale_before_spawn"',
+    );
   });
 
   it('does not fail queued run from cursor mismatch when spawn was already acknowledged', () => {
@@ -221,7 +225,9 @@ describe('WorkerRunSupervisor.reconcile', () => {
     const row = getWorkerRun('probe-jarvis-worker-1-queue-stale');
     expect(changed).toBe(true);
     expect(row?.status).toBe('failed_timeout');
-    expect(row?.error_details).toContain('"reason":"stale_probe_queued_watchdog"');
+    expect(row?.error_details).toContain(
+      '"reason":"stale_probe_queued_watchdog"',
+    );
   });
 
   it('auto-fails stale running probe runs using probe timeout', () => {
@@ -272,9 +278,18 @@ describe('WorkerRunSupervisor.reconcile', () => {
     vi.useFakeTimers();
     const start = new Date('2026-03-03T00:20:00.000Z');
     vi.setSystemTime(start);
-    insertWorkerRun('probe-jarvis-worker-1-queue-resilience', 'jarvis-worker-1');
-    insertWorkerRun('probe-jarvis-worker-1-running-resilience', 'jarvis-worker-1');
-    updateWorkerRunStatus('probe-jarvis-worker-1-running-resilience', 'running');
+    insertWorkerRun(
+      'probe-jarvis-worker-1-queue-resilience',
+      'jarvis-worker-1',
+    );
+    insertWorkerRun(
+      'probe-jarvis-worker-1-running-resilience',
+      'jarvis-worker-1',
+    );
+    updateWorkerRunStatus(
+      'probe-jarvis-worker-1-running-resilience',
+      'running',
+    );
     vi.setSystemTime(new Date(start.getTime() + 2_000));
     mockHasRunningContainerWithPrefix.mockImplementation(() => {
       throw new Error('container liveness unavailable');
@@ -288,6 +303,8 @@ describe('WorkerRunSupervisor.reconcile', () => {
     const queuedRow = getWorkerRun('probe-jarvis-worker-1-queue-resilience');
     expect(changed).toBe(true);
     expect(queuedRow?.status).toBe('failed_timeout');
-    expect(queuedRow?.error_details).toContain('"reason":"stale_probe_queued_watchdog"');
+    expect(queuedRow?.error_details).toContain(
+      '"reason":"stale_probe_queued_watchdog"',
+    );
   });
 });

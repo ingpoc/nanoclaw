@@ -234,8 +234,10 @@ describe('GroupQueue', () => {
 
     const deadLetterWrites = vi
       .mocked(fs.default.writeFileSync)
-      .mock.calls.filter((call) =>
-        typeof call[0] === 'string' && call[0].includes('/dead-letter/message-retries/'),
+      .mock.calls.filter(
+        (call) =>
+          typeof call[0] === 'string' &&
+          call[0].includes('/dead-letter/message-retries/'),
       );
     expect(deadLetterWrites.length).toBeGreaterThan(0);
   });

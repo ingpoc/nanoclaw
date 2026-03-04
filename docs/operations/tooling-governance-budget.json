@@ -19,6 +19,11 @@
     ]
   },
   "subagents": {
+    "required_agent_files": [
+      "scout",
+      "implementer",
+      "verifier"
+    ],
     "required_catalog_entries": [
       "plan-architect",
       "feature-worker",

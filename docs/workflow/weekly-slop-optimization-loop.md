@@ -156,3 +156,12 @@ Weekly slop optimization is complete when all are true:
 2. verification gate passes.
 3. documentation index/mirror is synchronized.
 4. weekly evidence artifact is committed.
+
+## Agent Routing
+
+| Step | Agent | Mode | Notes |
+|------|-------|------|-------|
+| Prioritization | opus | — | Requires cost/impact judgment |
+| Inventory scripts | scout | fg | Scan for slop candidates, stale refs |
+| Verification gates | verifier | bg | Run governance/mirror/contract checks |
+| Mechanical fixes | implementer | fg | Apply approved slop removals |

@@ -133,7 +133,10 @@ const fsMock = fs as unknown as {
   rmSync: ReturnType<typeof vi.fn>;
 };
 
-function emitOutputMarker(proc: ReturnType<typeof createFakeProcess>, output: ContainerOutput) {
+function emitOutputMarker(
+  proc: ReturnType<typeof createFakeProcess>,
+  output: ContainerOutput,
+) {
   const json = JSON.stringify(output);
   proc.stdout.push(`${OUTPUT_START_MARKER}\n${json}\n${OUTPUT_END_MARKER}\n`);
 }
@@ -147,7 +150,9 @@ describe('container-runner timeout behavior', () => {
     fsMock.existsSync.mockImplementation(() => false);
     fsMock.readdirSync.mockImplementation(() => []);
     fsMock.statSync.mockImplementation(() => ({ isDirectory: () => false }));
-    fsMock.lstatSync.mockImplementation(() => ({ isSymbolicLink: () => false }));
+    fsMock.lstatSync.mockImplementation(() => ({
+      isSymbolicLink: () => false,
+    }));
     fsMock.realpathSync.mockImplementation((target: string) => target);
     fsMock.cpSync.mockImplementation(() => {});
     fsMock.rmSync.mockImplementation(() => {});
@@ -248,7 +253,8 @@ describe('container-runner timeout behavior', () => {
     const skillsSrc = path.join(process.cwd(), 'container', 'skills');
     const visibleSkillSrc = path.join(skillsSrc, 'agent-browser');
     const hiddenSkillSrc = path.join(skillsSrc, '.docs');
-    const skillsDst = '/tmp/nanoclaw-test-data/sessions/test-group/.claude/skills';
+    const skillsDst =
+      '/tmp/nanoclaw-test-data/sessions/test-group/.claude/skills';
     const visibleSkillDst = path.join(skillsDst, 'agent-browser');
 
     fsMock.existsSync.mockImplementation((target: string) => {
@@ -279,7 +285,11 @@ describe('container-runner timeout behavior', () => {
     expect(fsMock.cpSync).toHaveBeenCalledWith(
       visibleSkillSrc,
       visibleSkillDst,
-      expect.objectContaining({ recursive: true, dereference: true, force: true }),
+      expect.objectContaining({
+        recursive: true,
+        dereference: true,
+        force: true,
+      }),
     );
     expect(fsMock.cpSync).not.toHaveBeenCalledWith(
       hiddenSkillSrc,
@@ -291,7 +301,8 @@ describe('container-runner timeout behavior', () => {
   it('skips overlapping skill source/destination real paths', async () => {
     const skillsSrc = path.join(process.cwd(), 'container', 'skills');
     const visibleSkillSrc = path.join(skillsSrc, 'agent-browser');
-    const skillsDst = '/tmp/nanoclaw-test-data/sessions/test-group/.claude/skills';
+    const skillsDst =
+      '/tmp/nanoclaw-test-data/sessions/test-group/.claude/skills';
     const visibleSkillDst = path.join(skillsDst, 'agent-browser');
     const sharedRealPath = '/Users/gurusharan/.claude/skills/agent-browser';
 
@@ -309,7 +320,9 @@ describe('container-runner timeout behavior', () => {
     fsMock.statSync.mockImplementation((target: string) => ({
       isDirectory: () => target === visibleSkillSrc,
     }));
-    fsMock.lstatSync.mockImplementation(() => ({ isSymbolicLink: () => false }));
+    fsMock.lstatSync.mockImplementation(() => ({
+      isSymbolicLink: () => false,
+    }));
     fsMock.realpathSync.mockImplementation((target: string) => {
       if (target === visibleSkillSrc || target === visibleSkillDst) {
         return sharedRealPath;
@@ -338,7 +351,8 @@ describe('container-runner timeout behavior', () => {
   it('retries transient ENOENT skill copy races', async () => {
     const skillsSrc = path.join(process.cwd(), 'container', 'skills');
     const visibleSkillSrc = path.join(skillsSrc, 'agent-browser');
-    const skillsDst = '/tmp/nanoclaw-test-data/sessions/test-group/.claude/skills';
+    const skillsDst =
+      '/tmp/nanoclaw-test-data/sessions/test-group/.claude/skills';
     const visibleSkillDst = path.join(skillsDst, 'agent-browser');
 
     fsMock.existsSync.mockImplementation((target: string) => {
@@ -379,13 +393,21 @@ describe('container-runner timeout behavior', () => {
       1,
       visibleSkillSrc,
       visibleSkillDst,
-      expect.objectContaining({ recursive: true, dereference: true, force: true }),
+      expect.objectContaining({
+        recursive: true,
+        dereference: true,
+        force: true,
+      }),
     );
     expect(fsMock.cpSync).toHaveBeenNthCalledWith(
       2,
       visibleSkillSrc,
       visibleSkillDst,
-      expect.objectContaining({ recursive: true, dereference: true, force: true }),
+      expect.objectContaining({
+        recursive: true,
+        dereference: true,
+        force: true,
+      }),
     );
   });
 

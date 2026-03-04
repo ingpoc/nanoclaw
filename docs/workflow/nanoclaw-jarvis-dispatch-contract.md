@@ -153,3 +153,12 @@ If dispatch is blocked before run creation, classify it as policy-blocked dispat
 | `running` | duplicate blocked |
 | `review_requested` | duplicate blocked |
 | `done` | duplicate blocked |
+
+## Agent Routing
+
+| Step | Agent | Mode | Notes |
+|------|-------|------|-------|
+| Field change decisions | opus | — | Requires contract design judgment |
+| Build + test | verifier | fg | `npm run build && npm test` |
+| Contract lint | verifier | fg | `bash scripts/check-workflow-contracts.sh` |
+| Schema validation | verifier | fg | Dispatch/completion field checks |

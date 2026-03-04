@@ -87,6 +87,20 @@ Failure detail:
   - `scripts/jarvis-worker-probe.sh:83`
   - `scripts/jarvis-verify-worker-connectivity.sh:152`
 
+Follow-up verification (after fixes):
+
+- `npm run build`: PASS
+- `npm test`: PASS (`35` files, `496` tests passed)
+- `bash scripts/check-workflow-contracts.sh`: PASS
+- `bash scripts/check-claude-codex-mirror.sh`: PASS
+- `bash scripts/check-tooling-governance.sh`: PASS
+- `bash scripts/workflow/slop-inventory.sh --summary`: PASS (`unreferenced_docs=0`, `unreferenced_scripts=0`)
+- `bash scripts/jarvis-ops.sh acceptance-gate`: PASS (executed outside sandbox to avoid container permission artifacts)
+
+Follow-up acceptance evidence:
+
+- `data/diagnostics/acceptance/acceptance-20260304T105215Z.json`
+
 ## Actions Taken This Run
 
 - Added incident note to `incident-worker-connectivity-block-20260227` with acceptance evidence and failure details.
@@ -96,12 +110,22 @@ Failure detail:
 - Indexed research evidence surfaces:
   - updated `DOCS.md`
   - updated `docs/README.md`
+- Added deterministic slop inventory workflow helper:
+  - `scripts/workflow/slop-inventory.sh`
+- Hardened governance lint + config ratchet:
+  - pruned stale `.claude/settings.local.json` allow entries
+  - added stale/duplicate allow-entry detection in `scripts/check-tooling-governance.sh`
+  - ratcheted `docs/operations/tooling-governance-budget.json` limits to `allow=50`, `wildcard_allow=40`
+- Added regression tests:
+  - `setup/workflow-slop-hardening.test.ts`
+- Fixed worker connectivity bash compatibility:
+  - replaced `mapfile` usage in worker connectivity scripts
 
 ## Queue (Next Weekly Cycle)
 
 ### P0
 
-- Fix bash compatibility in worker connectivity scripts (`mapfile` usage) so acceptance-gate can pass on current runtime shell.
+- None remaining from this cycle.
 
 ### P1
 
@@ -113,4 +137,4 @@ Failure detail:
 
 ## Decision
 
-- `extend` (do not prune this cycle): verification gate did not fully pass due worker connectivity shell-compat failure.
+- `adopt`: cleanup and reliability hardening completed with passing acceptance evidence.

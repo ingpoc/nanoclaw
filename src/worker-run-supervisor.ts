@@ -50,7 +50,6 @@ function phaseForRun(run: WorkerRunRecord): WorkerRunPhase {
   return raw as WorkerRunPhase;
 }
 
-
 export class WorkerRunSupervisor {
   constructor(private readonly config: WorkerRunSupervisorConfig) {}
 
@@ -62,14 +61,17 @@ export class WorkerRunSupervisor {
     return new Date(nowMs + this.config.leaseTtlMs).toISOString();
   }
 
-  private shouldSuppressQueuedCursorFailure(startedMs: number, nowMs: number): boolean {
+  private shouldSuppressQueuedCursorFailure(
+    startedMs: number,
+    nowMs: number,
+  ): boolean {
     const windowMs = Math.max(0, this.config.restartSuppressionWindowMs);
     if (windowMs === 0) return false;
 
     // Suppress stale cursor failures only during the startup grace window,
     // and only for runs created close to process startup time.
-    if (nowMs > (this.config.processStartAtMs + windowMs)) return false;
-    return startedMs >= (this.config.processStartAtMs - windowMs);
+    if (nowMs > this.config.processStartAtMs + windowMs) return false;
+    return startedMs >= this.config.processStartAtMs - windowMs;
   }
 
   markQueued(runId: string): void {
@@ -87,7 +89,11 @@ export class WorkerRunSupervisor {
     });
   }
 
-  markSpawnStarted(runId: string, containerName: string, phase: WorkerRunPhase): void {
+  markSpawnStarted(
+    runId: string,
+    containerName: string,
+    phase: WorkerRunPhase,
+  ): void {
     const nowMs = Date.now();
     updateWorkerRunLifecycle(runId, {
       phase,
@@ -167,7 +173,10 @@ export class WorkerRunSupervisor {
       const ageMs = nowMs - startedMs;
 
       if (run.completed_at) {
-        markRunTerminal(run.run_id, run.run_generation, 'failed_runtime',
+        markRunTerminal(
+          run.run_id,
+          run.run_generation,
+          'failed_runtime',
           'Auto-reconciled inconsistent worker run state',
           JSON.stringify({
             reason: 'active_status_with_completed_at',
@@ -175,7 +184,8 @@ export class WorkerRunSupervisor {
             phase: run.phase,
             started_at: run.started_at,
             completed_at: run.completed_at,
-          }));
+          }),
+        );
         changed = true;
         continue;
       }
@@ -183,7 +193,10 @@ export class WorkerRunSupervisor {
       if (run.status === 'queued' || run.status === 'provisioning') {
         const probeQueuedTimeoutMs = this.config.probeQueuedTimeoutMs;
         if (this.isProbeRun(run) && ageMs > probeQueuedTimeoutMs) {
-          markRunTerminal(run.run_id, run.run_generation, 'failed_timeout',
+          markRunTerminal(
+            run.run_id,
+            run.run_generation,
+            'failed_timeout',
             'Auto-failed stale queued/provisioning probe run watchdog timeout',
             JSON.stringify({
               reason: 'stale_probe_queued_watchdog',
@@ -192,23 +205,30 @@ export class WorkerRunSupervisor {
               started_at: run.started_at,
               stale_ms: ageMs,
               timeout_ms: probeQueuedTimeoutMs,
-            }));
+            }),
+          );
           changed = true;
           continue;
         }
 
         const chatJid = input.resolveChatJid(run.group_folder);
         const cursor = chatJid ? input.lastAgentTimestamp[chatJid] : undefined;
-        const startupSuppression = this.shouldSuppressQueuedCursorFailure(startedMs, nowMs);
+        const startupSuppression = this.shouldSuppressQueuedCursorFailure(
+          startedMs,
+          nowMs,
+        );
         const spawnAcknowledged = !!toMs(run.spawn_acknowledged_at);
         if (
-          cursor
-          && run.started_at <= cursor
-          && ageMs >= this.config.queuedCursorGraceMs
-          && !startupSuppression
-          && !spawnAcknowledged
+          cursor &&
+          run.started_at <= cursor &&
+          ageMs >= this.config.queuedCursorGraceMs &&
+          !startupSuppression &&
+          !spawnAcknowledged
         ) {
-          markRunTerminal(run.run_id, run.run_generation, 'failed_timeout',
+          markRunTerminal(
+            run.run_id,
+            run.run_generation,
+            'failed_timeout',
             'Auto-failed queued/provisioning worker run before spawn (cursor past dispatch)',
             JSON.stringify({
               reason: 'queued_stale_before_spawn',
@@ -218,13 +238,17 @@ export class WorkerRunSupervisor {
               cursor,
               stale_ms: ageMs,
               queued_cursor_grace_ms: this.config.queuedCursorGraceMs,
-            }));
+            }),
+          );
           changed = true;
           continue;
         }
 
         if (ageMs > this.config.hardTimeoutMs) {
-          markRunTerminal(run.run_id, run.run_generation, 'failed_timeout',
+          markRunTerminal(
+            run.run_id,
+            run.run_generation,
+            'failed_timeout',
             'Auto-failed stale queued/provisioning worker run watchdog timeout',
             JSON.stringify({
               reason: 'stale_worker_run_watchdog',
@@ -232,7 +256,8 @@ export class WorkerRunSupervisor {
               phase: run.phase,
               started_at: run.started_at,
               stale_ms: ageMs,
-            }));
+            }),
+          );
           changed = true;
         }
         continue;
@@ -260,7 +285,10 @@ export class WorkerRunSupervisor {
             no_container_since: null,
             active_container_name: `prefix:${prefix}`,
             supervisor_owner: this.config.ownerId,
-            phase: phase === 'completion_repair_pending' ? 'completion_repair_active' : phase,
+            phase:
+              phase === 'completion_repair_pending'
+                ? 'completion_repair_active'
+                : phase,
           });
           changed = true;
         }
@@ -274,11 +302,11 @@ export class WorkerRunSupervisor {
         const abortResult = input.onRunTimeout
           ? input.onRunTimeout(run, timeoutReason)
           : {
-            aborted: false,
-            stopVerified: false,
-            stopAttempts: [],
-            detail: 'no_abort_handler',
-          };
+              aborted: false,
+              stopVerified: false,
+              stopAttempts: [],
+              detail: 'no_abort_handler',
+            };
         markRunTerminal(
           run.run_id,
           run.run_generation,

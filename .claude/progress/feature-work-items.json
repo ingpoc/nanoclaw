@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-04T09:49:34.795Z",
+  "updated_at": "2026-03-04T10:55:37.881Z",
   "items": [
     {
       "id": "work-jarvis-worker-lifecycle-1772518124323",
@@ -106,14 +106,19 @@
       "id": "work-ops-reliability-tooling-1772617771896",
       "title": "Bash-compat worker connectivity + slop workflow hardening",
       "feature_id": "ops-reliability-tooling",
-      "status": "implementing",
+      "status": "done",
       "request": "Fix worker connectivity mapfile break, harden slop inventory to avoid routed-script false positives, and prune stale governance config entries.",
       "notes": [
-        "2026-03-04T09:49:34.795Z: Linked incidents: incident-worker-connectivity-block-20260227; implementing bash-compat fix + workflow slop detector hardening + stale allowlist pruning."
+        "2026-03-04T09:49:34.795Z: Linked incidents: incident-worker-connectivity-block-20260227; implementing bash-compat fix + workflow slop detector hardening + stale allowlist pruning.",
+        "2026-03-04T10:55:37.873Z: Validation run: npm run build, npm test, workflow/mirror/governance checks, slop-inventory summary all pass; acceptance-gate executed outside sandbox for real runtime verification.",
+        "2026-03-04T10:55:37.880Z: Closed with PASS acceptance manifest and workflow hardening merged: bash-compat worker connectivity scripts, slop-inventory workflow helper, stale allowlist pruning, governance lint expansion, and regression tests."
       ],
-      "evidence": [],
+      "evidence": [
+        "data/diagnostics/acceptance/acceptance-20260304T105215Z.json",
+        "docs/research/WEEKLY-SLOP-OPTIMIZATION-2026-03-04.md"
+      ],
       "created_at": "2026-03-04T09:49:31.896Z",
-      "updated_at": "2026-03-04T09:49:34.795Z"
+      "updated_at": "2026-03-04T10:55:37.880Z"
     }
   ]
 }

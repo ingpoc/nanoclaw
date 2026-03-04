@@ -31,7 +31,6 @@ Folder-level docs index: [`docs/README.md`](docs/README.md)
 ## Docs Index
 
 ```text
-BEFORE any context retrieval (docs/code/session lookup) → read docs/workflow/context-retrieval-workflow.md
 AT SESSION START or resuming interrupted work → read docs/workflow/session-recall.md
 BEFORE ending a session with in-progress work/blockers → read docs/workflow/session-recall.md
 BEFORE changing session recall/sync/export behavior → read docs/workflow/session-recall.md

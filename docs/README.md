@@ -24,7 +24,6 @@ docs/
 - Optional ops profile: `docs/architecture/mission-optional-features.md`
 - Architecture optimization plan: `docs/architecture/nanoclaw-architecture-optimization-plan.md`
 - Workflow contract: `docs/workflow/nanoclaw-jarvis-dispatch-contract.md`
-- Context retrieval workflow: `docs/workflow/context-retrieval-workflow.md`
 - Default development loop: `docs/workflow/nanoclaw-development-loop.md`
 - Workflow optimization loop: `docs/workflow/workflow-optimization-loop.md`
 - Weekly slop optimization loop: `docs/workflow/weekly-slop-optimization-loop.md`

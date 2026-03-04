@@ -23,6 +23,10 @@ Mission anchor: `docs/MISSION.md`.
 2. Biweekly (`1 pilot/cycle`): run one controlled workflow experiment.
 3. Monthly (`60 min`): governance review and baseline reset.
 
+Weekly slop-pruning execution (docs/scripts/config/code) is defined in:
+
+- `docs/workflow/weekly-slop-optimization-loop.md`
+
 ## Phase 1: Research Intake (Weekly)
 
 Collect only high-signal sources:
@@ -72,6 +76,7 @@ bash scripts/jarvis-ops.sh acceptance-gate
 bash scripts/jarvis-ops.sh status
 bash scripts/jarvis-ops.sh hotspots --window-hours 168
 bash scripts/jarvis-ops.sh incident list --status open
+bash scripts/check-tooling-governance.sh
 ```
 
 Optional cycle-time snapshot:

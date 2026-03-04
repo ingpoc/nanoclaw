@@ -13,7 +13,7 @@ Usage: scripts/workflow/verify.sh [options] [-- acceptance-gate-args]
 Runs deterministic workflow verification shared by Claude and Codex.
 
 Options:
-  --skip-contract-checks  Skip workflow + mirror checks
+  --skip-contract-checks  Skip workflow + mirror + tooling governance checks
   -h, --help              Show help
 
 Any remaining args are forwarded to:
@@ -49,6 +49,7 @@ done
 if [ "$skip_contract_checks" -eq 0 ]; then
   bash scripts/check-workflow-contracts.sh
   bash scripts/check-claude-codex-mirror.sh
+  bash scripts/check-tooling-governance.sh
 fi
 
 bash scripts/jarvis-ops.sh acceptance-gate "${forward_args[@]}"

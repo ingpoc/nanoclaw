@@ -21,6 +21,9 @@ jobs:
       - name: Claude/Codex mirror lint
         run: bash scripts/check-claude-codex-mirror.sh
 
+      - name: Tooling governance lint
+        run: bash scripts/check-tooling-governance.sh
+
       - name: Format check
         run: npm run format:check
 

@@ -8,7 +8,7 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/workflow/sync-mirror.sh [--strict]
 
-Runs governance checks that ensure CLAUDE canonical policy and Codex/AGENTS mirrors stay in sync.
+Runs governance checks that ensure CLAUDE canonical policy, hooks/subagents/built-ins, and Codex/AGENTS mirrors stay in sync.
 
 Options:
   --strict   Also run acceptance-gate baseline checks
@@ -37,6 +37,7 @@ done
 
 bash scripts/check-workflow-contracts.sh
 bash scripts/check-claude-codex-mirror.sh
+bash scripts/check-tooling-governance.sh
 
 if [ "$strict" -eq 1 ]; then
   bash scripts/jarvis-ops.sh acceptance-gate --skip-tests --skip-connectivity

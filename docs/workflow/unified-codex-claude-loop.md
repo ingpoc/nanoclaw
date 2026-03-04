@@ -98,6 +98,7 @@ This gate includes mirror sync checks and workflow contract checks before PR fin
 2. Required verification evidence missing.
 3. Incident resolution attempted without prevention + lesson references.
 4. Contract-governance drift between canonical and mirror files.
+5. Hook/subagent/built-in governance check failure (`bash scripts/check-tooling-governance.sh`).
 
 ### Auto-fix / warning
 

@@ -55,6 +55,10 @@ if [ ! -f "docs/workflow/workflow-optimization-loop.md" ]; then
   errors+=("Missing optimization workflow doc: docs/workflow/workflow-optimization-loop.md")
 fi
 
+if [ ! -f "docs/workflow/weekly-slop-optimization-loop.md" ]; then
+  errors+=("Missing weekly slop optimization workflow doc: docs/workflow/weekly-slop-optimization-loop.md")
+fi
+
 if [ ! -f "docs/workflow/unified-codex-claude-loop.md" ]; then
   errors+=("Missing unified cross-tool workflow doc: docs/workflow/unified-codex-claude-loop.md")
 fi
@@ -67,12 +71,28 @@ if [ ! -f "docs/operations/subagent-catalog.md" ]; then
   errors+=("Missing subagent catalog doc: docs/operations/subagent-catalog.md")
 fi
 
+if [ ! -f "docs/operations/tooling-governance-budget.json" ]; then
+  errors+=("Missing tooling governance budget: docs/operations/tooling-governance-budget.json")
+fi
+
+if [ ! -x "scripts/check-tooling-governance.sh" ]; then
+  errors+=("Missing executable tooling governance checker: scripts/check-tooling-governance.sh")
+fi
+
 if ! rg -q 'docs/workflow/nanoclaw-development-loop.md' CLAUDE.md; then
   errors+=("CLAUDE.md is missing development-loop trigger reference")
 fi
 
 if ! rg -q 'docs/workflow/workflow-optimization-loop.md' CLAUDE.md; then
   errors+=("CLAUDE.md is missing workflow-optimization-loop trigger reference")
+fi
+
+if ! rg -q 'docs/workflow/weekly-slop-optimization-loop.md' CLAUDE.md; then
+  errors+=("CLAUDE.md is missing weekly-slop-optimization-loop trigger reference")
+fi
+
+if ! rg -q 'docs/operations/tooling-governance-budget.json' CLAUDE.md; then
+  errors+=("CLAUDE.md is missing tooling-governance-budget trigger reference")
 fi
 
 if ! rg -q 'docs/workflow/unified-codex-claude-loop.md' CLAUDE.md; then

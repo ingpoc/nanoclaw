@@ -5,8 +5,8 @@ Maps the same workflow intent to each tool's internal controls so implementation
 ## Policy Ownership
 
 1. Canonical source: `CLAUDE.md`.
-2. Mirror targets: `AGENTS.md`, `.codex/config.toml`, `.claude/settings.local.json`.
-3. Sync check: `bash scripts/check-claude-codex-mirror.sh`.
+2. Mirror targets: `AGENTS.md`, `.codex/config.toml`, `.claude/settings.local.json`, `docs/operations/tooling-governance-budget.json`.
+3. Sync checks: `bash scripts/check-claude-codex-mirror.sh` and `bash scripts/check-tooling-governance.sh`.
 
 ## Workflow Adapter Table
 
@@ -18,7 +18,7 @@ Maps the same workflow intent to each tool's internal controls so implementation
 | Deterministic verification | `verify-app` + runtime scripts | `monitor`/`reviewer` + same scripts | `bash scripts/workflow/verify.sh` |
 | Security/reliability review | `contract-auditor`, `incident-regression` | `reviewer` role + `/review` | findings with file/line refs |
 | PR finalization | hook-assisted checks + ops scripts | `/diff`, `/review`, ops scripts | `bash scripts/workflow/finalize-pr.sh` |
-| Governance/mirror sync | `.claude` hooks + docs routing | `.codex` role config + mirror checks | `bash scripts/workflow/sync-mirror.sh` |
+| Governance/mirror sync | `.claude` hooks + docs routing | `.codex` role config + mirror checks | `bash scripts/workflow/sync-mirror.sh` + tooling governance lint |
 
 ## Standard Assignment Modes
 

@@ -25,6 +25,7 @@ docs/
 - Workflow contract: `docs/workflow/nanoclaw-jarvis-dispatch-contract.md`
 - Default development loop: `docs/workflow/nanoclaw-development-loop.md`
 - Workflow optimization loop: `docs/workflow/workflow-optimization-loop.md`
+- Weekly slop optimization loop: `docs/workflow/weekly-slop-optimization-loop.md`
 - Unified Claude/Codex loop: `docs/workflow/unified-codex-claude-loop.md`
 - Session recall workflow: `docs/workflow/session-recall.md`
 - Runtime behavior: `docs/workflow/nanoclaw-jarvis-worker-runtime.md`
@@ -34,11 +35,13 @@ docs/
 - Container debugging flow: `docs/workflow/nanoclaw-container-debugging.md`
 - User review readiness gate: `docs/workflow/nanoclaw-github-control-plane.md` (QA handoff section) + `docs/troubleshooting/DEBUG_CHECKLIST.md` (runtime recovery)
 - Ops scripts quick entrypoint: `scripts/jarvis-ops.sh` (`preflight`, `reliability`, `acceptance-gate`, `status`, `trace`, `verify-worker-connectivity`, `dispatch-lint`, `db-doctor`, `incident`, `probe`, `hotspots`, `incident-bundle`, `recover`, `smoke`, `watch`)
+- Tooling governance lint (hooks/subagents/built-ins): `bash scripts/check-tooling-governance.sh`
 - Operational ownership: `docs/operations/roles-classification.md`
 - Workflow setup + update ownership: `docs/operations/workflow-setup-responsibility-map.md`
 - Skills-vs-docs decision boundary: `docs/operations/skills-vs-docs-map.md`
 - Claude/Codex adapter matrix: `docs/operations/claude-codex-adapter-matrix.md`
 - Subagent catalog: `docs/operations/subagent-catalog.md`
+- Tooling governance budget (hooks/subagents/built-ins): `docs/operations/tooling-governance-budget.json`
 - Upstream daily sync policy: `docs/operations/upstream-sync-policy.md`
 - Skill source-of-truth (global symlinked skills for testing/browser-testing): `docs/operations/roles-classification.md` + `docs/operations/workflow-setup-responsibility-map.md`
 - Agreement-driven auto-sync discipline: `docs/operations/agreement-sync-protocol.md`

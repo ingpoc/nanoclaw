@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-03T07:47:23.375Z",
+  "updated_at": "2026-03-04T09:27:43.276Z",
   "items": [
     {
       "id": "work-jarvis-worker-lifecycle-1772518124323",
@@ -71,6 +71,36 @@
       "evidence": [],
       "created_at": "2026-03-03T07:40:30.069Z",
       "updated_at": "2026-03-03T07:47:23.374Z"
+    },
+    {
+      "id": "work-ops-reliability-tooling-1772615692148",
+      "title": "Weekly deterministic slop pruning loop",
+      "feature_id": "ops-reliability-tooling",
+      "status": "done",
+      "request": "Weekly workflow to detect/reduce code+config+docs+scripts slop with deterministic and reliable outputs",
+      "notes": [
+        "2026-03-04T09:18:41.685Z: Added weekly slop optimization workflow doc and wired canonical indices; contract and mirror checks passed."
+      ],
+      "evidence": [
+        "data/diagnostics/workflow/weekly-slop-optimization-docs-20260304T091830Z.md"
+      ],
+      "created_at": "2026-03-04T09:14:52.148Z",
+      "updated_at": "2026-03-04T09:18:41.685Z"
+    },
+    {
+      "id": "work-ops-reliability-tooling-1772616442279",
+      "title": "Hooks/subagents/built-in governance gate",
+      "feature_id": "ops-reliability-tooling",
+      "status": "done",
+      "request": "Deterministic lint and budget to prevent hook/subagent/built-in tooling slop",
+      "notes": [
+        "2026-03-04T09:27:43.276Z: Added tooling governance lint + budget; wired into CI/workflow scripts; all governance checks pass."
+      ],
+      "evidence": [
+        "data/diagnostics/workflow/tooling-governance-20260304T092733Z.md"
+      ],
+      "created_at": "2026-03-04T09:27:22.279Z",
+      "updated_at": "2026-03-04T09:27:43.276Z"
     }
   ]
 }

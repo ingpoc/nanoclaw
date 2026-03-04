@@ -39,6 +39,8 @@ BEFORE adding/removing/renaming docs → read .claude/rules/docs-pruning-loop.md
 BEFORE starting implementation/debug/setup/update work → read .claude/rules/skill-routing-preflight.md
 BEFORE starting feature, bug-fix, or reliability implementation → read docs/workflow/nanoclaw-development-loop.md
 BEFORE optimizing development workflow strategy/cadence based on external research → read docs/workflow/workflow-optimization-loop.md
+BEFORE running weekly docs/scripts/config/code slop cleanup during optimization cycles → read docs/workflow/weekly-slop-optimization-loop.md
+BEFORE reviewing hooks/subagents or built-in tool routing governance → read docs/workflow/weekly-slop-optimization-loop.md and docs/operations/tooling-governance-budget.json
 BEFORE running parallel Claude/Codex worktrees or assigning implementation/review across tools → read docs/workflow/unified-codex-claude-loop.md
 BEFORE defining subagent fanout for plan/review/verification → read docs/operations/subagent-catalog.md
 BEFORE deciding Claude-vs-Codex execution adapter behavior → read docs/operations/claude-codex-adapter-matrix.md
@@ -128,6 +130,7 @@ bash scripts/workflow/plan-lock.sh --ticket <id> --goal "<goal>"
 bash scripts/workflow/verify.sh
 bash scripts/workflow/finalize-pr.sh
 bash scripts/workflow/sync-mirror.sh
+bash scripts/check-tooling-governance.sh
 bash scripts/worktree/open.sh --ticket <id> --base main
 bash scripts/worktree/clean.sh --ticket <id> --delete-branches
 ```

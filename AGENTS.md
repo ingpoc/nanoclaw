@@ -11,6 +11,8 @@
 - Run the task-start skill/MCP routing preflight defined by `CLAUDE.md` before ad-hoc implementation/debugging.
 - Before starting feature/bug/reliability implementation, follow `docs/workflow/nanoclaw-development-loop.md`.
 - Before changing workflow strategy/cadence based on external research, follow `docs/workflow/workflow-optimization-loop.md`.
+- Before running weekly docs/scripts/config/code slop cleanup during optimization cycles, follow `docs/workflow/weekly-slop-optimization-loop.md`.
+- Before reviewing hooks/subagents or built-in tool routing governance, follow `docs/workflow/weekly-slop-optimization-loop.md` and `docs/operations/tooling-governance-budget.json`.
 - Before running parallel Claude/Codex worktrees or splitting execution/review ownership across tools, follow `docs/workflow/unified-codex-claude-loop.md`.
 - Before defining subagent fanout for plan/review/verification, follow `docs/operations/subagent-catalog.md`.
 - Before adapting behavior between Claude and Codex runtimes, follow `docs/operations/claude-codex-adapter-matrix.md`.

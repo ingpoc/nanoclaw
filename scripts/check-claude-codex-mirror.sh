@@ -34,6 +34,7 @@ require_file "AGENTS.md"
 require_file "docs/workflow/unified-codex-claude-loop.md"
 require_file "docs/operations/claude-codex-adapter-matrix.md"
 require_file "docs/operations/subagent-catalog.md"
+require_file "docs/operations/tooling-governance-budget.json"
 require_file ".codex/config.toml"
 require_file ".codex/agents/explorer.toml"
 require_file ".codex/agents/reviewer.toml"
@@ -42,6 +43,7 @@ require_file ".codex/agents/worker.toml"
 require_file ".claude/settings.local.json"
 require_file ".claude/hooks/risk-tier-pretool-guard.sh"
 require_file ".claude/hooks/posttool-workflow-sync-check.sh"
+require_file "scripts/check-tooling-governance.sh"
 
 if [ -L ".codex/settings.local.json" ]; then
   target="$(readlink .codex/settings.local.json)"
@@ -55,10 +57,12 @@ fi
 require_pattern "CLAUDE.md" 'docs/workflow/unified-codex-claude-loop.md' "CLAUDE.md missing unified workflow trigger"
 require_pattern "CLAUDE.md" 'docs/operations/claude-codex-adapter-matrix.md' "CLAUDE.md missing adapter matrix trigger"
 require_pattern "CLAUDE.md" 'docs/operations/subagent-catalog.md' "CLAUDE.md missing subagent catalog trigger"
+require_pattern "CLAUDE.md" 'docs/operations/tooling-governance-budget.json' "CLAUDE.md missing tooling governance budget trigger"
 
 require_pattern "AGENTS.md" 'docs/workflow/unified-codex-claude-loop.md' "AGENTS.md missing unified workflow mirror reference"
 require_pattern "AGENTS.md" 'docs/operations/claude-codex-adapter-matrix.md' "AGENTS.md missing adapter matrix mirror reference"
 require_pattern "AGENTS.md" 'docs/operations/subagent-catalog.md' "AGENTS.md missing subagent catalog mirror reference"
+require_pattern "AGENTS.md" 'docs/operations/tooling-governance-budget.json' "AGENTS.md missing tooling governance budget mirror reference"
 
 require_pattern ".codex/config.toml" '\[agents\.explorer\]' ".codex/config.toml missing explorer role"
 require_pattern ".codex/config.toml" '\[agents\.reviewer\]' ".codex/config.toml missing reviewer role"
@@ -71,6 +75,7 @@ require_pattern ".claude/settings.local.json" 'posttool-workflow-sync-check\.sh'
 
 require_exec ".claude/hooks/risk-tier-pretool-guard.sh"
 require_exec ".claude/hooks/posttool-workflow-sync-check.sh"
+require_exec "scripts/check-tooling-governance.sh"
 
 if [ "${#errors[@]}" -gt 0 ]; then
   echo "claude-codex-mirror-check: FAIL"

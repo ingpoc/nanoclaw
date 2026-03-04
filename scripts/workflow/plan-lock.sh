@@ -87,7 +87,8 @@ ${acceptance:-<list deterministic pass/fail checks>}
 ## Evidence Plan
 1. Workflow contract check: bash scripts/check-workflow-contracts.sh
 2. Mirror check: bash scripts/check-claude-codex-mirror.sh
-3. Acceptance gate: bash scripts/jarvis-ops.sh acceptance-gate
+3. Tooling governance check: bash scripts/check-tooling-governance.sh
+4. Acceptance gate: bash scripts/jarvis-ops.sh acceptance-gate
 
 ## Rollback Plan
 <explicit rollback path>

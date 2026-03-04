@@ -47,6 +47,7 @@ done
 
 bash scripts/check-workflow-contracts.sh
 bash scripts/check-claude-codex-mirror.sh
+bash scripts/check-tooling-governance.sh
 
 if [ "$skip_verify" -eq 0 ]; then
   bash scripts/workflow/verify.sh "${verify_args[@]}"

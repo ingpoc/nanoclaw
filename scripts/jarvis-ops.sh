@@ -10,6 +10,7 @@ Usage: scripts/jarvis-ops.sh <command> [args]
 Commands:
   preflight       Run runtime/auth/db baseline health checks
   reliability     Run reliability triage checks
+  acceptance-gate Run deterministic acceptance gate and write evidence manifest
   status          Show lane health and root-cause summaries from worker_runs
   watch           Follow categorized runtime logs
   trace           Build end-to-end timeline for lane/chat/run
@@ -18,7 +19,7 @@ Commands:
   hi-timeline     Alias for message-timeline
   verify-worker-connectivity
                   Validate worker lane connectivity gate using probe + DB checks
-  happiness-gate  Run user-facing happiness gate (status + andy user e2e probe)
+  happiness-gate  Run user-facing happiness gate (requires --user-confirmation)
   dispatch-lint   Validate worker dispatch payload against current rules
   db-doctor       Diagnose database schema/index/readiness drift (read-only)
   incident        Manage incident registry (list/show/resolve/reopen/note)
@@ -42,6 +43,9 @@ case "$command_name" in
     ;;
   reliability)
     exec "$SCRIPT_DIR/jarvis-reliability.sh" "$@"
+    ;;
+  acceptance-gate)
+    exec "$SCRIPT_DIR/jarvis-acceptance-gate.sh" "$@"
     ;;
   status)
     exec "$SCRIPT_DIR/jarvis-status.sh" "$@"

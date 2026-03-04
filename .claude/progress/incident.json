@@ -1,7 +1,66 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-03T18:24:15.264095+00:00",
+  "updated_at": "2026-03-04T09:08:46.837716+00:00",
   "incidents": [
+    {
+      "id": "incident-20260304T090843Z",
+      "title": "jarvis-acceptance-gate mktemp template incompatible on macOS",
+      "status": "open",
+      "severity": "low",
+      "created_at": "2026-03-04T09:08:43.171474+00:00",
+      "updated_at": "2026-03-04T09:08:46.837628+00:00",
+      "summary": {
+        "symptom": "scripts/workflow/verify.sh failed on acceptance-gate with mktemp File exists during build log capture",
+        "suspected_cause": "mktemp template included suffix after XXXXXX causing collision/compatibility issues on macOS",
+        "impact": "deterministic verify wrapper could fail before reporting real gate results",
+        "next_action": "keep mktemp template suffix-free and monitor wrapper runs for recurrence"
+      },
+      "evidence": {
+        "bundle_count": 0
+      },
+      "context": {
+        "lane": "andy-developer"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-04T09:08:43.171474+00:00",
+          "author": "operator",
+          "text": "reported: scripts/workflow/verify.sh failed on acceptance-gate with mktemp File exists during build log capture"
+        },
+        {
+          "ts": "2026-03-04T09:08:46.837625+00:00",
+          "author": "operator",
+          "text": "Applied fix in scripts/jarvis-acceptance-gate.sh: mktemp template now /tmp/jarvis-acceptance-<check>.XXXXXX. Re-ran scripts/workflow/verify.sh --skip-tests --skip-connectivity: PASS."
+        }
+      ]
+    },
+    {
+      "id": "incident-20260304T080739Z",
+      "title": "format:check fails due existing src formatting drift",
+      "status": "open",
+      "severity": "low",
+      "created_at": "2026-03-04T08:07:39.300927+00:00",
+      "updated_at": "2026-03-04T08:07:39.300927+00:00",
+      "summary": {
+        "symptom": "npm run format:check reports style issues across multiple src/*.ts files",
+        "suspected_cause": "pre_existing_format_drift",
+        "impact": "CI format gate cannot pass until files are normalized",
+        "next_action": "run prettier --write on affected src files in a dedicated formatting PR and re-run ci"
+      },
+      "evidence": {
+        "bundle_count": 0
+      },
+      "context": {
+        "lane": "andy-developer"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-04T08:07:39.300927+00:00",
+          "author": "user",
+          "text": "reported: npm run format:check reports style issues across multiple src/*.ts files"
+        }
+      ]
+    },
     {
       "id": "incident-worker-connectivity-block-20260227",
       "title": "Workers not connected; Andy developer cannot restart workers; push task blocked",

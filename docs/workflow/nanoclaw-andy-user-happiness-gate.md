@@ -42,7 +42,7 @@ Run before declaring any Andy/Jarvis reliability fix complete, and before any bl
 ## Workflow
 
 1. Run the consolidated gate command:
-   - `bash scripts/jarvis-ops.sh happiness-gate`
+   - `bash scripts/jarvis-ops.sh happiness-gate --user-confirmation "<manual User POV runbook completed>"`
 2. If probe fails, do not proceed to strip-down.
 3. Fix issue, rerun probe, and only continue when all checks pass.
 4. Add or update incident note with probe evidence before closing incident.
@@ -58,6 +58,7 @@ Run this manual sequence at least once per release candidate:
 5. Confirm answer quality feels human-helpful, not robotic boilerplate.
 
 This runbook is a hard requirement in addition to script checks.
+The `--user-confirmation` value in the gate command must explicitly confirm this runbook was completed.
 
 Equivalent expanded form (for debugging):
 

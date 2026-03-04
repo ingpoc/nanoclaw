@@ -9,6 +9,11 @@
 - Before ending a session with in-progress work or blockers, follow `docs/workflow/session-recall.md` handoff flow (`qctx --close`).
 - Before changing session recall/sync/export behavior, follow `docs/workflow/session-recall.md`.
 - Run the task-start skill/MCP routing preflight defined by `CLAUDE.md` before ad-hoc implementation/debugging.
+- Before starting feature/bug/reliability implementation, follow `docs/workflow/nanoclaw-development-loop.md`.
+- Before changing workflow strategy/cadence based on external research, follow `docs/workflow/workflow-optimization-loop.md`.
+- Before running parallel Claude/Codex worktrees or splitting execution/review ownership across tools, follow `docs/workflow/unified-codex-claude-loop.md`.
+- Before defining subagent fanout for plan/review/verification, follow `docs/operations/subagent-catalog.md`.
+- Before adapting behavior between Claude and Codex runtimes, follow `docs/operations/claude-codex-adapter-matrix.md`.
 - If `AGENTS.md` and `CLAUDE.md` ever conflict, `CLAUDE.md` wins.
 
 ## Mission-Aligned Engineering Contract (Mirror)
@@ -30,4 +35,4 @@
 - Incident lifecycle state is tracked in `.claude/progress/incident.json` (open/resolved + notes).
 - Feature mapping/touch-set discipline routes to `feature-tracking`; feature execution tracking routes to `nanoclaw-orchestrator` work items.
 - Reliability validation can use `scripts/jarvis-ops.sh verify-worker-connectivity` after `preflight`/`trace`.
-- Andy user-facing reliability sign-off should follow `docs/workflow/nanoclaw-andy-user-happiness-gate.md` and run `bash scripts/jarvis-ops.sh happiness-gate`.
+- Andy user-facing reliability sign-off should follow `docs/workflow/nanoclaw-andy-user-happiness-gate.md` and run `bash scripts/jarvis-ops.sh happiness-gate --user-confirmation "<manual User POV runbook completed>"`.

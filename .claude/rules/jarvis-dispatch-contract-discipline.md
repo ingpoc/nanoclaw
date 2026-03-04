@@ -18,7 +18,7 @@ When contract fields change:
 2. Update caller/consumer behavior in `src/index.ts`
 3. Update persistence fields in `src/db.ts` (if artifact set changed)
 4. Update tests in `src/jarvis-worker-dispatch.test.ts`
-5. Update docs: `docs/nanoclaw-jarvis-dispatch-contract.md`
+5. Update docs: `docs/workflow/nanoclaw-jarvis-dispatch-contract.md`
 
 Do not update only one layer.
 

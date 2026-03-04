@@ -31,6 +31,7 @@ Use the checklist as the canonical runbook; do not improvise command order unles
 3. Do not create an incident immediately when a symptom is reported; debug first, then create incident with verified cause/details.
 4. Every serious investigation should produce an incident bundle.
 5. If a resolved issue recurs, reopen the same incident (do not create duplicate IDs unless unrelated).
+6. Resolution requires recurrence-prevention + lesson persistence evidence (`--prevention-note`, `--lesson-reference`).
 
 ## Script Routing Matrix
 
@@ -173,6 +174,10 @@ Only after user confirmation:
 
 `incident resolve --id <incident-id> --resolution "<exact fix>" --verification "<tests/checks>" --fix-reference "<commit/pr/script>" --user-confirmed-fixed --user-confirmation "<exact user confirmation text>"`
 
+Current required form:
+
+`incident resolve --id <incident-id> --resolution "<exact fix>" --verification "<tests/checks>" --fix-reference "<commit/pr/script>" --prevention-note "<what prevents recurrence>" --lesson-reference "<CLAUDE/docs path>" --user-confirmed-fixed --user-confirmation "<exact user confirmation text>"`
+
 If user has not confirmed, do not run resolve; keep status `open`.
 
 ### Reopen on recurrence
@@ -189,8 +194,9 @@ If user has not confirmed, do not run resolve; keep status `open`.
 6. Attach verified details via `incident enrich` (and optional `incident note`)
 7. For ongoing tracked incidents, use `incident-bundle --incident-id <id>` to append fresh evidence
 8. Apply fixes and rerun validation (`preflight`, `status`, `trace` as relevant)
-9. Wait for explicit user confirmation
-10. Run `incident resolve ... --user-confirmed-fixed --user-confirmation "<user text>"`
+9. Update prevention and lesson persistence in CLAUDE/docs
+10. Wait for explicit user confirmation
+11. Run `incident resolve ... --prevention-note ... --lesson-reference ... --user-confirmed-fixed --user-confirmation "<user text>"`
 
 ## Output Contract For Agent
 

@@ -37,6 +37,11 @@ BEFORE changing session recall/sync/export behavior → read docs/workflow/sessi
 BEFORE editing root CLAUDE.md → read .claude/rules/nanoclaw-root-claude-compression.md
 BEFORE adding/removing/renaming docs → read .claude/rules/docs-pruning-loop.md
 BEFORE starting implementation/debug/setup/update work → read .claude/rules/skill-routing-preflight.md
+BEFORE starting feature, bug-fix, or reliability implementation → read docs/workflow/nanoclaw-development-loop.md
+BEFORE optimizing development workflow strategy/cadence based on external research → read docs/workflow/workflow-optimization-loop.md
+BEFORE running parallel Claude/Codex worktrees or assigning implementation/review across tools → read docs/workflow/unified-codex-claude-loop.md
+BEFORE defining subagent fanout for plan/review/verification → read docs/operations/subagent-catalog.md
+BEFORE deciding Claude-vs-Codex execution adapter behavior → read docs/operations/claude-codex-adapter-matrix.md
 BEFORE changing core orchestrator/channel/IPC/scheduler behavior → read docs/reference/REQUIREMENTS.md, docs/reference/SPEC.md, docs/reference/SECURITY.md
 BEFORE changing high-level orchestration methodology → read docs/architecture/harness-engineering-alignment.md
 BEFORE changing Jarvis architecture/state machine → read docs/architecture/nanoclaw-jarvis.md
@@ -115,13 +120,26 @@ bash scripts/qmd-context-recall.sh --bootstrap # Recall-only workflow (no sync/g
 bash scripts/qmd-session-sync.sh               # Session export sync + qmd update + git add/commit
 ```
 
+Unified workflow helpers:
+
+```bash
+bash scripts/workflow/preflight.sh
+bash scripts/workflow/plan-lock.sh --ticket <id> --goal "<goal>"
+bash scripts/workflow/verify.sh
+bash scripts/workflow/finalize-pr.sh
+bash scripts/workflow/sync-mirror.sh
+bash scripts/worktree/open.sh --ticket <id> --base main
+bash scripts/worktree/clean.sh --ticket <id> --delete-branches
+```
+
 Jarvis ops entrypoint:
 
 ```bash
 bash scripts/jarvis-ops.sh reliability
+bash scripts/jarvis-ops.sh acceptance-gate
 bash scripts/jarvis-ops.sh trace --lane andy-developer --until <iso-timestamp>
 bash scripts/jarvis-ops.sh verify-worker-connectivity
-bash scripts/jarvis-ops.sh happiness-gate
+bash scripts/jarvis-ops.sh happiness-gate --user-confirmation "<manual User POV runbook completed>"
 ```
 
 Runtime tuning env vars (see `.env.example` for defaults):

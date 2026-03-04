@@ -46,6 +46,8 @@ Andy-developer should choose the minimum bundle that satisfies reliability and g
 
 - `npm run build`
 - `npm test`
+- `bash scripts/check-workflow-contracts.sh`
+- `bash scripts/jarvis-ops.sh acceptance-gate` for Andy/Jarvis workflow/runtime behavior changes
 - Any workflow-specific policy checks enabled for the repo
 
 ## Operational Guardrails

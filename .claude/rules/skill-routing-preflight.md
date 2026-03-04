@@ -4,24 +4,26 @@ Applies at the start of every task before implementation, debugging, setup, or u
 
 ## Rule
 
-If a local skill matches the job, invoke that skill workflow first.
+Load required docs/rules first to lock invariants, then invoke the most specific matching skill workflow.
 
 Do not start ad-hoc edits/debug loops before this check.
 
 ## Preflight Steps
 
 1. Classify the user intent.
-2. Check local skills under `.claude/skills/*/SKILL.md`.
-3. Route to the most specific matching skill.
-4. Choose the best matching MCP tool for the intent when available.
-5. If no specific skill matches, use `/customize` for feature/behavior changes.
-6. If no skill/MCP applies, proceed docs-first with normal engineering flow.
+2. Load required docs/rules from `CLAUDE.md` Docs Index for that intent.
+3. Check local skills under `.claude/skills/*/SKILL.md`.
+4. Route to the most specific matching skill.
+5. Choose the best matching MCP tool for the intent when available.
+6. If no specific skill matches, use `/customize` for feature/behavior changes.
+7. If no skill/MCP applies, proceed docs-first with normal engineering flow.
 
 ## Mandatory Routing
 
 - New feature or behavior change -> `/customize` (unless a more specific `/add-*` or domain skill exists)
 - Container/auth/runtime/linking failures -> `/debug`
 - Incident triage/history tracking/resolution workflow -> `/incident-debugger` (combine with `/debug` if runtime is failing)
+- Cross-tool Claude/Codex assignment, worktree parallelism, or subagent fanout policy -> docs-first (`docs/workflow/unified-codex-claude-loop.md`, `docs/operations/claude-codex-adapter-matrix.md`, `docs/operations/subagent-catalog.md`)
 - First-time install/onboarding -> `/setup`
 - Upstream sync request -> `/update`
 - Docker -> Apple Container runtime migration -> `/convert-to-apple-container`

@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-04T18:35:32.718387+00:00",
+  "updated_at": "2026-03-04T18:59:51+00:00",
   "incidents": [
     {
       "id": "incident-20260304T110850Z",
@@ -8,7 +8,7 @@
       "status": "open",
       "severity": "medium",
       "created_at": "2026-03-04T11:08:50.813404+00:00",
-      "updated_at": "2026-03-04T18:35:32.718387+00:00",
+      "updated_at": "2026-03-04T18:59:51+00:00",
       "summary": {
         "symptom": "Live Build App request created worker run and reached review_requested, but andy_requests.request_id=req-1772622326048-pprimary remained coordinator_active with empty worker_run_id.",
         "suspected_cause": "Recurrence: andy-developer coordinator still emits worker dispatch payloads without request_id for some natural task prompts, and validat...",
@@ -49,6 +49,11 @@
           "ts": "2026-03-04T18:35:32.718387+00:00",
           "author": "operator",
           "text": "Applied request_id remediation set: andy dispatch hook now validates request_id without jq dependency, dispatch lint requires request_id, dispatch docs updated to required request_id, and IPC delegation/runtime sync paths were hardened so andy-developer -> jarvis-worker dispatch behavior stays in sync with repo source."
+        },
+        {
+          "ts": "2026-03-04T18:59:51+00:00",
+          "author": "codex",
+          "text": "2026-03-04 live regression: run-feature-tests ipc-dispatch-contract --live failed at happiness-gate progress query; full-user-journey E2E token=1772650187976-f8dqj showed attempt1 request req-1772650188115-pprimary remained coordinator_active without worker_run_id for >180s, retry attempt2 linked worker_run_id=userflow-1772650187976-f8dqj. No new dispatch-block artifact was created in this run; symptom remains as delayed/unlinked first-attempt dispatch with stale coordinator_active rows."
         }
       ]
     },
@@ -58,7 +63,7 @@
       "status": "open",
       "severity": "unknown",
       "created_at": "2026-03-04T17:32:06.597235+00:00",
-      "updated_at": "2026-03-04T17:59:55.260355+00:00",
+      "updated_at": "2026-03-04T18:59:51+00:00",
       "summary": {
         "symptom": "Andy status check-in misclassified as work intake",
         "suspected_cause": "Andy frontdesk classified work-check-in phrasing ('are you doing any work?') as work_intake, generating a frontdesk request and model-aut...",
@@ -86,6 +91,11 @@
           "ts": "2026-03-04T17:59:55.260350+00:00",
           "author": "operator",
           "text": "Regression probe on 2026-03-04T17:59:40Z for '@Andy are you doing any work?' (message_id=uat-checkin-1772647180674-v463i): bot replied in 1326ms, andy_requests rows for probe=0, worker runs in probe window=0, message timeline confirmed run_id=None. Symptom not reproduced in this run."
+        },
+        {
+          "ts": "2026-03-04T18:59:51+00:00",
+          "author": "codex",
+          "text": "2026-03-04 targeted phrase probe for '@Andy are you doing any work?' at 18:55:25Z returned status-style reply in 169ms with andy_request_count=0 and worker_runs_matching_token=0, so intake misclassification did not reproduce in this run."
         }
       ]
     },

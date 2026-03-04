@@ -35,6 +35,7 @@ import {
   ensureContainerRuntimeRunning,
 } from './container-runtime.js';
 import {
+  type AndyRequestRecord,
   createAndyRequestIfAbsent,
   acceptWorkerRunCompletion,
   claimRunForProvisioning,
@@ -135,8 +136,21 @@ const SIMPLE_ANDY_GREETING_PATTERN =
   /^(hi|hello|hey|yo|hiya|sup|ping|what'?s up|good (morning|afternoon|evening))[\s!.,?]*$/i;
 const ANDY_PROGRESS_QUERY_PATTERN =
   /\b(progress|status|update|what(?:'|’)s happening|what is happening|where are we|how far|eta|current progress|current status|what are you working on(?: right now)?|what are you doing(?: right now)?|what is the current progress|what is current progress)\b/i;
+const ANDY_WORK_CHECKIN_QUERY_PATTERN =
+  /\b(are you doing any work(?: right now)?|are you working(?: on anything)?(?: right now)?|working on anything|doing any work|are you busy(?: right now)?|busy right now)\b/i;
+const ANDY_QUESTION_LEAD_PATTERN =
+  /^(what|how|when|where|why|are|is|did|do|does|have|has|any|can|could|would|will)\b/i;
+const ANDY_WORK_INTAKE_DIRECTIVE_PATTERN =
+  /\b(please|can you|could you|would you|need you to|i need you to|let'?s|kindly|delegate|dispatch|build|create|implement|add|fix|debug|investigate|review|refactor|write|run|deploy|open (?:a )?pr|open pull request|update|change|remove)\b/i;
+const ANDY_WORK_INTAKE_TARGET_PATTERN =
+  /\b(code|feature|bug|issue|repo|repository|branch|commit|pr|pull request|file|test|script|api|endpoint|database|migration|container|worker|task)\b/i;
+const ANDY_WORK_IMPERATIVE_LEAD_PATTERN =
+  /^(?:please\s+)?(build|create|implement|add|fix|debug|investigate|review|refactor|write|run|deploy|update|change|remove|delegate|dispatch)\b/i;
+const ANDY_STATUS_CHECKIN_HINT_PATTERN =
+  /\b(status|progress|update|happening|queue|eta|currently|right now|busy|working|doing|still)\b/i;
 const ANDY_STATUS_BY_ID_PATTERN = /\bstatus\s+(req-[a-z0-9-]+)\b/i;
 const ANDY_REQUEST_ID_PATTERN = /\b(req-[a-z0-9-]+)\b/i;
+const ANDY_PROGRESS_RECENCY_WINDOW_MS = 60 * 60 * 1000;
 const andyBusyAckLastSentMs: Record<string, number> = {};
 const andyRetryNoticeState: Record<
   string,
@@ -262,6 +276,53 @@ function stripAssistantTrigger(content: string): string {
   return content.trim().replace(TRIGGER_PATTERN, '').trim();
 }
 
+function hasAndyProgressKeywords(body: string): boolean {
+  return (
+    ANDY_PROGRESS_QUERY_PATTERN.test(body) ||
+    ANDY_WORK_CHECKIN_QUERY_PATTERN.test(body)
+  );
+}
+
+function isQuestionLikeText(body: string): boolean {
+  const compact = body.replace(/\s+/g, ' ').trim();
+  if (!compact) return false;
+  return compact.includes('?') || ANDY_QUESTION_LEAD_PATTERN.test(compact);
+}
+
+function hasAndyWorkDirective(body: string): boolean {
+  return (
+    ANDY_WORK_INTAKE_DIRECTIVE_PATTERN.test(body) ||
+    ANDY_WORK_IMPERATIVE_LEAD_PATTERN.test(body)
+  );
+}
+
+function isLikelyAndyStatusQuery(body: string): boolean {
+  if (!body) return false;
+  if (ANDY_STATUS_BY_ID_PATTERN.test(body)) return true;
+  if (hasAndyProgressKeywords(body)) return true;
+
+  if (!isQuestionLikeText(body)) return false;
+  if (hasAndyWorkDirective(body) && ANDY_WORK_INTAKE_TARGET_PATTERN.test(body)) {
+    return false;
+  }
+  return (
+    ANDY_STATUS_CHECKIN_HINT_PATTERN.test(body) ||
+    /\b(you|jarvis|worker)\b/i.test(body)
+  );
+}
+
+function isLikelyAndyWorkIntake(body: string): boolean {
+  if (!body) return false;
+  if (isLikelyAndyStatusQuery(body)) return false;
+  if (ANDY_WORK_IMPERATIVE_LEAD_PATTERN.test(body)) return true;
+
+  const hasDirective = hasAndyWorkDirective(body);
+  const hasTarget = ANDY_WORK_INTAKE_TARGET_PATTERN.test(body);
+  if (hasDirective && (hasTarget || !isQuestionLikeText(body))) return true;
+
+  return false;
+}
+
 function isSimpleAndyGreeting(
   group: RegisteredGroup,
   messages: NewMessage[],
@@ -287,7 +348,7 @@ function isAndyFrontdeskMessage(
   return (
     SIMPLE_ANDY_GREETING_PATTERN.test(body) ||
     ANDY_STATUS_BY_ID_PATTERN.test(body) ||
-    ANDY_PROGRESS_QUERY_PATTERN.test(body)
+    isLikelyAndyStatusQuery(body)
   );
 }
 
@@ -308,10 +369,7 @@ function getAndyProgressQueryContext(
     if (parseDispatchPayload(message.content)) return null;
     const body = stripAssistantTrigger(message.content).trim();
     if (!body) continue;
-    if (
-      ANDY_STATUS_BY_ID_PATTERN.test(body) ||
-      ANDY_PROGRESS_QUERY_PATTERN.test(body)
-    ) {
+    if (isLikelyAndyStatusQuery(body)) {
       queryMessage = message;
       continue;
     }
@@ -330,7 +388,7 @@ function extractAndyStatusRequestId(message: NewMessage): string | undefined {
   const explicit = body.match(ANDY_STATUS_BY_ID_PATTERN);
   if (explicit?.[1]) return explicit[1];
 
-  if (!ANDY_PROGRESS_QUERY_PATTERN.test(body)) return undefined;
+  if (!isLikelyAndyStatusQuery(body)) return undefined;
   const anyId = body.match(ANDY_REQUEST_ID_PATTERN);
   return anyId?.[1];
 }
@@ -345,12 +403,8 @@ function isAndyWorkIntakeMessage(
   const body = stripAssistantTrigger(message.content).trim();
   if (!body) return false;
   if (SIMPLE_ANDY_GREETING_PATTERN.test(body)) return false;
-  if (
-    ANDY_STATUS_BY_ID_PATTERN.test(body) ||
-    ANDY_PROGRESS_QUERY_PATTERN.test(body)
-  )
-    return false;
-  return true;
+  if (isLikelyAndyStatusQuery(body)) return false;
+  return isLikelyAndyWorkIntake(body);
 }
 
 function generateAndyRequestId(messageId: string): string {
@@ -449,6 +503,34 @@ function humanizeAndyState(state: string): string {
   return state.replace(/_/g, ' ');
 }
 
+function isRecentWithinWindow(timestamp: string, windowMs: number): boolean {
+  const parsed = Date.parse(timestamp);
+  if (!Number.isFinite(parsed)) return false;
+  return Date.now() - parsed <= windowMs;
+}
+
+function isActiveWorkerRunStatus(status: string): boolean {
+  return (
+    status === 'queued' ||
+    status === 'provisioning' ||
+    status === 'running' ||
+    status === 'stopping'
+  );
+}
+
+function shouldIncludeAndyRequestInProgressReply(
+  request: AndyRequestRecord,
+): boolean {
+  if (isRecentWithinWindow(request.updated_at, ANDY_PROGRESS_RECENCY_WINDOW_MS)) {
+    return true;
+  }
+  if (!request.worker_run_id) return false;
+
+  const run = getWorkerRun(request.worker_run_id);
+  if (!run) return false;
+  return isActiveWorkerRunStatus(run.status);
+}
+
 function buildAndyProgressStatusReply(
   chatJid: string,
   requestId?: string,
@@ -478,7 +560,9 @@ function buildAndyProgressStatusReply(
     return `${ASSISTANT_NAME}: \`${request.request_id}\` is \`${request.state}\`.${lastText}`;
   }
 
-  const activeRequests = listActiveAndyRequests(chatJid, 3);
+  const activeRequests = listActiveAndyRequests(chatJid, 10)
+    .filter(shouldIncludeAndyRequestInProgressReply)
+    .slice(0, 3);
   if (activeRequests.length > 0) {
     const lines = activeRequests.map((request) => {
       const prompt = summarizeAndyPrompt(request.user_prompt);
@@ -1538,9 +1622,12 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   let outputAckCursor: string | undefined;
   let workerRunTerminalized = false;
 
-  const sessionOverride = workerSessionSelection
-    ? (workerSessionSelection.selectedSessionId ?? null)
-    : undefined;
+  const sessionOverride =
+    group.folder === ANDY_DEVELOPER_FOLDER && !workerRun
+      ? null
+      : workerSessionSelection
+        ? (workerSessionSelection.selectedSessionId ?? null)
+        : undefined;
   const onSpawn = workerRun
     ? (containerName: string) => {
         if (workerRunMarkedRunning) return;

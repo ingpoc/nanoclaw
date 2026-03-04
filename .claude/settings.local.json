@@ -53,6 +53,13 @@
       "Bash(opencode run:*)"
     ]
   },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "token-efficient",
+    "context-graph",
+    "context7",
+    "exa"
+  ],
   "hooks": {
     "PreToolUse": [
       {
@@ -77,13 +84,6 @@
       }
     ]
   },
-  "enableAllProjectMcpServers": true,
-  "enabledMcpjsonServers": [
-    "token-efficient",
-    "context-graph",
-    "context7",
-    "exa"
-  ],
   "remote": {
     "defaultEnvironmentId": "env_01HbMxf8Uo55p59Q1NSuFYjx"
   }

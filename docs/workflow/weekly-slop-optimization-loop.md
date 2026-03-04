@@ -157,6 +157,52 @@ Weekly slop optimization is complete when all are true:
 3. documentation index/mirror is synchronized.
 4. weekly evidence artifact is committed.
 
+## Phase 6: Context Budget Optimization
+
+Auto-loaded rules (`.claude/rules/`) consume tokens every session. Trigger-loaded docs (`docs/` + CLAUDE.md trigger line) load only when relevant.
+
+### Decision: Auto-Load vs Trigger-Load
+
+A rule stays in `.claude/rules/` (auto-loaded) only if ALL are true:
+
+1. Applies in >=80% of sessions
+2. Silent/wrong behavior without it (not just slower)
+3. Under ~150 tokens
+
+Otherwise, move to `docs/` and add a trigger line in CLAUDE.md.
+
+### Inventory Command
+
+```bash
+# List auto-loaded rules with token estimates
+for f in .claude/rules/*.md; do
+  tokens=$(wc -w < "$f" | awk '{printf "%d", $1 * 1.3}')
+  printf "%-50s ~%s tokens\n" "$f" "$tokens"
+done
+```
+
+### Prune Checklist
+
+For each auto-loaded rule, ask:
+
+| Question | If No → |
+|----------|---------|
+| Needed most sessions? | Move to `docs/`, add trigger |
+| Causes silent failure if missing? | Move to `docs/`, add trigger |
+| Under ~150 tokens? | Extract detail to `docs/`, keep stub |
+
+### Evidence Template
+
+Record context budget changes in weekly artifact:
+
+```text
+## Context Budget
+- Rules moved to trigger-load: [list]
+- Duplicates removed: [list]
+- Tokens freed: [number]
+- Remaining auto-loaded rules: [list with token counts]
+```
+
 ## Agent Routing
 
 | Step | Agent | Mode | Notes |

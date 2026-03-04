@@ -34,9 +34,9 @@ Folder-level docs index: [`docs/README.md`](docs/README.md)
 AT SESSION START or resuming interrupted work → read docs/workflow/session-recall.md
 BEFORE ending a session with in-progress work/blockers → read docs/workflow/session-recall.md
 BEFORE changing session recall/sync/export behavior → read docs/workflow/session-recall.md
-BEFORE editing root CLAUDE.md → read .claude/rules/nanoclaw-root-claude-compression.md
-BEFORE adding/removing/renaming docs → read .claude/rules/docs-pruning-loop.md
-BEFORE starting implementation/debug/setup/update work → read .claude/rules/skill-routing-preflight.md
+BEFORE editing root CLAUDE.md → read docs/workflow/nanoclaw-root-claude-compression.md
+BEFORE adding/removing/renaming docs → read docs/workflow/docs-pruning-loop.md
+BEFORE starting implementation/debug/setup/update work → read docs/workflow/skill-routing-preflight.md
 BEFORE starting feature, bug-fix, or reliability implementation → read docs/workflow/nanoclaw-development-loop.md
 BEFORE optimizing development workflow strategy/cadence based on external research → read docs/workflow/workflow-optimization-loop.md
 BEFORE running weekly docs/scripts/config/code slop cleanup during optimization cycles → read docs/workflow/weekly-slop-optimization-loop.md
@@ -48,7 +48,7 @@ BEFORE changing core orchestrator/channel/IPC/scheduler behavior → read docs/r
 BEFORE changing high-level orchestration methodology → read docs/architecture/harness-engineering-alignment.md
 BEFORE changing Jarvis architecture/state machine → read docs/architecture/nanoclaw-jarvis.md
 BEFORE finalizing Jarvis workflow/contract changes → read docs/workflow/nanoclaw-jarvis-acceptance-checklist.md
-BEFORE changing worker contract code/docs → read .claude/rules/jarvis-dispatch-contract-discipline.md
+BEFORE changing worker contract code/docs → read docs/workflow/jarvis-dispatch-contract-discipline.md
 BEFORE changing worker dispatch validation/contracts → read docs/workflow/nanoclaw-jarvis-dispatch-contract.md
 BEFORE changing worker container runtime/mounts/model config → read docs/workflow/nanoclaw-jarvis-worker-runtime.md
 BEFORE changing GitHub Actions/review governance for Andy/Jarvis lanes → read docs/workflow/nanoclaw-github-control-plane.md
@@ -58,7 +58,8 @@ BEFORE deciding whether to run a skill workflow or docs-first workflow → read 
 BEFORE pulling/fetching upstream main or resolving upstream sync conflicts → read docs/operations/upstream-sync-policy.md
 BEFORE finalizing any Andy/Jarvis operating agreement change → read docs/operations/agreement-sync-protocol.md
 BEFORE deciding runtime-local vs prebaked container placement → read docs/operations/runtime-vs-prebaked-boundary.md
-BEFORE debugging Andy/Jarvis worker flow issues → read .claude/rules/nanoclaw-jarvis-debug-loop.md
+BEFORE editing Andy's groups/main/CLAUDE.md → read docs/workflow/andy-compression-loop.md
+BEFORE debugging Andy/Jarvis worker flow issues → read docs/workflow/nanoclaw-jarvis-debug-loop.md
 BEFORE debugging Apple Container build/runtime issues → read docs/troubleshooting/DEBUG_CHECKLIST.md and docs/troubleshooting/APPLE-CONTAINER-NETWORKING.md
 BEFORE debugging container/auth/session/mount issues → read docs/workflow/nanoclaw-container-debugging.md
 ```

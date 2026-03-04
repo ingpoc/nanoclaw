@@ -45,7 +45,7 @@ Screenshot capture/analysis is prohibited in worker dispatch and completion evid
 | Field | Rule |
 |-------|------|
 | `run_id` | required, max 64 chars, no whitespace |
-| `request_id` | optional tracking id, max 64 chars, no whitespace |
+| `request_id` | required tracking id, max 64 chars, no whitespace |
 | `task_type` | one of `analyze`, `implement`, `fix`, `refactor`, `test`, `release`, `research`, `code` |
 | `context_intent` | required; `fresh` (new context) or `continue` (resume related context) |
 | `input` | required non-empty string |

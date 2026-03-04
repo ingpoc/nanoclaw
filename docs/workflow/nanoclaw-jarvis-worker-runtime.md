@@ -56,6 +56,12 @@ Before run, host copies skills/rules to `data/sessions/<group>/.opencode/*` with
 Hidden metadata entries are skipped and source/destination overlap is rejected.
 This prevents broken symlink targets and copy-collision failures inside the worker container.
 
+Agent-runner source sync guardrail:
+
+- Host stages `container/agent-runner/src` into `data/sessions/<group>/agent-runner-src` with sync metadata.
+- If staged source diverges from tracked sync baseline due local lane edits, host logs drift and preserves local edits.
+- If legacy staged source has no sync metadata and drifts from repo baseline, host backs it up and resets to repo baseline to avoid silent runtime contract drift.
+
 ## Role-Based Prebaked Bundles
 
 Bundles are group-aware:

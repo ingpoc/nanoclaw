@@ -134,6 +134,18 @@ if not isinstance(payload, dict):
 run_id = str(payload.get("run_id", "")).strip()
 if not run_id or re.search(r"\s", run_id):
     errors.append("run_id must be non-empty and contain no whitespace")
+elif len(run_id) > 64:
+    errors.append("run_id must be <= 64 chars")
+
+request_id = payload.get("request_id")
+if not isinstance(request_id, str) or not request_id.strip():
+    errors.append("request_id is required for worker dispatch")
+else:
+    request_id = request_id.strip()
+    if re.search(r"\s", request_id):
+        errors.append("request_id must contain no whitespace")
+    if len(request_id) > 64:
+        errors.append("request_id must be <= 64 chars")
 
 context_intent = payload.get("context_intent")
 if context_intent not in {"fresh", "continue"}:
@@ -238,6 +250,7 @@ out = {
     "warnings": warnings,
     "normalized": {
         "run_id": run_id,
+        "request_id": request_id if isinstance(request_id, str) else None,
         "context_intent": context_intent,
         "repo": repo,
         "branch": branch,

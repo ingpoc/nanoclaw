@@ -3,6 +3,7 @@
  * Spawns agent execution in containers and handles IPC
  */
 import { ChildProcess, exec, spawn } from 'child_process';
+import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -52,6 +53,141 @@ interface VolumeMount {
   hostPath: string;
   containerPath: string;
   readonly: boolean;
+}
+
+type RunnerSyncMetadata = {
+  sourceHash: string;
+  destinationHash: string;
+  syncedAt: string;
+};
+
+const AGENT_RUNNER_SYNC_FILE = '.nanoclaw-agent-runner-sync.json';
+
+function stableDirectoryHash(dir: string): string {
+  const hash = createHash('sha256');
+
+  const walk = (baseDir: string, relDir = ''): void => {
+    const absDir = relDir ? path.join(baseDir, relDir) : baseDir;
+    const entries = fs
+      .readdirSync(absDir, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const entry of entries) {
+      const relPath = relDir ? path.join(relDir, entry.name) : entry.name;
+      const normalizedRel = relPath.split(path.sep).join('/');
+      if (normalizedRel === AGENT_RUNNER_SYNC_FILE) continue;
+      if (entry.isDirectory()) {
+        walk(baseDir, relPath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      hash.update(`file:${normalizedRel}\n`);
+      hash.update(fs.readFileSync(path.join(baseDir, relPath)));
+      hash.update('\n');
+    }
+  };
+
+  walk(dir);
+  return hash.digest('hex');
+}
+
+function readRunnerSyncMetadata(
+  groupAgentRunnerDir: string,
+): RunnerSyncMetadata | null {
+  const metadataFile = path.join(groupAgentRunnerDir, AGENT_RUNNER_SYNC_FILE);
+  if (!fs.existsSync(metadataFile)) return null;
+  try {
+    return JSON.parse(
+      fs.readFileSync(metadataFile, 'utf-8'),
+    ) as RunnerSyncMetadata;
+  } catch {
+    return null;
+  }
+}
+
+function writeRunnerSyncMetadata(
+  groupAgentRunnerDir: string,
+  metadata: RunnerSyncMetadata,
+): void {
+  const metadataFile = path.join(groupAgentRunnerDir, AGENT_RUNNER_SYNC_FILE);
+  fs.writeFileSync(metadataFile, JSON.stringify(metadata, null, 2) + '\n');
+}
+
+function replaceAgentRunnerSource(
+  agentRunnerSrc: string,
+  groupAgentRunnerDir: string,
+): void {
+  const backupDir = `${groupAgentRunnerDir}.backup-${Date.now()}`;
+  if (fs.existsSync(groupAgentRunnerDir)) {
+    fs.renameSync(groupAgentRunnerDir, backupDir);
+  }
+  fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true });
+}
+
+function syncAgentRunnerSource(
+  groupFolder: string,
+  agentRunnerSrc: string,
+  groupAgentRunnerDir: string,
+): void {
+  if (!fs.existsSync(agentRunnerSrc)) return;
+
+  const sourceHash = stableDirectoryHash(agentRunnerSrc);
+
+  if (!fs.existsSync(groupAgentRunnerDir)) {
+    fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true });
+    writeRunnerSyncMetadata(groupAgentRunnerDir, {
+      sourceHash,
+      destinationHash: sourceHash,
+      syncedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  const destinationHash = stableDirectoryHash(groupAgentRunnerDir);
+  const metadata = readRunnerSyncMetadata(groupAgentRunnerDir);
+
+  if (!metadata) {
+    if (destinationHash === sourceHash) {
+      writeRunnerSyncMetadata(groupAgentRunnerDir, {
+        sourceHash,
+        destinationHash,
+        syncedAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    // Legacy lanes without sync metadata drift silently. Fail closed by
+    // resetting to repo source and keeping a timestamped backup.
+    replaceAgentRunnerSource(agentRunnerSrc, groupAgentRunnerDir);
+    writeRunnerSyncMetadata(groupAgentRunnerDir, {
+      sourceHash,
+      destinationHash: sourceHash,
+      syncedAt: new Date().toISOString(),
+    });
+    logger.warn(
+      { groupFolder },
+      'Reset stale agent-runner source from repository baseline',
+    );
+    return;
+  }
+
+  // Local lane edits take priority; keep them and only log drift.
+  if (destinationHash !== metadata.destinationHash) {
+    logger.warn(
+      { groupFolder },
+      'Detected local agent-runner edits; skipping repository sync',
+    );
+    return;
+  }
+
+  if (sourceHash === metadata.sourceHash) return;
+
+  replaceAgentRunnerSource(agentRunnerSrc, groupAgentRunnerDir);
+  writeRunnerSyncMetadata(groupAgentRunnerDir, {
+    sourceHash,
+    destinationHash: sourceHash,
+    syncedAt: new Date().toISOString(),
+  });
 }
 
 function buildVolumeMounts(
@@ -173,9 +309,9 @@ function buildVolumeMounts(
     readonly: false,
   });
 
-  // Copy agent-runner source into a per-group writable location so agents
-  // can customize it (add tools, change behavior) without affecting other
-  // groups. Recompiled on container startup via entrypoint.sh.
+  // Keep agent-runner source in a per-group writable location.
+  // We sync from repo source with drift detection so contract/runtime fixes
+  // are not silently skipped in long-lived lanes.
   const agentRunnerSrc = path.join(
     projectRoot,
     'container',
@@ -188,9 +324,7 @@ function buildVolumeMounts(
     group.folder,
     'agent-runner-src',
   );
-  if (!fs.existsSync(groupAgentRunnerDir) && fs.existsSync(agentRunnerSrc)) {
-    fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true });
-  }
+  syncAgentRunnerSource(group.folder, agentRunnerSrc, groupAgentRunnerDir);
   mounts.push({
     hostPath: groupAgentRunnerDir,
     containerPath: '/app/src',

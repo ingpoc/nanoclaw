@@ -8,7 +8,7 @@ import {
   getTaskById,
   setRegisteredGroup,
 } from './db.js';
-import { processTaskIpc, IpcDeps } from './ipc.js';
+import { isIpcTargetAuthorized, processTaskIpc, IpcDeps } from './ipc.js';
 import { RegisteredGroup } from './types.js';
 
 // Set up registered groups used across tests
@@ -34,6 +34,20 @@ const THIRD_GROUP: RegisteredGroup = {
   added_at: '2024-01-01T00:00:00.000Z',
 };
 
+const ANDY_DEVELOPER_GROUP: RegisteredGroup = {
+  name: 'Andy Developer',
+  folder: 'andy-developer',
+  trigger: '@Andy',
+  added_at: '2024-01-01T00:00:00.000Z',
+};
+
+const JARVIS_WORKER_1_GROUP: RegisteredGroup = {
+  name: 'Jarvis Worker 1',
+  folder: 'jarvis-worker-1',
+  trigger: '@Andy',
+  added_at: '2024-01-01T00:00:00.000Z',
+};
+
 let groups: Record<string, RegisteredGroup>;
 let deps: IpcDeps;
 
@@ -44,6 +58,8 @@ beforeEach(() => {
     'main@g.us': MAIN_GROUP,
     'other@g.us': OTHER_GROUP,
     'third@g.us': THIRD_GROUP,
+    'andy-developer@g.us': ANDY_DEVELOPER_GROUP,
+    'jarvis-worker-1@nanoclaw': JARVIS_WORKER_1_GROUP,
   };
 
   // Populate DB as well
@@ -141,6 +157,25 @@ describe('schedule_task authorization', () => {
 
     const allTasks = getAllTasks();
     expect(allTasks.length).toBe(0);
+  });
+
+  it('andy-developer can schedule worker tasks', async () => {
+    await processTaskIpc(
+      {
+        type: 'schedule_task',
+        prompt: 'delegate worker task',
+        schedule_type: 'once',
+        schedule_value: '2025-06-01T00:00:00.000Z',
+        targetJid: 'jarvis-worker-1@nanoclaw',
+      },
+      'andy-developer',
+      false,
+      deps,
+    );
+
+    const allTasks = getAllTasks();
+    expect(allTasks.length).toBe(1);
+    expect(allTasks[0].group_folder).toBe('jarvis-worker-1');
   });
 });
 
@@ -386,52 +421,58 @@ describe('refresh_groups authorization', () => {
 // The logic: isMain || (targetGroup && targetGroup.folder === sourceGroup)
 
 describe('IPC message authorization', () => {
-  // Replicate the exact check from the IPC watcher
-  function isMessageAuthorized(
-    sourceGroup: string,
-    isMain: boolean,
-    targetChatJid: string,
-    registeredGroups: Record<string, RegisteredGroup>,
-  ): boolean {
-    const targetGroup = registeredGroups[targetChatJid];
-    return isMain || (!!targetGroup && targetGroup.folder === sourceGroup);
-  }
-
   it('main group can send to any group', () => {
     expect(
-      isMessageAuthorized('whatsapp_main', true, 'other@g.us', groups),
+      isIpcTargetAuthorized('whatsapp_main', true, 'other@g.us', groups),
     ).toBe(true);
     expect(
-      isMessageAuthorized('whatsapp_main', true, 'third@g.us', groups),
+      isIpcTargetAuthorized('whatsapp_main', true, 'third@g.us', groups),
     ).toBe(true);
   });
 
   it('non-main group can send to its own chat', () => {
     expect(
-      isMessageAuthorized('other-group', false, 'other@g.us', groups),
+      isIpcTargetAuthorized('other-group', false, 'other@g.us', groups),
     ).toBe(true);
   });
 
   it('non-main group cannot send to another groups chat', () => {
-    expect(isMessageAuthorized('other-group', false, 'main@g.us', groups)).toBe(
-      false,
-    );
     expect(
-      isMessageAuthorized('other-group', false, 'third@g.us', groups),
+      isIpcTargetAuthorized('other-group', false, 'main@g.us', groups),
+    ).toBe(false);
+    expect(
+      isIpcTargetAuthorized('other-group', false, 'third@g.us', groups),
     ).toBe(false);
   });
 
   it('non-main group cannot send to unregistered JID', () => {
     expect(
-      isMessageAuthorized('other-group', false, 'unknown@g.us', groups),
+      isIpcTargetAuthorized('other-group', false, 'unknown@g.us', groups),
     ).toBe(false);
   });
 
   it('main group can send to unregistered JID', () => {
     // Main is always authorized regardless of target
     expect(
-      isMessageAuthorized('whatsapp_main', true, 'unknown@g.us', groups),
+      isIpcTargetAuthorized('whatsapp_main', true, 'unknown@g.us', groups),
     ).toBe(true);
+  });
+
+  it('andy-developer can send to jarvis-worker lanes', () => {
+    expect(
+      isIpcTargetAuthorized(
+        'andy-developer',
+        false,
+        'jarvis-worker-1@nanoclaw',
+        groups,
+      ),
+    ).toBe(true);
+  });
+
+  it('andy-developer cannot send to non-worker lanes', () => {
+    expect(
+      isIpcTargetAuthorized('andy-developer', false, 'other@g.us', groups),
+    ).toBe(false);
   });
 });
 

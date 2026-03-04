@@ -13,7 +13,7 @@ Do not start ad-hoc edits/debug loops before this check.
 1. Classify the user intent.
 2. Load required docs/rules from `CLAUDE.md` Docs Index for that intent.
 3. Check local skills under `.claude/skills/*/SKILL.md`.
-4. Route to the most specific matching skill.
+4. Route to the most specific matching skill or docs workflow.
 5. Choose the best matching MCP tool for the intent when available.
 6. If no specific skill matches, use `/customize` for feature/behavior changes.
 7. If no skill/MCP applies, proceed docs-first with normal engineering flow.
@@ -22,7 +22,7 @@ Do not start ad-hoc edits/debug loops before this check.
 
 - New feature or behavior change -> `/customize` (unless a more specific `/add-*` or domain skill exists)
 - Container/auth/runtime/linking failures -> `/debug`
-- Incident triage/history tracking/resolution workflow -> `/incident-debugger` (combine with `/debug` if runtime is failing)
+- Incident triage/history tracking/resolution workflow -> docs-first (`docs/workflow/nanoclaw-jarvis-debug-loop.md`, `docs/workflow/nanoclaw-container-debugging.md`, `.claude/progress/incident.json`), combine with `/debug` if runtime is failing
 - Cross-tool Claude/Codex assignment, worktree parallelism, or subagent fanout policy -> docs-first (`docs/workflow/unified-codex-claude-loop.md`, `docs/operations/claude-codex-adapter-matrix.md`, `docs/operations/subagent-catalog.md`)
 - First-time install/onboarding -> `/setup`
 - Upstream sync request -> `/update`
@@ -33,7 +33,7 @@ Do not start ad-hoc edits/debug loops before this check.
 When multiple skills match, use this order:
 
 1. Specific integration/domain skill (`/add-*`, `/x-integration`, etc.)
-2. `/incident-debugger` for incident triage/tracking workflows
+2. docs-first incident workflow (`docs/workflow/nanoclaw-jarvis-debug-loop.md` + incident registry updates)
 3. `/debug` for break/fix runtime incidents
 4. `/customize` for general feature/custom behavior work
 5. `/setup` or `/update` for lifecycle operations

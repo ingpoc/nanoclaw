@@ -11,6 +11,42 @@ Use this loop when worker builds hang, delegation fails, or smoke flow breaks.
 
 If the issue is execution-path related, debug through `andy-developer -> jarvis-worker-*`, not direct worker-only assumptions.
 
+## Mission Debugging Priorities
+
+Use debugging modes that expose root cause quickly and deterministically.
+
+### High-Signal Debugging (Use)
+
+1. `bash scripts/jarvis-ops.sh trace --lane andy-developer` to get timeline + root-cause markers.
+2. `bash scripts/jarvis-ops.sh incident-bundle --window-minutes 180 --lane andy-developer` to capture repeatable evidence.
+3. DB/source-of-truth checks (`andy_requests`, `worker_runs`, `dispatch-block` artifacts) before chat-text interpretation.
+4. E2E repro scripts (`scripts/test-andy-full-user-journey-e2e.ts`, `scripts/test-andy-user-e2e.ts`) to validate user-facing behavior and linkage.
+5. Deterministic validation reruns after fix (`verify-worker-connectivity`, acceptance gate, happiness gate when user-facing).
+
+### Low-Signal Debugging (Avoid)
+
+1. Probe-only loops (`probe` + waiting) without trace/artifact/DB correlation.
+2. Declaring success from `reliability` pass/warn summaries alone.
+3. Parsing conversational ack text as primary truth when DB linkage fields exist.
+4. Treating sandbox permission artifacts as production runtime failures without out-of-sandbox confirmation.
+
+## Root Cause -> Exact Fix Patterns
+
+| Symptom Pattern | Root Cause | Fix Pattern | Verify |
+|----------------|------------|-------------|--------|
+| Dispatch blocked (`invalid dispatch payload`) and request remains `coordinator_active` without `worker_run_id` | Coordinator dispatched without required linkage field(s) | Inject required linkage field(s) at dispatch composition time; align dispatch docs + lint + tests with runtime contract | Full-user-journey E2E shows `request_id -> worker_run_id` linkage and no new dispatch-block artifacts |
+| `verify-worker-connectivity` false-negative in transient runtime windows | Preflight signal too coarse/noisy | Split preflight behavior into deterministic checks with explicit failure detail and permission-context hints | `verify-worker-connectivity` PASS with preflight PASS; no recurrence in incident notes |
+| `failed_contract` from stale/duplicate completion blocks | Completion parser chooses wrong block | Parse and validate latest valid `<completion>` block and add regression test | Focused probe transitions to `review_requested` for both worker lanes |
+| Acceptance/connectivity gate fails on shell portability (`mapfile`/bash3 mismatch) | Script relies on non-portable shell features | Replace with bash3-safe `while read` patterns and retest gates | Acceptance gate PASS + connectivity PASS across runtime environment |
+
+## Mission Default Debugging Loop
+
+1. Run incident-bundle + trace first (`preflight`, `status`, `reliability`, `db-doctor`, `hotspots`, `trace`).
+2. Extract concrete blocker artifacts (`dispatch-block-*`, failed run rows, or trace reason markers).
+3. Reproduce with full E2E + DB assertions, not chat-text assumptions.
+4. Patch the exact failing layer (`contract`, `composer`, `validator`, `parser`, or portability path).
+5. Re-verify with deterministic gates (`verify-worker-connectivity`, happiness gate when user-facing, acceptance gate).
+
 ## 1) Container Runtime Health
 
 Run in order:

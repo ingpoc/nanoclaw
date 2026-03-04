@@ -89,14 +89,14 @@ Mandatory preflight:
 
 - New feature/custom behavior work starts with `/customize` (or a more specific `/add-*` skill if available)
 - Runtime/auth/container issue debugging starts with `/debug`
-- Incident triage, recurring-issue investigation, and incident lifecycle tracking starts with `/incident-debugger`
+- Incident triage, recurring-issue investigation, and incident lifecycle tracking are docs-first: `docs/workflow/nanoclaw-jarvis-debug-loop.md`, `docs/workflow/nanoclaw-container-debugging.md`, and `.claude/progress/incident.json`
 - Incident registry is `.claude/progress/incident.json` (open/resolved state and lifecycle notes)
 - Feature inventory/touch-set discipline starts with `feature-tracking`, then `nanoclaw-orchestrator` work-item tracking
 - For browser/docs/repo tasks, use intent-matched MCP routing from `docs/operations/skills-vs-docs-map.md` (`chrome-devtools` preferred for browser tasks)
 
 Primary ops:
 
-- `/setup`, `/customize`, `/debug`, `/incident-debugger`, `/update`, `/convert-to-apple-container`
+- `/setup`, `/customize`, `/debug`, `/update`, `/convert-to-apple-container`
 
 Channel/integration skills:
 

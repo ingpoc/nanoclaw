@@ -100,7 +100,7 @@ Follow fix-first loop:
 3. Re-run minimal MCP verification.
 4. Fall back only with blocker evidence.
 
-Reference: `.claude/rules/skill-routing-preflight.md` (MCP Reliability Loop).
+Reference: `docs/workflow/skill-routing-preflight.md` (MCP Reliability Loop).
 
 ## Log Locations
 

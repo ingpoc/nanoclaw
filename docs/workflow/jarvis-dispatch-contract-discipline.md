@@ -6,7 +6,7 @@ Applies when changing worker dispatch flow, worker CLAUDE docs, or `src/dispatch
 
 1. Worker dispatch must be strict JSON (no plain-text fallback).
 2. `run_id` is caller-provided and canonical for retries/audit.
-3. Dispatch requires: `run_id`, `task_type`, `input`, `repo`, `branch`, `acceptance_tests`, `output_contract`.
+3. Dispatch requires: `run_id`, `request_id`, `task_type`, `input`, `repo`, `branch`, `acceptance_tests`, `output_contract`.
 4. Completion requires: `run_id`, `branch`, `commit_sha`, `files_changed`, `test_result`, `risk`, and `pr_url|pr_skipped_reason`.
 5. Completion `run_id` must match dispatch `run_id`.
 

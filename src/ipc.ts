@@ -26,6 +26,36 @@ export interface IpcDeps {
 
 let ipcWatcherRunning = false;
 
+function isJarvisWorkerFolder(folder: string): boolean {
+  return /^jarvis-worker-/.test(folder);
+}
+
+function canDelegateToTargetFolder(
+  sourceGroup: string,
+  targetFolder: string,
+): boolean {
+  // Non-main role escalation policy:
+  // - self-only by default
+  // - andy-developer can delegate only to jarvis-worker-* lanes
+  if (targetFolder === sourceGroup) return true;
+  if (sourceGroup === 'andy-developer' && isJarvisWorkerFolder(targetFolder)) {
+    return true;
+  }
+  return false;
+}
+
+export function isIpcTargetAuthorized(
+  sourceGroup: string,
+  isMain: boolean,
+  targetChatJid: string,
+  registeredGroups: Record<string, RegisteredGroup>,
+): boolean {
+  if (isMain) return true;
+  const targetGroup = registeredGroups[targetChatJid];
+  if (!targetGroup) return false;
+  return canDelegateToTargetFolder(sourceGroup, targetGroup.folder);
+}
+
 export function startIpcWatcher(deps: IpcDeps): void {
   if (ipcWatcherRunning) {
     logger.debug('IPC watcher already running, skipping duplicate start');
@@ -72,13 +102,16 @@ export function startIpcWatcher(deps: IpcDeps): void {
           for (const file of messageFiles) {
             const filePath = path.join(messagesDir, file);
             try {
-              const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+                          const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
               if (data.type === 'message' && data.chatJid && data.text) {
                 // Authorization: verify this group can send to this chatJid
-                const targetGroup = registeredGroups[data.chatJid];
                 if (
-                  isMain ||
-                  (targetGroup && targetGroup.folder === sourceGroup)
+                  isIpcTargetAuthorized(
+                    sourceGroup,
+                    isMain,
+                    data.chatJid,
+                    registeredGroups,
+                  )
                 ) {
                   await deps.sendMessage(data.chatJid, data.text);
                   logger.info(
@@ -200,8 +233,7 @@ export async function processTaskIpc(
 
         const targetFolder = targetGroupEntry.folder;
 
-        // Authorization: non-main groups can only schedule for themselves
-        if (!isMain && targetFolder !== sourceGroup) {
+        if (!isMain && !canDelegateToTargetFolder(sourceGroup, targetFolder)) {
           logger.warn(
             { sourceGroup, targetFolder },
             'Unauthorized schedule_task attempt blocked',
@@ -274,7 +306,10 @@ export async function processTaskIpc(
     case 'pause_task':
       if (data.taskId) {
         const task = getTaskById(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (
+          task &&
+          (isMain || canDelegateToTargetFolder(sourceGroup, task.group_folder))
+        ) {
           updateTask(data.taskId, { status: 'paused' });
           logger.info(
             { taskId: data.taskId, sourceGroup },
@@ -292,7 +327,10 @@ export async function processTaskIpc(
     case 'resume_task':
       if (data.taskId) {
         const task = getTaskById(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (
+          task &&
+          (isMain || canDelegateToTargetFolder(sourceGroup, task.group_folder))
+        ) {
           updateTask(data.taskId, { status: 'active' });
           logger.info(
             { taskId: data.taskId, sourceGroup },
@@ -310,7 +348,10 @@ export async function processTaskIpc(
     case 'cancel_task':
       if (data.taskId) {
         const task = getTaskById(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (
+          task &&
+          (isMain || canDelegateToTargetFolder(sourceGroup, task.group_folder))
+        ) {
           deleteTask(data.taskId);
           logger.info(
             { taskId: data.taskId, sourceGroup },

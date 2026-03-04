@@ -33,7 +33,7 @@
 ## Skill Routing Mirror
 
 - Runtime/auth/container failures route to `/debug`.
-- Incident triage, recurring issue investigation, and incident lifecycle tracking route to `/incident-debugger`.
+- Incident triage, recurring issue investigation, and incident lifecycle tracking are docs-first via `docs/workflow/nanoclaw-jarvis-debug-loop.md` + `docs/workflow/nanoclaw-container-debugging.md`.
 - Incident lifecycle state is tracked in `.claude/progress/incident.json` (open/resolved + notes).
 - Feature mapping/touch-set discipline routes to `feature-tracking`; feature execution tracking routes to `nanoclaw-orchestrator` work items.
 - Reliability validation can use `scripts/jarvis-ops.sh verify-worker-connectivity` after `preflight`/`trace`.

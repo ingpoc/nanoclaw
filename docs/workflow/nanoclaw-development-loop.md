@@ -17,7 +17,7 @@ Mission anchor: `docs/MISSION.md`.
 1. Run session recall:
    - `bash scripts/qmd-context-recall.sh --bootstrap`
 2. Run skill/docs routing preflight:
-   - `.claude/rules/skill-routing-preflight.md`
+   - `docs/workflow/skill-routing-preflight.md`
 3. If runtime issues are involved, open/continue incident tracking first:
    - `bash scripts/jarvis-ops.sh incident list --status open`
 

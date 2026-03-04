@@ -1,14 +1,64 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-04T17:35:34.730384+00:00",
+  "updated_at": "2026-03-04T18:35:32.718387+00:00",
   "incidents": [
+    {
+      "id": "incident-20260304T110850Z",
+      "title": "Andy request linkage missing after successful dispatch",
+      "status": "open",
+      "severity": "medium",
+      "created_at": "2026-03-04T11:08:50.813404+00:00",
+      "updated_at": "2026-03-04T18:35:32.718387+00:00",
+      "summary": {
+        "symptom": "Live Build App request created worker run and reached review_requested, but andy_requests.request_id=req-1772622326048-pprimary remained coordinator_active with empty worker_run_id.",
+        "suspected_cause": "Recurrence: andy-developer coordinator still emits worker dispatch payloads without request_id for some natural task prompts, and validat...",
+        "impact": "User task flow stalls: intake/status replies succeed but no worker run is linked and task eventually fails with dispatch-block notice.",
+        "next_action": "Fix coordinator dispatch composer so request_id is always injected into worker dispatch JSON; rerun scripts/test-andy-full-user-journey-e2e.ts and confirm Build App stage links to worker_run_id."
+      },
+      "evidence": {
+        "bundle_count": 1,
+        "last_bundle_dir": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260304T175912Z",
+        "last_manifest_path": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260304T175912Z/manifest.json",
+        "last_root_cause": "andy_no_output_timeout",
+        "last_status": "warn",
+        "last_checked_at": "2026-03-04T17:59:15.815904+00:00",
+        "non_zero_command_count": 1,
+        "debug_summary": "root_cause=andy_no_output_timeout; messages=19; worker_runs=0; dispatch_blocks=1; non_zero_commands=1"
+      },
+      "context": {
+        "lane": "andy-developer",
+        "run_id": "userflow-1772622324403-vd1vh"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-04T17:59:06.676934+00:00",
+          "author": "operator",
+          "text": "reopened by operator: Live full-user journey regression on 2026-03-04: andy-developer emitted validator-blocked dispatch missing request_id for Build App task (dispatch block run_id=req-1772646709284-pprimary). | previous_resolution=request_id is now required for dispatch; unlinked requests can no longer occur."
+        },
+        {
+          "ts": "2026-03-04T17:59:12.715954+00:00",
+          "author": "operator",
+          "text": "Repro from node --experimental-transform-types scripts/test-andy-full-user-journey-e2e.ts at 2026-03-04T23:28 IST: Build App stage attempts 1-2 had no worker link; attempt 3 produced dispatch block reason 'invalid dispatch payload: request_id is required for worker dispatch'. Ack/status replies remained fast (<2s)."
+        },
+        {
+          "ts": "2026-03-04T18:00:24.378554+00:00",
+          "author": "operator",
+          "text": "Additional symptom from npx tsx scripts/test-andy-user-e2e.ts (token=1772647209058-va081): greeting/status passed but Progress Query failed content expectation because Andy repeatedly reports coordinating blocked Build App retries. Indicates user-facing progress responses degrade when request_id-missing dispatch blocks accumulate."
+        },
+        {
+          "ts": "2026-03-04T18:35:32.718387+00:00",
+          "author": "operator",
+          "text": "Applied request_id remediation set: andy dispatch hook now validates request_id without jq dependency, dispatch lint requires request_id, dispatch docs updated to required request_id, and IPC delegation/runtime sync paths were hardened so andy-developer -> jarvis-worker dispatch behavior stays in sync with repo source."
+        }
+      ]
+    },
     {
       "id": "incident-20260304T173206Z",
       "title": "Andy status check-in misclassified as work intake",
       "status": "open",
       "severity": "unknown",
       "created_at": "2026-03-04T17:32:06.597235+00:00",
-      "updated_at": "2026-03-04T17:35:34.730226+00:00",
+      "updated_at": "2026-03-04T17:59:55.260355+00:00",
       "summary": {
         "symptom": "Andy status check-in misclassified as work intake",
         "suspected_cause": "Andy frontdesk classified work-check-in phrasing ('are you doing any work?') as work_intake, generating a frontdesk request and model-aut...",
@@ -31,51 +81,13 @@
           "ts": "2026-03-04T17:35:34.730221+00:00",
           "author": "operator",
           "text": "Applied deeper mitigation: andy-developer frontdesk turns now force fresh coordinator session (sessionOverride=null) to avoid stale long-session context bleed. Also switched intake classifier to intent-based checks and stale request filtering (60m recency or active worker-run only). Build and full test suite pass."
-        }
-      ]
-    },
-    {
-      "id": "incident-20260304T110850Z",
-      "title": "Andy request linkage missing after successful dispatch",
-      "status": "resolved",
-      "severity": "medium",
-      "created_at": "2026-03-04T11:08:50.813404+00:00",
-      "updated_at": "2026-03-04T12:00:00.000000+00:00",
-      "summary": {
-        "symptom": "Live Build App request created worker run and reached review_requested, but andy_requests.request_id=req-1772622326048-pprimary remained coordinator_active with empty worker_run_id.",
-        "suspected_cause": "request_id was optional in dispatch validator; dispatches without request_id bypassed linkAndyRequestToWorkerRun.",
-        "impact": "Status replies and request tracking can drift from actual worker progress; user may see stale coordinator_active despite successful worker completion.",
-        "next_action": "None; request_id is now required and hard-blocks dispatch when missing."
-      },
-      "evidence": {
-        "bundle_count": 0,
-        "debug_summary": "PASS: build + 500 tests + format:check + acceptance-gate + happiness-gate after fix"
-      },
-      "context": {
-        "lane": "andy-developer",
-        "run_id": "userflow-1772622324403-vd1vh"
-      },
-      "notes": [
-        {
-          "ts": "2026-03-04T11:08:50.813404+00:00",
-          "author": "codex",
-          "text": "reported: Live Build App request created worker run and reached review_requested, but andy_requests.request_id=req-1772622326048-pprimary remained coordinator_active with empty worker_run_id."
         },
         {
-          "ts": "2026-03-04T12:00:00.000000+00:00",
-          "author": "claude-code",
-          "text": "Fix applied: request_id made required in DispatchPayload interface and validator (dispatch-validator.ts). Dispatch without request_id now hard-blocked. 4 new regression tests added. Acceptance gate PASS, happiness gate PASS, 500 tests PASS."
+          "ts": "2026-03-04T17:59:55.260350+00:00",
+          "author": "operator",
+          "text": "Regression probe on 2026-03-04T17:59:40Z for '@Andy are you doing any work?' (message_id=uat-checkin-1772647180674-v463i): bot replied in 1326ms, andy_requests rows for probe=0, worker runs in probe window=0, message timeline confirmed run_id=None. Symptom not reproduced in this run."
         }
-      ],
-      "resolution": {
-        "summary": "request_id is now required for dispatch; unlinked requests can no longer occur.",
-        "confirmed_by_user": "",
-        "confirmed_at": "2026-03-04T12:00:00.000000+00:00",
-        "verification": "acceptance-gate PASS (data/diagnostics/acceptance/acceptance-20260304T115438Z.json), 500 tests PASS, format:check PASS",
-        "fix_reference": "src/dispatch-validator.ts, src/jarvis-worker-dispatch.test.ts, src/ipc-auth.test.ts",
-        "resolved_by": "claude-code"
-      },
-      "resolved_at": "2026-03-04T12:00:00.000000+00:00"
+      ]
     },
     {
       "id": "incident-20260304T110817Z",

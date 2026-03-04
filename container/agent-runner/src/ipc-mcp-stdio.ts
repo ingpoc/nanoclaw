@@ -19,8 +19,6 @@ const TASKS_DIR = path.join(IPC_DIR, 'tasks');
 const chatJid = process.env.NANOCLAW_CHAT_JID!;
 const groupFolder = process.env.NANOCLAW_GROUP_FOLDER!;
 const isMain = process.env.NANOCLAW_IS_MAIN === '1';
-const schedulerEnabled = process.env.NANOCLAW_SCHEDULER_ENABLED === '1';
-const dynamicGroupRegistrationEnabled = process.env.NANOCLAW_DYNAMIC_GROUP_REG_ENABLED === '1';
 
 function writeIpcFile(dir: string, data: object): string {
   fs.mkdirSync(dir, { recursive: true });
@@ -43,17 +41,15 @@ const server = new McpServer({
 
 server.tool(
   'send_message',
-  "Send a message immediately while you're still running. Use this for progress updates or multi-part responses. You can call this multiple times. By default it sends to the current chat, but `target_group_jid` can target another registered group (authorization is enforced by the host). Note: when running as a scheduled task, your final output is NOT sent automatically — use this tool to communicate.",
+  "Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times. Note: when running as a scheduled task, your final output is NOT sent to the user — use this tool if you need to communicate with the user or group.",
   {
     text: z.string().describe('The message text to send'),
     sender: z.string().optional().describe('Your role/identity name (e.g. "Researcher"). When set, messages appear from a dedicated bot in Telegram.'),
-    target_group_jid: z.string().optional().describe('Optional registered target group JID (for delegation, e.g. jarvis-worker-1@nanoclaw). Defaults to current chat.'),
   },
   async (args) => {
-    const targetJid = args.target_group_jid || chatJid;
     const data: Record<string, string | undefined> = {
       type: 'message',
-      chatJid: targetJid,
+      chatJid,
       text: args.text,
       sender: args.sender || undefined,
       groupFolder,
@@ -62,16 +58,10 @@ server.tool(
 
     writeIpcFile(MESSAGES_DIR, data);
 
-    return {
-      content: [{
-        type: 'text' as const,
-        text: `Message queued for ${targetJid}. Host validation is pending and policy may block delivery.`,
-      }],
-    };
+    return { content: [{ type: 'text' as const, text: 'Message sent.' }] };
   },
 );
 
-if (schedulerEnabled) {
 server.tool(
   'schedule_task',
   `Schedule a recurring or one-time task. The task will run as a full agent with access to all tools.
@@ -100,7 +90,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
     schedule_type: z.enum(['cron', 'interval', 'once']).describe('cron=recurring at specific times, interval=recurring every N ms, once=run once at specific time'),
     schedule_value: z.string().describe('cron: "*/5 * * * *" | interval: milliseconds like "300000" | once: local timestamp like "2026-02-01T15:30:00" (no Z suffix!)'),
     context_mode: z.enum(['group', 'isolated']).default('group').describe('group=runs with chat history and memory, isolated=fresh session (include context in prompt)'),
-    target_group_jid: z.string().optional().describe('Optional registered target group JID. Defaults to the current group. Authorization is enforced by the host.'),
+    target_group_jid: z.string().optional().describe('(Main group only) JID of the group to schedule the task for. Defaults to the current group.'),
   },
   async (args) => {
     // Validate schedule_value before writing IPC
@@ -137,9 +127,8 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
       }
     }
 
-    // Host-side IPC authorization enforces whether this source group can
-    // target the requested destination.
-    const targetJid = args.target_group_jid || chatJid;
+    // Non-main groups can only schedule for themselves
+    const targetJid = isMain && args.target_group_jid ? args.target_group_jid : chatJid;
 
     const data = {
       type: 'schedule_task',
@@ -159,9 +148,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
     };
   },
 );
-}
 
-if (schedulerEnabled) {
 server.tool(
   'list_tasks',
   "List all scheduled tasks. From main: shows all tasks. From other groups: shows only that group's tasks.",
@@ -199,9 +186,7 @@ server.tool(
     }
   },
 );
-}
 
-if (schedulerEnabled) {
 server.tool(
   'pause_task',
   'Pause a scheduled task. It will not run until resumed.',
@@ -220,9 +205,7 @@ server.tool(
     return { content: [{ type: 'text' as const, text: `Task ${args.task_id} pause requested.` }] };
   },
 );
-}
 
-if (schedulerEnabled) {
 server.tool(
   'resume_task',
   'Resume a paused task.',
@@ -241,9 +224,7 @@ server.tool(
     return { content: [{ type: 'text' as const, text: `Task ${args.task_id} resume requested.` }] };
   },
 );
-}
 
-if (schedulerEnabled) {
 server.tool(
   'cancel_task',
   'Cancel and delete a scheduled task.',
@@ -262,18 +243,16 @@ server.tool(
     return { content: [{ type: 'text' as const, text: `Task ${args.task_id} cancellation requested.` }] };
   },
 );
-}
 
-if (dynamicGroupRegistrationEnabled) {
 server.tool(
   'register_group',
-  `Register a new WhatsApp group so the agent can respond to messages there. Main group only.
+  `Register a new chat/group so the agent can respond to messages there. Main group only.
 
-Use available_groups.json to find the JID for a group. The folder name should be lowercase with hyphens (e.g., "family-chat").`,
+Use available_groups.json to find the JID for a group. The folder name must be channel-prefixed: "{channel}_{group-name}" (e.g., "whatsapp_family-chat", "telegram_dev-team", "discord_general"). Use lowercase with hyphens for the group name part.`,
   {
-    jid: z.string().describe('The WhatsApp JID (e.g., "120363336345536173@g.us")'),
+    jid: z.string().describe('The chat JID (e.g., "120363336345536173@g.us", "tg:-1001234567890", "dc:1234567890123456")'),
     name: z.string().describe('Display name for the group'),
-    folder: z.string().describe('Folder name for group files (lowercase, hyphens, e.g., "family-chat")'),
+    folder: z.string().describe('Channel-prefixed folder name (e.g., "whatsapp_family-chat", "telegram_dev-team")'),
     trigger: z.string().describe('Trigger word (e.g., "@Andy")'),
   },
   async (args) => {
@@ -300,7 +279,6 @@ Use available_groups.json to find the JID for a group. The folder name should be
     };
   },
 );
-}
 
 // Start the stdio transport
 const transport = new StdioServerTransport();

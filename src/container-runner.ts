@@ -9,16 +9,11 @@ import path from 'path';
 import {
   CONTAINER_IMAGE,
   CONTAINER_MAX_OUTPUT_SIZE,
-  CONTAINER_NO_OUTPUT_TIMEOUT,
-  CONTAINER_PARSE_BUFFER_LIMIT,
   CONTAINER_TIMEOUT,
   DATA_DIR,
   GROUPS_DIR,
   IDLE_TIMEOUT,
-  WORKER_MIN_NO_OUTPUT_TIMEOUT_MS,
   TIMEZONE,
-  WORKER_CONTAINER_IMAGE,
-  WORKER_PROBE_RUNNING_STALE_MS,
 } from './config.js';
 import { readEnvFile } from './env.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -27,49 +22,22 @@ import {
   CONTAINER_RUNTIME_BIN,
   readonlyMountArgs,
   stopContainer,
-  stopRunningContainersByPrefix,
 } from './container-runtime.js';
 import { validateAdditionalMounts } from './mount-security.js';
-import { isJarvisWorkerFolder, RegisteredGroup } from './types.js';
+import { RegisteredGroup } from './types.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
 
-// Must match AGENT_RUNNER_LOG_PREFIX in container/agent-runner/src/index.ts
-const AGENT_RUNNER_LOG_PREFIX = '[agent-runner]';
-// Probe runs are liveness checks; they must fail fast so verify-worker-connectivity
-// can complete deterministically without leaving long-lived in-flight probes.
-const PROBE_NO_OUTPUT_TIMEOUT_MS = 115_000;
-
-// Timeout inequality guard: called once before first probe dispatch.
-// no_output_timeout (115s) < probe_running_watchdog (360s) < verify_timeout
-let _timeoutInvariantChecked = false;
-export function assertProbeTimeoutInvariant(): void {
-  if (_timeoutInvariantChecked) return;
-  _timeoutInvariantChecked = true;
-  if (WORKER_PROBE_RUNNING_STALE_MS <= PROBE_NO_OUTPUT_TIMEOUT_MS) {
-    throw new Error(
-      `WORKER_PROBE_RUNNING_STALE_MS (${WORKER_PROBE_RUNNING_STALE_MS}) must be > ` +
-        `PROBE_NO_OUTPUT_TIMEOUT_MS (${PROBE_NO_OUTPUT_TIMEOUT_MS}). ` +
-        `Otherwise supervisor kills probes before container-level timeout fires.`,
-    );
-  }
-}
-
 export interface ContainerInput {
   prompt: string;
   sessionId?: string;
-  runId?: string;
   groupFolder: string;
   chatJid: string;
   isMain: boolean;
   isScheduledTask?: boolean;
   assistantName?: string;
-  opsExtended?: boolean;
-  schedulerEnabled?: boolean;
-  workerSteeringEnabled?: boolean;
-  dynamicGroupRegistrationEnabled?: boolean;
   secrets?: Record<string, string>;
 }
 
@@ -77,8 +45,6 @@ export interface ContainerOutput {
   status: 'success' | 'error';
   result: string | null;
   newSessionId?: string;
-  sessionResumeStatus?: 'resumed' | 'fallback_new' | 'new';
-  sessionResumeError?: string;
   error?: string;
 }
 
@@ -86,101 +52,6 @@ interface VolumeMount {
   hostPath: string;
   containerPath: string;
   readonly: boolean;
-}
-
-function isRetryableSkillSyncError(err: unknown): boolean {
-  const code = (err as NodeJS.ErrnoException | undefined)?.code;
-  return code === 'ENOENT' || code === 'EBUSY' || code === 'EPERM';
-}
-
-function copySkillDirWithRetry(srcPath: string, dstPath: string): void {
-  const maxAttempts = 3;
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      fs.cpSync(srcPath, dstPath, {
-        recursive: true,
-        dereference: true,
-        force: true,
-      });
-      return;
-    } catch (err) {
-      const retryable = isRetryableSkillSyncError(err);
-      if (!retryable || attempt === maxAttempts) {
-        throw err;
-      }
-      logger.warn(
-        {
-          err,
-          srcPath,
-          dstPath,
-          attempt,
-          maxAttempts,
-        },
-        'Retrying skill copy after transient filesystem race',
-      );
-    }
-  }
-}
-
-function syncContainerSkills(skillsSrc: string, skillsDst: string): void {
-  if (!fs.existsSync(skillsSrc)) return;
-
-  fs.mkdirSync(skillsDst, { recursive: true });
-
-  for (const entry of fs.readdirSync(skillsSrc, { withFileTypes: true })) {
-    // Hidden metadata folders (for example ".docs") can be self-referential.
-    if (entry.name.startsWith('.')) continue;
-
-    const srcPath = path.join(skillsSrc, entry.name);
-
-    let isDirectory = false;
-    try {
-      isDirectory = fs.statSync(srcPath).isDirectory();
-    } catch (err) {
-      logger.warn({ err, srcPath }, 'Failed to stat skill source entry');
-      continue;
-    }
-    if (!isDirectory) continue;
-
-    const dstPath = path.join(skillsDst, entry.name);
-
-    // Replace stale symlink destinations with real copied directories.
-    if (fs.existsSync(dstPath)) {
-      try {
-        if (fs.lstatSync(dstPath).isSymbolicLink()) {
-          fs.rmSync(dstPath, { force: true, recursive: true });
-        }
-      } catch (err) {
-        logger.warn(
-          { err, dstPath },
-          'Failed to inspect skill destination entry',
-        );
-        continue;
-      }
-    }
-
-    const srcReal = fs.realpathSync(srcPath);
-    const dstReal = fs.existsSync(dstPath) ? fs.realpathSync(dstPath) : null;
-    if (
-      dstReal &&
-      (srcReal === dstReal ||
-        srcReal.startsWith(`${dstReal}${path.sep}`) ||
-        dstReal.startsWith(`${srcReal}${path.sep}`))
-    ) {
-      logger.warn(
-        { srcPath, dstPath, srcReal, dstReal },
-        'Skipping overlapping skill copy',
-      );
-      continue;
-    }
-
-    try {
-      copySkillDirWithRetry(srcPath, dstPath);
-    } catch (err) {
-      logger.warn({ err, srcPath, dstPath }, 'Failed to copy skill directory');
-      throw err;
-    }
-  }
 }
 
 function buildVolumeMounts(
@@ -202,6 +73,17 @@ function buildVolumeMounts(
       containerPath: '/workspace/project',
       readonly: true,
     });
+
+    // Shadow .env so the agent cannot read secrets from the mounted project root.
+    // Secrets are passed via stdin instead (see readSecrets()).
+    const envFile = path.join(projectRoot, '.env');
+    if (fs.existsSync(envFile)) {
+      mounts.push({
+        hostPath: '/dev/null',
+        containerPath: '/workspace/project/.env',
+        readonly: true,
+      });
+    }
 
     // Main also gets its group folder as the working directory
     mounts.push({
@@ -239,84 +121,40 @@ function buildVolumeMounts(
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
-
-  // Always-merge settings so hooks and env vars stay current on every start.
-  let settings: Record<string, unknown> = {};
-  if (fs.existsSync(settingsFile)) {
-    try {
-      settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8')) as Record<
-        string,
-        unknown
-      >;
-    } catch {
-      // Corrupt settings file — start fresh
-    }
-  }
-
-  // Ensure required env vars are present (existing values take precedence)
-  const existingEnv =
-    (settings.env as Record<string, string> | undefined) ?? {};
-  settings.env = {
-    // Enable agent swarms (subagent orchestration)
-    // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
-    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
-    // Load CLAUDE.md from additional mounted directories
-    // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
-    CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
-    // Enable Claude's memory feature (persists user preferences between sessions)
-    // https://code.claude.com/docs/en/memory#manage-auto-memory
-    CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
-    ...existingEnv,
-  };
-
-  // Inject PreToolUse dispatch validation hook for andy-developer only.
-  // The hook blocks invalid dispatch payloads before they leave the container.
-  if (group.folder === 'andy-developer') {
-    const existingHooks =
-      (settings.hooks as Record<string, unknown> | undefined) ?? {};
-    const existingPreToolUse =
-      (existingHooks.PreToolUse as unknown[] | undefined) ?? [];
-    const validateHook = {
-      matcher: 'mcp__nanoclaw__send_message',
-      hooks: [
+  if (!fs.existsSync(settingsFile)) {
+    fs.writeFileSync(
+      settingsFile,
+      JSON.stringify(
         {
-          type: 'command',
-          command: '/home/node/.claude/hooks/validate-dispatch.sh',
+          env: {
+            // Enable agent swarms (subagent orchestration)
+            // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
+            CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+            // Load CLAUDE.md from additional mounted directories
+            // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
+            CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
+            // Enable Claude's memory feature (persists user preferences between sessions)
+            // https://code.claude.com/docs/en/memory#manage-auto-memory
+            CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+          },
         },
-      ],
-    };
-    const alreadyPresent = existingPreToolUse.some(
-      (h) => JSON.stringify(h) === JSON.stringify(validateHook),
+        null,
+        2,
+      ) + '\n',
     );
-    settings.hooks = {
-      ...existingHooks,
-      PreToolUse: alreadyPresent
-        ? existingPreToolUse
-        : [...existingPreToolUse, validateHook],
-    };
-  }
-
-  fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + '\n');
-
-  // Sync hooks from groups/<folder>/.claude/hooks/ into sessions/<folder>/.claude/hooks/
-  // This runs on every container start so updated scripts are always current.
-  const hooksSrc = path.join(GROUPS_DIR, group.folder, '.claude', 'hooks');
-  if (fs.existsSync(hooksSrc)) {
-    const hooksDst = path.join(groupSessionsDir, 'hooks');
-    fs.mkdirSync(hooksDst, { recursive: true });
-    for (const entry of fs.readdirSync(hooksSrc, { withFileTypes: true })) {
-      if (!entry.isFile()) continue;
-      const srcHookPath = path.join(hooksSrc, entry.name);
-      const dstHookPath = path.join(hooksDst, entry.name);
-      fs.copyFileSync(srcHookPath, dstHookPath);
-      fs.chmodSync(dstHookPath, 0o755);
-    }
   }
 
   // Sync skills from container/skills/ into each group's .claude/skills/
   const skillsSrc = path.join(process.cwd(), 'container', 'skills');
   const skillsDst = path.join(groupSessionsDir, 'skills');
-  syncContainerSkills(skillsSrc, skillsDst);
+  if (fs.existsSync(skillsSrc)) {
+    for (const skillDir of fs.readdirSync(skillsSrc)) {
+      const srcDir = path.join(skillsSrc, skillDir);
+      if (!fs.statSync(srcDir).isDirectory()) continue;
+      const dstDir = path.join(skillsDst, skillDir);
+      fs.cpSync(srcDir, dstDir, { recursive: true });
+    }
+  }
   mounts.push({
     hostPath: groupSessionsDir,
     containerPath: '/home/node/.claude',
@@ -329,11 +167,6 @@ function buildVolumeMounts(
   fs.mkdirSync(path.join(groupIpcDir, 'messages'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'tasks'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'input'), { recursive: true });
-  // Worker groups get steer/ and progress/ subdirs for bidirectional steering
-  if (isJarvisWorkerFolder(group.folder)) {
-    fs.mkdirSync(path.join(groupIpcDir, 'steer'), { recursive: true });
-    fs.mkdirSync(path.join(groupIpcDir, 'progress'), { recursive: true });
-  }
   mounts.push({
     hostPath: groupIpcDir,
     containerPath: '/workspace/ipc',
@@ -377,55 +210,36 @@ function buildVolumeMounts(
   return mounts;
 }
 
-const DEFAULT_SECRETS = [
-  'CLAUDE_CODE_OAUTH_TOKEN',
-  'ANTHROPIC_API_KEY',
-  'ANTHROPIC_BASE_URL',
-  'OAUTH_API_FALLBACK_ENABLED',
-  'ANTHROPIC_DEFAULT_SONNET_MODEL',
-  'GITHUB_TOKEN',
-  'GH_TOKEN',
-  'MINIMAX_API_KEY',
-  'OPENROUTER_API_KEY',
-];
-
 /**
  * Read allowed secrets from .env for passing to the container via stdin.
  * Secrets are never written to disk or mounted as files.
- * @param allowedSecrets - Optional list of env var names to read (defaults to all)
  */
-function readSecrets(allowedSecrets?: string[]): Record<string, string> {
-  const vars =
-    allowedSecrets && allowedSecrets.length > 0
-      ? allowedSecrets
-      : DEFAULT_SECRETS;
-  return readEnvFile(vars);
+function readSecrets(): Record<string, string> {
+  return readEnvFile([
+    'CLAUDE_CODE_OAUTH_TOKEN',
+    'ANTHROPIC_API_KEY',
+    'ANTHROPIC_BASE_URL',
+    'ANTHROPIC_AUTH_TOKEN',
+  ]);
 }
 
 function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
-  image: string,
 ): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
 
-  // Apple Container runtime crashes with XPC "Connection interrupted"
-  // when using --user. Let the image's default non-root user run instead.
-  // Keep host-user mapping only for non-Apple runtimes.
-  const supportsUserOverride = CONTAINER_RUNTIME_BIN !== 'container';
-  if (supportsUserOverride) {
-    // Run as host user so bind-mounted files are accessible.
-    // Skip when running as root (uid 0), as the container's node user (uid 1000),
-    // or when getuid is unavailable (native Windows without WSL).
-    const hostUid = process.getuid?.();
-    const hostGid = process.getgid?.();
-    if (hostUid != null && hostUid !== 0 && hostUid !== 1000) {
-      args.push('--user', `${hostUid}:${hostGid}`);
-      args.push('-e', 'HOME=/home/node');
-    }
+  // Run as host user so bind-mounted files are accessible.
+  // Skip when running as root (uid 0), as the container's node user (uid 1000),
+  // or when getuid is unavailable (native Windows without WSL).
+  const hostUid = process.getuid?.();
+  const hostGid = process.getgid?.();
+  if (hostUid != null && hostUid !== 0 && hostUid !== 1000) {
+    args.push('--user', `${hostUid}:${hostGid}`);
+    args.push('-e', 'HOME=/home/node');
   }
 
   for (const mount of mounts) {
@@ -436,7 +250,7 @@ function buildContainerArgs(
     }
   }
 
-  args.push(image);
+  args.push(CONTAINER_IMAGE);
 
   return args;
 }
@@ -454,36 +268,8 @@ export async function runContainerAgent(
 
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
-  const groupPrefix = `nanoclaw-${safeName}-`;
-  // A previous NanoClaw process can leave orphaned group containers alive.
-  // Those orphans can consume IPC input from /workspace/ipc/<group>/input
-  // without forwarding output back to the current host process.
-  try {
-    const { matched, stopped, failures } =
-      stopRunningContainersByPrefix(groupPrefix);
-    if (stopped.length > 0) {
-      logger.info(
-        { group: group.name, groupPrefix, stopped },
-        'Stopped stale group containers before spawn',
-      );
-    }
-    if (failures.length > 0) {
-      logger.warn(
-        { group: group.name, groupPrefix, matched, failures },
-        'Failed to stop some stale group containers before spawn',
-      );
-    }
-  } catch (err) {
-    logger.warn(
-      { group: group.name, groupPrefix, err },
-      'Failed stale-container preflight; continuing with spawn',
-    );
-  }
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
-  const image = isJarvisWorkerFolder(group.folder)
-    ? WORKER_CONTAINER_IMAGE
-    : CONTAINER_IMAGE;
-  const containerArgs = buildContainerArgs(mounts, containerName, image);
+  const containerArgs = buildContainerArgs(mounts, containerName);
 
   logger.debug(
     {
@@ -524,8 +310,7 @@ export async function runContainerAgent(
     let stderrTruncated = false;
 
     // Pass secrets via stdin (never written to disk or mounted as files)
-    // Use per-group secrets config if specified, otherwise use defaults
-    input.secrets = readSecrets(group.containerConfig?.secrets);
+    input.secrets = readSecrets();
     container.stdin.write(JSON.stringify(input));
     container.stdin.end();
     // Remove secrets from input so they don't appear in logs
@@ -534,8 +319,6 @@ export async function runContainerAgent(
     // Streaming output: parse OUTPUT_START/END marker pairs as they arrive
     let parseBuffer = '';
     let newSessionId: string | undefined;
-    let sessionResumeStatus: ContainerOutput['sessionResumeStatus'];
-    let sessionResumeError: string | undefined;
     let outputChain = Promise.resolve();
 
     container.stdout.on('data', (data) => {
@@ -559,23 +342,6 @@ export async function runContainerAgent(
       // Stream-parse for output markers
       if (onOutput) {
         parseBuffer += chunk;
-
-        // Fail-fast: if parseBuffer exceeds limit with incomplete markers, abort
-        if (parseBuffer.length > CONTAINER_PARSE_BUFFER_LIMIT) {
-          const hasStartMarker = parseBuffer.includes(OUTPUT_START_MARKER);
-          const hasEndMarker = parseBuffer.includes(OUTPUT_END_MARKER);
-          if (hasStartMarker && !hasEndMarker) {
-            logger.error(
-              { group: group.name, bufferSize: parseBuffer.length },
-              'Parse buffer exceeded limit with incomplete markers, aborting container',
-            );
-            container.kill('SIGKILL');
-            return;
-          }
-          // Buffer overflow - trim oldest data to prevent unbounded growth
-          parseBuffer = parseBuffer.slice(-CONTAINER_PARSE_BUFFER_LIMIT / 2);
-        }
-
         let startIdx: number;
         while ((startIdx = parseBuffer.indexOf(OUTPUT_START_MARKER)) !== -1) {
           const endIdx = parseBuffer.indexOf(OUTPUT_END_MARKER, startIdx);
@@ -591,21 +357,9 @@ export async function runContainerAgent(
             if (parsed.newSessionId) {
               newSessionId = parsed.newSessionId;
             }
-            if (parsed.sessionResumeStatus) {
-              sessionResumeStatus = parsed.sessionResumeStatus;
-            }
-            if (parsed.sessionResumeError) {
-              sessionResumeError = parsed.sessionResumeError;
-            }
-            if (!hadStreamingOutput) {
-              hadStreamingOutput = true;
-              if (noOutputTimeout) {
-                clearTimeout(noOutputTimeout);
-                noOutputTimeout = null;
-              }
-            }
-            // Activity detected — reset the hard timeout.
-            resetHardTimeout();
+            hadStreamingOutput = true;
+            // Activity detected — reset the hard timeout
+            resetTimeout();
             // Call onOutput for all markers (including null results)
             // so idle timers start even for "silent" query completions.
             outputChain = outputChain.then(() => onOutput(parsed));
@@ -625,15 +379,8 @@ export async function runContainerAgent(
       for (const line of lines) {
         if (line) logger.debug({ container: group.folder }, line);
       }
-      // Re-arm no_output_timeout on our own [agent-runner] instrumentation lines
-      // (heartbeats, status logs) but NOT on SDK debug spam.
-      if (noOutputTimeout && chunk.includes(AGENT_RUNNER_LOG_PREFIX)) {
-        clearTimeout(noOutputTimeout);
-        noOutputTimeout = setTimeout(
-          () => stopForTimeout('no_output_timeout'),
-          configuredNoOutputTimeout,
-        );
-      }
+      // Don't reset timeout on stderr — SDK writes debug logs continuously.
+      // Timeout only resets on actual output (OUTPUT_MARKER in stdout).
       if (stderrTruncated) return;
       const remaining = CONTAINER_MAX_OUTPUT_SIZE - stderr.length;
       if (chunk.length > remaining) {
@@ -650,49 +397,15 @@ export async function runContainerAgent(
 
     let timedOut = false;
     let hadStreamingOutput = false;
-    let timeoutReason: 'no_output_timeout' | 'hard_timeout' | null = null;
-    const configuredIdleTimeout =
-      group.containerConfig?.idleTimeout || IDLE_TIMEOUT;
-    const requestedNoOutputTimeout =
-      group.containerConfig?.noOutputTimeout || CONTAINER_NO_OUTPUT_TIMEOUT;
-    const isProbeRun = Boolean(input.runId && input.runId.startsWith('probe-'));
-    if (isProbeRun) assertProbeTimeoutInvariant();
-    const configuredNoOutputTimeout = isJarvisWorkerFolder(group.folder)
-      ? isProbeRun
-        ? PROBE_NO_OUTPUT_TIMEOUT_MS
-        : Math.max(requestedNoOutputTimeout, WORKER_MIN_NO_OUTPUT_TIMEOUT_MS)
-      : requestedNoOutputTimeout;
-    const configuredHardTimeout =
-      group.containerConfig?.timeout || CONTAINER_TIMEOUT;
-    if (configuredNoOutputTimeout !== requestedNoOutputTimeout) {
-      logger.info(
-        {
-          group: group.name,
-          folder: group.folder,
-          runId: input.runId,
-          isProbeRun,
-          requestedNoOutputTimeout,
-          effectiveNoOutputTimeout: configuredNoOutputTimeout,
-          minWorkerNoOutputTimeout: WORKER_MIN_NO_OUTPUT_TIMEOUT_MS,
-        },
-        isProbeRun
-          ? 'Applied fixed probe no-output timeout ceiling'
-          : 'Raised worker no-output timeout to minimum safety floor',
-      );
-    }
-    // Grace period: hard timeout must be at least idle timeout + 30s so the
+    const configTimeout = group.containerConfig?.timeout || CONTAINER_TIMEOUT;
+    // Grace period: hard timeout must be at least IDLE_TIMEOUT + 30s so the
     // graceful _close sentinel has time to trigger before the hard kill fires.
-    const hardTimeoutMs = Math.max(
-      configuredHardTimeout,
-      configuredIdleTimeout + 30_000,
-    );
+    const timeoutMs = Math.max(configTimeout, IDLE_TIMEOUT + 30_000);
 
-    const stopForTimeout = (reason: 'no_output_timeout' | 'hard_timeout') => {
-      if (timedOut) return;
+    const killOnTimeout = () => {
       timedOut = true;
-      timeoutReason = reason;
       logger.error(
-        { group: group.name, containerName, timeoutReason: reason },
+        { group: group.name, containerName },
         'Container timeout, stopping gracefully',
       );
       exec(stopContainer(containerName), { timeout: 15000 }, (err) => {
@@ -706,30 +419,16 @@ export async function runContainerAgent(
       });
     };
 
-    let hardTimeout = setTimeout(
-      () => stopForTimeout('hard_timeout'),
-      hardTimeoutMs,
-    );
-    let noOutputTimeout: ReturnType<typeof setTimeout> | null = null;
-    if (configuredNoOutputTimeout > 0) {
-      noOutputTimeout = setTimeout(
-        () => stopForTimeout('no_output_timeout'),
-        configuredNoOutputTimeout,
-      );
-    }
+    let timeout = setTimeout(killOnTimeout, timeoutMs);
 
-    // Reset the hard timeout whenever there's activity (streaming output)
-    const resetHardTimeout = () => {
-      clearTimeout(hardTimeout);
-      hardTimeout = setTimeout(
-        () => stopForTimeout('hard_timeout'),
-        hardTimeoutMs,
-      );
+    // Reset the timeout whenever there's activity (streaming output)
+    const resetTimeout = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(killOnTimeout, timeoutMs);
     };
 
     container.on('close', (code) => {
-      clearTimeout(hardTimeout);
-      if (noOutputTimeout) clearTimeout(noOutputTimeout);
+      clearTimeout(timeout);
       const duration = Date.now() - startTime;
 
       if (timedOut) {
@@ -744,11 +443,6 @@ export async function runContainerAgent(
             `Container: ${containerName}`,
             `Duration: ${duration}ms`,
             `Exit Code: ${code}`,
-            `Timeout Reason: ${timeoutReason || 'unknown'}`,
-            `Configured Hard Timeout: ${configuredHardTimeout}ms`,
-            `Configured No-Output Timeout: ${configuredNoOutputTimeout}ms`,
-            `Configured Idle Timeout: ${configuredIdleTimeout}ms`,
-            `Effective Hard Timeout: ${hardTimeoutMs}ms`,
             `Had Streaming Output: ${hadStreamingOutput}`,
           ].join('\n'),
         );
@@ -766,25 +460,20 @@ export async function runContainerAgent(
               status: 'success',
               result: null,
               newSessionId,
-              sessionResumeStatus,
-              sessionResumeError,
             });
           });
           return;
         }
 
         logger.error(
-          { group: group.name, containerName, duration, code, timeoutReason },
+          { group: group.name, containerName, duration, code },
           'Container timed out with no output',
         );
 
         resolve({
           status: 'error',
           result: null,
-          error:
-            timeoutReason === 'no_output_timeout'
-              ? `Container no_output_timeout after ${configuredNoOutputTimeout}ms`
-              : `Container hard_timeout after ${hardTimeoutMs}ms`,
+          error: `Container timed out after ${configTimeout}ms`,
         });
         return;
       }
@@ -813,9 +502,6 @@ export async function runContainerAgent(
           `=== Input ===`,
           JSON.stringify(input, null, 2),
           ``,
-          `=== Container Image ===`,
-          image,
-          ``,
           `=== Container Args ===`,
           containerArgs.join(' '),
           ``,
@@ -838,7 +524,6 @@ export async function runContainerAgent(
           `=== Input Summary ===`,
           `Prompt length: ${input.prompt.length} chars`,
           `Session ID: ${input.sessionId || 'new'}`,
-          `Container Image: ${image}`,
           ``,
           `=== Mounts ===`,
           mounts
@@ -883,8 +568,6 @@ export async function runContainerAgent(
             status: 'success',
             result: null,
             newSessionId,
-            sessionResumeStatus,
-            sessionResumeError,
           });
         });
         return;
@@ -940,8 +623,7 @@ export async function runContainerAgent(
     });
 
     container.on('error', (err) => {
-      clearTimeout(hardTimeout);
-      if (noOutputTimeout) clearTimeout(noOutputTimeout);
+      clearTimeout(timeout);
       logger.error(
         { group: group.name, containerName, error: err },
         'Container spawn error',
@@ -988,53 +670,6 @@ export interface AvailableGroup {
   isRegistered: boolean;
 }
 
-export interface WorkerRunSnapshotEntry {
-  run_id: string;
-  group_folder: string;
-  status: string;
-  phase?: string | null;
-  started_at: string;
-  completed_at: string | null;
-  retry_count: number;
-  result_summary: string | null;
-  error_details: string | null;
-  dispatch_repo?: string | null;
-  dispatch_branch?: string | null;
-  context_intent?: string | null;
-  parent_run_id?: string | null;
-  dispatch_session_id?: string | null;
-  selected_session_id?: string | null;
-  effective_session_id?: string | null;
-  session_selection_source?: string | null;
-  session_resume_status?: string | null;
-  session_resume_error?: string | null;
-  last_heartbeat_at?: string | null;
-  active_container_name?: string | null;
-  no_container_since?: string | null;
-  expects_followup_container?: number | null;
-  supervisor_owner?: string | null;
-  lease_expires_at?: string | null;
-  recovered_from_reason?: string | null;
-}
-
-export interface DispatchBlockSnapshotEntry {
-  timestamp: string;
-  source_group: string;
-  target_jid: string;
-  target_folder?: string;
-  reason_code: string;
-  reason_text: string;
-  run_id?: string;
-}
-
-export interface WorkerRunsSnapshot {
-  generated_at: string;
-  scope: 'all' | 'jarvis' | 'group';
-  active: WorkerRunSnapshotEntry[];
-  recent: WorkerRunSnapshotEntry[];
-  dispatch_blocks?: DispatchBlockSnapshotEntry[];
-}
-
 /**
  * Write available groups snapshot for the container to read.
  * Only main group can see all available groups (for activation).
@@ -1064,15 +699,4 @@ export function writeGroupsSnapshot(
       2,
     ),
   );
-}
-
-export function writeWorkerRunsSnapshot(
-  groupFolder: string,
-  snapshot: WorkerRunsSnapshot,
-): void {
-  const groupIpcDir = resolveGroupIpcPath(groupFolder);
-  fs.mkdirSync(groupIpcDir, { recursive: true });
-
-  const workerRunsFile = path.join(groupIpcDir, 'worker_runs.json');
-  fs.writeFileSync(workerRunsFile, JSON.stringify(snapshot, null, 2));
 }

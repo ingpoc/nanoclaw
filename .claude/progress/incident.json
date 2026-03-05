@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-04T18:59:51+00:00",
+  "updated_at": "2026-03-04T20:03:50.770434+00:00",
   "incidents": [
     {
       "id": "incident-20260304T110850Z",
@@ -8,22 +8,22 @@
       "status": "open",
       "severity": "medium",
       "created_at": "2026-03-04T11:08:50.813404+00:00",
-      "updated_at": "2026-03-04T18:59:51+00:00",
+      "updated_at": "2026-03-04T20:03:50.770296+00:00",
       "summary": {
         "symptom": "Live Build App request created worker run and reached review_requested, but andy_requests.request_id=req-1772622326048-pprimary remained coordinator_active with empty worker_run_id.",
-        "suspected_cause": "Recurrence: andy-developer coordinator still emits worker dispatch payloads without request_id for some natural task prompts, and validat...",
+        "suspected_cause": "andy_no_output_timeout_watchdog_mismatch",
         "impact": "User task flow stalls: intake/status replies succeed but no worker run is linked and task eventually fails with dispatch-block notice.",
-        "next_action": "Fix coordinator dispatch composer so request_id is always injected into worker dispatch JSON; rerun scripts/test-andy-full-user-journey-e2e.ts and confirm Build App stage links to worker_run_id."
+        "next_action": "Run scripts/test-andy-full-user-journey-e2e.ts against live runtime and confirm request_id -> worker_run_id linkage remains stable with zero new no_output_timeout artifacts in trace window."
       },
       "evidence": {
-        "bundle_count": 1,
-        "last_bundle_dir": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260304T175912Z",
-        "last_manifest_path": "/Users/gurusharan/Documents/remote-claude/Codex/jarvis-mac/nanoclaw/data/diagnostics/incidents/incident-20260304T175912Z/manifest.json",
-        "last_root_cause": "andy_no_output_timeout",
+        "bundle_count": 2,
+        "last_bundle_dir": "data/diagnostics/incidents/incident-20260304T194337Z",
+        "last_manifest_path": "data/diagnostics/incidents/incident-20260304T194337Z/manifest.json",
+        "last_root_cause": "andy_no_output_timeout_watchdog_mismatch",
         "last_status": "warn",
-        "last_checked_at": "2026-03-04T17:59:15.815904+00:00",
+        "last_checked_at": "2026-03-04T19:44:17.162443+00:00",
         "non_zero_command_count": 1,
-        "debug_summary": "root_cause=andy_no_output_timeout; messages=19; worker_runs=0; dispatch_blocks=1; non_zero_commands=1"
+        "debug_summary": "Patched src/container-runner.ts to restore noOutput/idle config, add explicit timeout reason logging, and reset no-output watchdog on worker heartbeat lines; added regression coverage in src/container-runner.test.ts."
       },
       "context": {
         "lane": "andy-developer",
@@ -31,29 +31,19 @@
       },
       "notes": [
         {
-          "ts": "2026-03-04T17:59:06.676934+00:00",
-          "author": "operator",
-          "text": "reopened by operator: Live full-user journey regression on 2026-03-04: andy-developer emitted validator-blocked dispatch missing request_id for Build App task (dispatch block run_id=req-1772646709284-pprimary). | previous_resolution=request_id is now required for dispatch; unlinked requests can no longer occur."
-        },
-        {
-          "ts": "2026-03-04T17:59:12.715954+00:00",
-          "author": "operator",
-          "text": "Repro from node --experimental-transform-types scripts/test-andy-full-user-journey-e2e.ts at 2026-03-04T23:28 IST: Build App stage attempts 1-2 had no worker link; attempt 3 produced dispatch block reason 'invalid dispatch payload: request_id is required for worker dispatch'. Ack/status replies remained fast (<2s)."
-        },
-        {
-          "ts": "2026-03-04T18:00:24.378554+00:00",
-          "author": "operator",
-          "text": "Additional symptom from npx tsx scripts/test-andy-user-e2e.ts (token=1772647209058-va081): greeting/status passed but Progress Query failed content expectation because Andy repeatedly reports coordinating blocked Build App retries. Indicates user-facing progress responses degrade when request_id-missing dispatch blocks accumulate."
-        },
-        {
-          "ts": "2026-03-04T18:35:32.718387+00:00",
-          "author": "operator",
-          "text": "Applied request_id remediation set: andy dispatch hook now validates request_id without jq dependency, dispatch lint requires request_id, dispatch docs updated to required request_id, and IPC delegation/runtime sync paths were hardened so andy-developer -> jarvis-worker dispatch behavior stays in sync with repo source."
-        },
-        {
-          "ts": "2026-03-04T18:59:51+00:00",
+          "ts": "2026-03-04T19:44:57.675295+00:00",
           "author": "codex",
-          "text": "2026-03-04 live regression: run-feature-tests ipc-dispatch-contract --live failed at happiness-gate progress query; full-user-journey E2E token=1772650187976-f8dqj showed attempt1 request req-1772650188115-pprimary remained coordinator_active without worker_run_id for >180s, retry attempt2 linked worker_run_id=userflow-1772650187976-f8dqj. No new dispatch-block artifact was created in this run; symptom remains as delayed/unlinked first-attempt dispatch with stale coordinator_active rows."
+          "text": "Follow-up: request req-1772653255147-pprimary remained coordinator_active with empty worker_run_id after full-journey Build App stage during this debug session; associated andy container nanoclaw-andy-developer-1772653255574 stayed running until manually stopped for cleanup."
+        },
+        {
+          "ts": "2026-03-04T19:57:52.765282+00:00",
+          "author": "operator",
+          "text": "2026-03-05 root-cause isolation: host timeout watchdog treated worker runs as silent until final OUTPUT marker; worker emitted stderr heartbeat only, so no_output_timeout fired and container exited 137 mid-run. Implemented fix in src/container-runner.ts: restore noOutput/idle config handling, add timeout reasons in timeout artifacts, and reset no-output watchdog on '[agent-runner] heartbeat worker-opencode-active'. Added regression test in src/container-runner.test.ts. Verification: npm run typecheck PASS, container-runner tests PASS, verify-worker-connectivity PASS on both worker lanes with no stale states."
+        },
+        {
+          "ts": "2026-03-04T20:03:50.770292+00:00",
+          "author": "operator",
+          "text": "Validation blocker after rebuilding dist on 2026-03-05: launchd service fails at startup because src/container-runtime.ts hardcodes CONTAINER_RUNTIME_BIN='docker' (docker absent on this host). Preflight reports com.nanoclaw state=spawnscheduled and logs show '/bin/sh: docker: command not found'. Need runtime adapter alignment (Apple container vs docker) before post-fix live verification can continue."
         }
       ]
     },
@@ -63,7 +53,7 @@
       "status": "open",
       "severity": "unknown",
       "created_at": "2026-03-04T17:32:06.597235+00:00",
-      "updated_at": "2026-03-04T18:59:51+00:00",
+      "updated_at": "2026-03-04T19:44:29.857438+00:00",
       "summary": {
         "symptom": "Andy status check-in misclassified as work intake",
         "suspected_cause": "Andy frontdesk classified work-check-in phrasing ('are you doing any work?') as work_intake, generating a frontdesk request and model-aut...",
@@ -78,16 +68,6 @@
       },
       "notes": [
         {
-          "ts": "2026-03-04T17:32:06.597235+00:00",
-          "author": "user",
-          "text": "reported: Andy status check-in misclassified as work intake"
-        },
-        {
-          "ts": "2026-03-04T17:35:34.730221+00:00",
-          "author": "operator",
-          "text": "Applied deeper mitigation: andy-developer frontdesk turns now force fresh coordinator session (sessionOverride=null) to avoid stale long-session context bleed. Also switched intake classifier to intent-based checks and stale request filtering (60m recency or active worker-run only). Build and full test suite pass."
-        },
-        {
           "ts": "2026-03-04T17:59:55.260350+00:00",
           "author": "operator",
           "text": "Regression probe on 2026-03-04T17:59:40Z for '@Andy are you doing any work?' (message_id=uat-checkin-1772647180674-v463i): bot replied in 1326ms, andy_requests rows for probe=0, worker runs in probe window=0, message timeline confirmed run_id=None. Symptom not reproduced in this run."
@@ -96,6 +76,11 @@
           "ts": "2026-03-04T18:59:51+00:00",
           "author": "codex",
           "text": "2026-03-04 targeted phrase probe for '@Andy are you doing any work?' at 18:55:25Z returned status-style reply in 169ms with andy_request_count=0 and worker_runs_matching_token=0, so intake misclassification did not reproduce in this run."
+        },
+        {
+          "ts": "2026-03-04T19:44:29.857435+00:00",
+          "author": "codex",
+          "text": "2026-03-05 targeted E2E check: npx tsx scripts/test-andy-user-e2e.ts PASS (greeting 430ms, natural status query 908ms, progress query 1133ms) with no intake-style reply for status checks. Misclassification not reproduced in this run."
         }
       ]
     },

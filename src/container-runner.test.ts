@@ -10,6 +10,7 @@ const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
 vi.mock('./config.js', () => ({
   CONTAINER_IMAGE: 'nanoclaw-agent:latest',
   CONTAINER_MAX_OUTPUT_SIZE: 10485760,
+  CONTAINER_NO_OUTPUT_TIMEOUT: 720000, // 12min
   CONTAINER_TIMEOUT: 1800000, // 30min
   DATA_DIR: '/tmp/nanoclaw-test-data',
   GROUPS_DIR: '/tmp/nanoclaw-test-groups',
@@ -86,6 +87,7 @@ vi.mock('child_process', async () => {
 });
 
 import { runContainerAgent, ContainerOutput } from './container-runner.js';
+import { exec } from 'child_process';
 import type { RegisteredGroup } from './types.js';
 
 const testGroup: RegisteredGroup = {
@@ -114,6 +116,7 @@ describe('container-runner timeout behavior', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fakeProc = createFakeProcess();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -205,5 +208,43 @@ describe('container-runner timeout behavior', () => {
     const result = await resultPromise;
     expect(result.status).toBe('success');
     expect(result.newSessionId).toBe('session-456');
+  });
+
+  it('worker heartbeat resets no-output timeout watchdog', async () => {
+    const onOutput = vi.fn(async () => {});
+    const workerLikeGroup: RegisteredGroup = {
+      ...testGroup,
+      containerConfig: {
+        timeout: 900000,
+        idleTimeout: 300000,
+        noOutputTimeout: 120000,
+      },
+    };
+
+    const resultPromise = runContainerAgent(
+      workerLikeGroup,
+      testInput,
+      () => {},
+      onOutput,
+    );
+
+    await vi.advanceTimersByTimeAsync(119000);
+    expect(exec).not.toHaveBeenCalled();
+
+    fakeProc.stderr.push(
+      '[agent-runner] heartbeat worker-opencode-active model=opencode/minimax-m2.5-free\n',
+    );
+    await vi.advanceTimersByTimeAsync(119000);
+    expect(exec).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(exec).toHaveBeenCalledTimes(1);
+
+    fakeProc.emit('close', 137);
+    await vi.advanceTimersByTimeAsync(10);
+
+    const result = await resultPromise;
+    expect(result.status).toBe('error');
+    expect(result.error).toContain('no_output_timeout');
   });
 });

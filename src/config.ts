@@ -43,6 +43,10 @@ export const CONTAINER_TIMEOUT = parseInt(
   process.env.CONTAINER_TIMEOUT || '1800000',
   10,
 );
+export const CONTAINER_NO_OUTPUT_TIMEOUT = parseInt(
+  process.env.CONTAINER_NO_OUTPUT_TIMEOUT || '720000',
+  10,
+);
 export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
   process.env.CONTAINER_MAX_OUTPUT_SIZE || '10485760',
   10,

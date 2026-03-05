@@ -10,6 +10,7 @@ import path from 'path';
 import {
   CONTAINER_IMAGE,
   CONTAINER_MAX_OUTPUT_SIZE,
+  CONTAINER_NO_OUTPUT_TIMEOUT,
   CONTAINER_TIMEOUT,
   DATA_DIR,
   GROUPS_DIR,
@@ -30,6 +31,8 @@ import { RegisteredGroup } from './types.js';
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
+const AGENT_RUNNER_HEARTBEAT_PREFIX =
+  '[agent-runner] heartbeat worker-opencode-active';
 
 export interface ContainerInput {
   prompt: string;
@@ -454,6 +457,76 @@ export async function runContainerAgent(
     let parseBuffer = '';
     let newSessionId: string | undefined;
     let outputChain = Promise.resolve();
+    let timedOut = false;
+    let hadStreamingOutput = false;
+    let timeoutReason: 'hard_timeout' | 'no_output_timeout' | null = null;
+
+    const configTimeout =
+      group.containerConfig?.timeout && group.containerConfig.timeout > 0
+        ? group.containerConfig.timeout
+        : CONTAINER_TIMEOUT;
+    const configIdleTimeout =
+      group.containerConfig?.idleTimeout && group.containerConfig.idleTimeout > 0
+        ? group.containerConfig.idleTimeout
+        : IDLE_TIMEOUT;
+    const configNoOutputTimeout =
+      group.containerConfig?.noOutputTimeout &&
+      group.containerConfig.noOutputTimeout > 0
+        ? group.containerConfig.noOutputTimeout
+        : CONTAINER_NO_OUTPUT_TIMEOUT;
+
+    // Grace period: hard timeout must be at least idle timeout + 30s so the
+    // graceful _close sentinel has time to trigger before the hard kill fires.
+    const hardTimeoutMs = Math.max(configTimeout, configIdleTimeout + 30_000);
+    // No-output timeout tracks "still alive but not producing markers" windows.
+    const noOutputTimeoutMs = Math.max(
+      10_000,
+      Math.min(configNoOutputTimeout, hardTimeoutMs),
+    );
+
+    let hardTimeout: ReturnType<typeof setTimeout>;
+    let noOutputTimeout: ReturnType<typeof setTimeout>;
+
+    const stopForTimeout = (reason: 'hard_timeout' | 'no_output_timeout') => {
+      if (timedOut) return;
+      timedOut = true;
+      timeoutReason = reason;
+      logger.error(
+        { group: group.name, containerName, reason },
+        'Container timeout, stopping gracefully',
+      );
+      exec(stopContainer(containerName), { timeout: 15000 }, (err) => {
+        if (err) {
+          logger.warn(
+            { group: group.name, containerName, err },
+            'Graceful stop failed, force killing',
+          );
+          container.kill('SIGKILL');
+        }
+      });
+    };
+
+    const resetHardTimeout = () => {
+      clearTimeout(hardTimeout);
+      hardTimeout = setTimeout(
+        () => stopForTimeout('hard_timeout'),
+        hardTimeoutMs,
+      );
+    };
+
+    const resetNoOutputTimeout = () => {
+      clearTimeout(noOutputTimeout);
+      noOutputTimeout = setTimeout(
+        () => stopForTimeout('no_output_timeout'),
+        noOutputTimeoutMs,
+      );
+    };
+
+    hardTimeout = setTimeout(() => stopForTimeout('hard_timeout'), hardTimeoutMs);
+    noOutputTimeout = setTimeout(
+      () => stopForTimeout('no_output_timeout'),
+      noOutputTimeoutMs,
+    );
 
     container.stdout.on('data', (data) => {
       const chunk = data.toString();
@@ -492,8 +565,9 @@ export async function runContainerAgent(
               newSessionId = parsed.newSessionId;
             }
             hadStreamingOutput = true;
-            // Activity detected — reset the hard timeout
-            resetTimeout();
+            // Activity detected — reset hard + no-output timeouts.
+            resetHardTimeout();
+            resetNoOutputTimeout();
             // Call onOutput for all markers (including null results)
             // so idle timers start even for "silent" query completions.
             outputChain = outputChain.then(() => onOutput(parsed));
@@ -511,10 +585,15 @@ export async function runContainerAgent(
       const chunk = data.toString();
       const lines = chunk.trim().split('\n');
       for (const line of lines) {
-        if (line) logger.debug({ container: group.folder }, line);
+        if (!line) continue;
+        logger.debug({ container: group.folder }, line);
+        // Worker runner heartbeats signal active progress even when no marker
+        // has been emitted yet. Count them as no-output activity only.
+        if (line.includes(AGENT_RUNNER_HEARTBEAT_PREFIX)) {
+          resetNoOutputTimeout();
+        }
       }
-      // Don't reset timeout on stderr — SDK writes debug logs continuously.
-      // Timeout only resets on actual output (OUTPUT_MARKER in stdout).
+
       if (stderrTruncated) return;
       const remaining = CONTAINER_MAX_OUTPUT_SIZE - stderr.length;
       if (chunk.length > remaining) {
@@ -529,40 +608,9 @@ export async function runContainerAgent(
       }
     });
 
-    let timedOut = false;
-    let hadStreamingOutput = false;
-    const configTimeout = group.containerConfig?.timeout || CONTAINER_TIMEOUT;
-    // Grace period: hard timeout must be at least IDLE_TIMEOUT + 30s so the
-    // graceful _close sentinel has time to trigger before the hard kill fires.
-    const timeoutMs = Math.max(configTimeout, IDLE_TIMEOUT + 30_000);
-
-    const killOnTimeout = () => {
-      timedOut = true;
-      logger.error(
-        { group: group.name, containerName },
-        'Container timeout, stopping gracefully',
-      );
-      exec(stopContainer(containerName), { timeout: 15000 }, (err) => {
-        if (err) {
-          logger.warn(
-            { group: group.name, containerName, err },
-            'Graceful stop failed, force killing',
-          );
-          container.kill('SIGKILL');
-        }
-      });
-    };
-
-    let timeout = setTimeout(killOnTimeout, timeoutMs);
-
-    // Reset the timeout whenever there's activity (streaming output)
-    const resetTimeout = () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(killOnTimeout, timeoutMs);
-    };
-
     container.on('close', (code) => {
-      clearTimeout(timeout);
+      clearTimeout(hardTimeout);
+      clearTimeout(noOutputTimeout);
       const duration = Date.now() - startTime;
 
       if (timedOut) {
@@ -577,6 +625,12 @@ export async function runContainerAgent(
             `Container: ${containerName}`,
             `Duration: ${duration}ms`,
             `Exit Code: ${code}`,
+            `Timeout Reason: ${timeoutReason || 'unknown'}`,
+            `Configured Hard Timeout: ${configTimeout}ms`,
+            `Configured No-Output Timeout: ${configNoOutputTimeout}ms`,
+            `Configured Idle Timeout: ${configIdleTimeout}ms`,
+            `Effective Hard Timeout: ${hardTimeoutMs}ms`,
+            `Effective No-Output Timeout: ${noOutputTimeoutMs}ms`,
             `Had Streaming Output: ${hadStreamingOutput}`,
           ].join('\n'),
         );
@@ -586,7 +640,7 @@ export async function runContainerAgent(
         // container being reaped after the idle period expired.
         if (hadStreamingOutput) {
           logger.info(
-            { group: group.name, containerName, duration, code },
+            { group: group.name, containerName, duration, code, timeoutReason },
             'Container timed out after output (idle cleanup)',
           );
           outputChain.then(() => {
@@ -600,14 +654,14 @@ export async function runContainerAgent(
         }
 
         logger.error(
-          { group: group.name, containerName, duration, code },
+          { group: group.name, containerName, duration, code, timeoutReason },
           'Container timed out with no output',
         );
 
         resolve({
           status: 'error',
           result: null,
-          error: `Container timed out after ${configTimeout}ms`,
+          error: `Container timed out (${timeoutReason || 'unknown'}) after ${duration}ms`,
         });
         return;
       }
@@ -757,7 +811,8 @@ export async function runContainerAgent(
     });
 
     container.on('error', (err) => {
-      clearTimeout(timeout);
+      clearTimeout(hardTimeout);
+      clearTimeout(noOutputTimeout);
       logger.error(
         { group: group.name, containerName, error: err },
         'Container spawn error',

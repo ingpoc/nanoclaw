@@ -25,6 +25,25 @@ import {
 } from './container-runtime.js';
 import { logger } from './logger.js';
 
+const IS_APPLE_CONTAINER_RUNTIME = /(^|\/)container$/.test(
+  CONTAINER_RUNTIME_BIN,
+);
+const EXPECTED_HEALTH_CMD = IS_APPLE_CONTAINER_RUNTIME
+  ? `${CONTAINER_RUNTIME_BIN} system status`
+  : `${CONTAINER_RUNTIME_BIN} info`;
+const EXPECTED_LIST_CMD = IS_APPLE_CONTAINER_RUNTIME
+  ? `${CONTAINER_RUNTIME_BIN} ls -a`
+  : `${CONTAINER_RUNTIME_BIN} ps --filter name=nanoclaw- --format '{{.Names}}'`;
+
+function listOutput(names: string[]): string {
+  if (IS_APPLE_CONTAINER_RUNTIME) {
+    const header = 'CONTAINER IMAGE OS ARCH STATE ADDR';
+    const rows = names.map((name) => `${name} nanoclaw-worker:latest linux arm64 stopped`);
+    return [header, ...rows].join('\n');
+  }
+  return names.join('\n');
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -32,8 +51,15 @@ beforeEach(() => {
 // --- Pure functions ---
 
 describe('readonlyMountArgs', () => {
-  it('returns -v flag with :ro suffix', () => {
+  it('returns runtime-appropriate readonly mount args', () => {
     const args = readonlyMountArgs('/host/path', '/container/path');
+    if (IS_APPLE_CONTAINER_RUNTIME) {
+      expect(args).toEqual([
+        '--mount',
+        'type=bind,source=/host/path,target=/container/path,readonly',
+      ]);
+      return;
+    }
     expect(args).toEqual(['-v', '/host/path:/container/path:ro']);
   });
 });
@@ -55,7 +81,7 @@ describe('ensureContainerRuntimeRunning', () => {
     ensureContainerRuntimeRunning();
 
     expect(mockExecSync).toHaveBeenCalledTimes(1);
-    expect(mockExecSync).toHaveBeenCalledWith(`${CONTAINER_RUNTIME_BIN} info`, {
+    expect(mockExecSync).toHaveBeenCalledWith(EXPECTED_HEALTH_CMD, {
       stdio: 'pipe',
       timeout: 10000,
     });
@@ -64,9 +90,9 @@ describe('ensureContainerRuntimeRunning', () => {
     );
   });
 
-  it('throws when docker info fails', () => {
+  it('throws when runtime health check fails', () => {
     mockExecSync.mockImplementationOnce(() => {
-      throw new Error('Cannot connect to the Docker daemon');
+      throw new Error('runtime unavailable');
     });
 
     expect(() => ensureContainerRuntimeRunning()).toThrow(
@@ -80,9 +106,12 @@ describe('ensureContainerRuntimeRunning', () => {
 
 describe('cleanupOrphans', () => {
   it('stops orphaned nanoclaw containers', () => {
-    // docker ps returns container names, one per line
     mockExecSync.mockReturnValueOnce(
-      'nanoclaw-group1-111\nnanoclaw-group2-222\n',
+      listOutput([
+        'nanoclaw-group1-111',
+        'nanoclaw-group2-222',
+        'unrelated-container',
+      ]),
     );
     // stop calls succeed
     mockExecSync.mockReturnValue('');
@@ -91,6 +120,10 @@ describe('cleanupOrphans', () => {
 
     // ps + 2 stop calls
     expect(mockExecSync).toHaveBeenCalledTimes(3);
+    expect(mockExecSync).toHaveBeenNthCalledWith(1, EXPECTED_LIST_CMD, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      encoding: 'utf-8',
+    });
     expect(mockExecSync).toHaveBeenNthCalledWith(
       2,
       `${CONTAINER_RUNTIME_BIN} stop nanoclaw-group1-111`,
@@ -108,7 +141,7 @@ describe('cleanupOrphans', () => {
   });
 
   it('does nothing when no orphans exist', () => {
-    mockExecSync.mockReturnValueOnce('');
+    mockExecSync.mockReturnValueOnce(listOutput(['unrelated-container']));
 
     cleanupOrphans();
 
@@ -118,7 +151,7 @@ describe('cleanupOrphans', () => {
 
   it('warns and continues when ps fails', () => {
     mockExecSync.mockImplementationOnce(() => {
-      throw new Error('docker not available');
+      throw new Error('runtime not available');
     });
 
     cleanupOrphans(); // should not throw
@@ -130,7 +163,7 @@ describe('cleanupOrphans', () => {
   });
 
   it('continues stopping remaining containers when one stop fails', () => {
-    mockExecSync.mockReturnValueOnce('nanoclaw-a-1\nnanoclaw-b-2\n');
+    mockExecSync.mockReturnValueOnce(listOutput(['nanoclaw-a-1', 'nanoclaw-b-2']));
     // First stop fails
     mockExecSync.mockImplementationOnce(() => {
       throw new Error('already stopped');

@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-04T20:03:50.770434+00:00",
+  "updated_at": "2026-03-05T17:31:00.115833+00:00",
   "incidents": [
     {
       "id": "incident-20260304T110850Z",
@@ -8,7 +8,7 @@
       "status": "open",
       "severity": "medium",
       "created_at": "2026-03-04T11:08:50.813404+00:00",
-      "updated_at": "2026-03-04T20:03:50.770296+00:00",
+      "updated_at": "2026-03-05T17:31:00.115695+00:00",
       "summary": {
         "symptom": "Live Build App request created worker run and reached review_requested, but andy_requests.request_id=req-1772622326048-pprimary remained coordinator_active with empty worker_run_id.",
         "suspected_cause": "andy_no_output_timeout_watchdog_mismatch",
@@ -31,11 +31,6 @@
       },
       "notes": [
         {
-          "ts": "2026-03-04T19:44:57.675295+00:00",
-          "author": "codex",
-          "text": "Follow-up: request req-1772653255147-pprimary remained coordinator_active with empty worker_run_id after full-journey Build App stage during this debug session; associated andy container nanoclaw-andy-developer-1772653255574 stayed running until manually stopped for cleanup."
-        },
-        {
           "ts": "2026-03-04T19:57:52.765282+00:00",
           "author": "operator",
           "text": "2026-03-05 root-cause isolation: host timeout watchdog treated worker runs as silent until final OUTPUT marker; worker emitted stderr heartbeat only, so no_output_timeout fired and container exited 137 mid-run. Implemented fix in src/container-runner.ts: restore noOutput/idle config handling, add timeout reasons in timeout artifacts, and reset no-output watchdog on '[agent-runner] heartbeat worker-opencode-active'. Added regression test in src/container-runner.test.ts. Verification: npm run typecheck PASS, container-runner tests PASS, verify-worker-connectivity PASS on both worker lanes with no stale states."
@@ -44,6 +39,11 @@
           "ts": "2026-03-04T20:03:50.770292+00:00",
           "author": "operator",
           "text": "Validation blocker after rebuilding dist on 2026-03-05: launchd service fails at startup because src/container-runtime.ts hardcodes CONTAINER_RUNTIME_BIN='docker' (docker absent on this host). Preflight reports com.nanoclaw state=spawnscheduled and logs show '/bin/sh: docker: command not found'. Need runtime adapter alignment (Apple container vs docker) before post-fix live verification can continue."
+        },
+        {
+          "ts": "2026-03-05T17:31:00.115691+00:00",
+          "author": "operator",
+          "text": "Applied Apple-container patch in src/container-runtime.ts (runtime bin default container, health/list command adaptation, readonly mount adaptation) with passing typecheck/tests/build. Post-restart verification still blocked because app exits with FATAL 'No channels connected': src/channels/index.ts has no channel imports and src/channels contains only registry files in current workspace, so launchd service stays spawnscheduled."
         }
       ]
     },

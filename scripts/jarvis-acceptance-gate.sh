@@ -10,9 +10,12 @@ export PYENV_REHASH_DISABLE="${PYENV_REHASH_DISABLE:-1}"
 RUN_BUILD=1
 RUN_TESTS=1
 RUN_CONNECTIVITY=1
+RUN_LINKAGE_AUDIT=1
 INCLUDE_HAPPINESS=0
 HAPPINESS_USER_CONFIRMATION=""
 OUT_FILE=""
+LINKAGE_DB_PATH=""
+LINKAGE_AUDIT_WARN_ONLY="${LINKAGE_AUDIT_WARN_ONLY:-1}"
 
 VERIFY_ARGS=()
 
@@ -27,6 +30,7 @@ Options:
   --skip-build                      Skip `npm run build`
   --skip-tests                      Skip `npm test`
   --skip-connectivity               Skip `verify-worker-connectivity`
+  --skip-linkage-audit              Skip `linkage-audit`
   --include-happiness               Also run user-facing happiness gate
   --happiness-user-confirmation <t> Required when --include-happiness is used
   --out <path>                      Manifest output path
@@ -63,6 +67,10 @@ while [ "$#" -gt 0 ]; do
       RUN_CONNECTIVITY=0
       shift
       ;;
+    --skip-linkage-audit)
+      RUN_LINKAGE_AUDIT=0
+      shift
+      ;;
     --include-happiness)
       INCLUDE_HAPPINESS=1
       shift
@@ -77,6 +85,9 @@ while [ "$#" -gt 0 ]; do
       ;;
     --db|--window-minutes|--stale-queued-minutes|--stale-running-minutes|--probe-timeout-sec|--probe-poll-sec|--probe-inflight-window-minutes)
       VERIFY_ARGS+=("$1" "$2")
+      if [ "$1" = "--db" ]; then
+        LINKAGE_DB_PATH="$2"
+      fi
       shift 2
       ;;
     --skip-prechecks)
@@ -95,7 +106,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-if [ "$RUN_BUILD" -eq 0 ] && [ "$RUN_TESTS" -eq 0 ] && [ "$RUN_CONNECTIVITY" -eq 0 ] && [ "$INCLUDE_HAPPINESS" -eq 0 ]; then
+if [ "$RUN_BUILD" -eq 0 ] && [ "$RUN_TESTS" -eq 0 ] && [ "$RUN_CONNECTIVITY" -eq 0 ] && [ "$RUN_LINKAGE_AUDIT" -eq 0 ] && [ "$INCLUDE_HAPPINESS" -eq 0 ]; then
   echo "At least one gate check must be enabled."
   exit 1
 fi
@@ -125,8 +136,15 @@ run_check() {
   log_file="$(mktemp "/tmp/jarvis-acceptance-${check_id}.XXXXXX")"
 
   set +e
-  TMPDIR="/tmp" PYENV_REHASH_DISABLE="${PYENV_REHASH_DISABLE:-1}" bash -c "$command_str" >"$log_file" 2>&1
-  exit_code=$?
+  if [ "$check_id" = "tests" ]; then
+    # Streaming test output avoids intermittent tsx IPC EPERM failures seen when stdout/stderr are redirected in non-interactive runs.
+    PYENV_REHASH_DISABLE="${PYENV_REHASH_DISABLE:-1}" bash -c "$command_str"
+    exit_code=$?
+    printf '%s\n' "test output streamed to console (redirection disabled for tsx IPC stability)" >"$log_file"
+  else
+    PYENV_REHASH_DISABLE="${PYENV_REHASH_DISABLE:-1}" bash -c "$command_str" >"$log_file" 2>&1
+    exit_code=$?
+  fi
   set -e
 
   end_iso="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -166,7 +184,8 @@ if [ "$RUN_BUILD" -eq 1 ]; then
 fi
 
 if [ "$RUN_TESTS" -eq 1 ]; then
-  run_check "tests" "npm test"
+  # Run tests with one worker to avoid intermittent tsx IPC socket EPERM failures in redirected/non-interactive gate runs.
+  run_check "tests" "npm test -- --maxWorkers=1"
 fi
 
 if [ "$RUN_CONNECTIVITY" -eq 1 ]; then
@@ -175,6 +194,17 @@ if [ "$RUN_CONNECTIVITY" -eq 1 ]; then
     verify_cmd+=" $(printf '%q' "$arg")"
   done
   run_check "worker_connectivity" "$verify_cmd"
+fi
+
+if [ "$RUN_LINKAGE_AUDIT" -eq 1 ]; then
+  linkage_cmd="bash scripts/jarvis-ops.sh linkage-audit"
+  if [ -n "$LINKAGE_DB_PATH" ]; then
+    linkage_cmd+=" --db $(printf '%q' "$LINKAGE_DB_PATH")"
+  fi
+  if [ "$LINKAGE_AUDIT_WARN_ONLY" = "1" ]; then
+    linkage_cmd+=" --warn-only"
+  fi
+  run_check "linkage_audit" "$linkage_cmd"
 fi
 
 if [ "$INCLUDE_HAPPINESS" -eq 1 ]; then

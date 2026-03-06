@@ -29,6 +29,28 @@ Run once per week (`45-90 min`) on a dedicated branch:
 2. one bounded cleanup batch per week (no broad refactors)
 3. merge only after deterministic gates pass
 
+## Automation (Prevention Phase)
+
+Manual on-demand run:
+
+```bash
+bash scripts/jarvis-ops.sh weekend-prevention \
+  --skip-preflight \
+  --skip-acceptance \
+  --json-out data/diagnostics/weekend-prevention/latest-manifest.json \
+  --summary-out data/diagnostics/weekend-prevention/latest-summary.md
+```
+
+When running shared verification for slop cleanup, include prevention as part of the same workflow:
+
+```bash
+bash scripts/workflow/verify.sh --with-weekend-prevention
+```
+
+Weekend artifacts are written under:
+
+- `data/diagnostics/weekend-prevention/`
+
 ## Phase 0: Preflight
 
 1. Run `bash scripts/workflow/preflight.sh --skip-recall`.
@@ -44,6 +66,18 @@ Run objective checks and capture output:
 bash scripts/check-workflow-contracts.sh
 bash scripts/check-claude-codex-mirror.sh
 bash scripts/check-tooling-governance.sh
+```
+
+## Phase 2: Prevention Frequency Sweep
+
+Run prevention recall from incidents and runtime evidence before pruning decisions:
+
+```bash
+bash scripts/jarvis-ops.sh weekend-prevention \
+  --skip-preflight \
+  --skip-acceptance \
+  --json-out data/diagnostics/weekend-prevention/latest-manifest.json \
+  --summary-out data/diagnostics/weekend-prevention/latest-summary.md
 ```
 
 Find unreferenced docs:
@@ -93,7 +127,7 @@ Review hooks/subagents/built-in routing governance:
 bash scripts/check-tooling-governance.sh
 ```
 
-## Phase 2: Prune Queue
+## Phase 3: Prune Queue
 
 Build a bounded weekly queue with severity:
 
@@ -109,7 +143,7 @@ Queue sizing rule per weekly cycle:
 
 Do not mix cleanup with unrelated feature delivery.
 
-## Phase 3: Execute Cleanup
+## Phase 4: Execute Cleanup
 
 For each queued item:
 
@@ -117,7 +151,7 @@ For each queued item:
 2. update `CLAUDE.md`/`AGENTS.md`/`DOCS.md`/`docs/README.md` when paths change
 3. run `rg` proof that old path references are gone
 
-## Phase 4: Verification Gate
+## Phase 5: Verification Gate
 
 Minimum deterministic checks before merge:
 
@@ -130,7 +164,7 @@ bash scripts/check-tooling-governance.sh
 bash scripts/jarvis-ops.sh acceptance-gate
 ```
 
-## Phase 5: Weekly Evidence + Ratchet
+## Phase 6: Weekly Evidence + Ratchet
 
 Write a weekly artifact in `docs/research/`:
 
@@ -157,7 +191,7 @@ Weekly slop optimization is complete when all are true:
 3. documentation index/mirror is synchronized.
 4. weekly evidence artifact is committed.
 
-## Phase 6: Context Budget Optimization
+## Phase 7: Context Budget Optimization
 
 Auto-loaded rules (`.claude/rules/`) consume tokens every session. Trigger-loaded docs (`docs/` + CLAUDE.md trigger line) load only when relevant.
 

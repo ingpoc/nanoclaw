@@ -20,11 +20,19 @@ Commands:
   verify-worker-connectivity
                   Validate worker lane connectivity gate using probe + DB checks
   happiness-gate  Run user-facing happiness gate (requires --user-confirmation)
+  pre-dispatch-gate
+                  Hard pre-dispatch gate (dispatch/auth/connectivity/stale-state)
   dispatch-lint   Validate worker dispatch payload against current rules
+  completion-lint Validate worker completion contract from raw output text
+  consult         Run Claude CLI consult lane wrapper (resume/fork/fresh)
+  auth-health     Diagnose local auth/quota health signals
+  linkage-audit   Enforce request->worker linkage SLA checks
   db-doctor       Diagnose database schema/index/readiness drift (read-only)
   incident        Manage incident registry (list/show/resolve/reopen/note)
   probe           Dispatch worker-lane probes and wait for terminal statuses
   hotspots        Show recurring reliability hotspots over time window
+  weekend-prevention
+                  Run weekly prevention workflow (frequency + gates + artifacts)
   incident-bundle Collect a timestamped diagnostics bundle for an incident
   reconcile-stale-runs
                   Reconcile stale worker_runs (dry-run by default)
@@ -67,8 +75,23 @@ case "$command_name" in
   happiness-gate)
     exec "$SCRIPT_DIR/jarvis-happiness-gate.sh" "$@"
     ;;
+  pre-dispatch-gate)
+    exec "$SCRIPT_DIR/jarvis-pre-dispatch-gate.sh" "$@"
+    ;;
   dispatch-lint)
     exec "$SCRIPT_DIR/jarvis-dispatch-lint.sh" "$@"
+    ;;
+  completion-lint)
+    exec "$SCRIPT_DIR/jarvis-completion-contract-lint.sh" "$@"
+    ;;
+  consult)
+    exec "$SCRIPT_DIR/claude-consult.sh" "$@"
+    ;;
+  auth-health)
+    exec "$SCRIPT_DIR/jarvis-auth-health.sh" "$@"
+    ;;
+  linkage-audit)
+    exec "$SCRIPT_DIR/jarvis-linkage-audit.sh" "$@"
     ;;
   db-doctor)
     exec "$SCRIPT_DIR/jarvis-db-doctor.sh" "$@"
@@ -81,6 +104,9 @@ case "$command_name" in
     ;;
   hotspots)
     exec "$SCRIPT_DIR/jarvis-hotspots.sh" "$@"
+    ;;
+  weekend-prevention)
+    exec "$SCRIPT_DIR/workflow/weekend-prevention-run.sh" "$@"
     ;;
   incident-bundle)
     exec "$SCRIPT_DIR/jarvis-incident-bundle.sh" "$@"

@@ -1,19 +1,19 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-06T05:41:39.649078+00:00",
+  "updated_at": "2026-03-06T06:56:46.456593+00:00",
   "incidents": [
     {
-      "id": "incident-20260305T180540Z",
-      "title": "Andy-Developer fails after restart with ERR_FS_CP_EINVAL in buildVolumeMounts",
+      "id": "incident-20260304T173206Z",
+      "title": "Andy status check-in misclassified as work intake",
       "status": "open",
-      "severity": "medium",
-      "created_at": "2026-03-05T18:05:40.429157+00:00",
-      "updated_at": "2026-03-06T05:41:39.648926+00:00",
+      "severity": "unknown",
+      "created_at": "2026-03-04T17:32:06.597235+00:00",
+      "updated_at": "2026-03-06T06:56:46.456434+00:00",
       "summary": {
-        "symptom": "Agent error: src and dest cannot be the same .../.claude/skills/.docs",
-        "suspected_cause": "skills sync attempted problematic symlink copies (.docs/self-path + symlink destination collisions) and Apple container runtime fails whe...",
-        "impact": "andy-developer agent failed to start containers and retried, causing no effective responses",
-        "next_action": "keep --user disabled for Apple container runtime and monitor live runs; address separate stale worker_runs record"
+        "symptom": "Andy status check-in misclassified as work intake",
+        "suspected_cause": "Andy frontdesk classified work-check-in phrasing ('are you doing any work?') as work_intake, generating a frontdesk request and model-aut...",
+        "impact": "User received contextually incorrect reply in andy-developer chat, reducing trust in frontdesk status behavior",
+        "next_action": "Deploy updated classifier/status filter and verify with live WhatsApp check-in phrases before resolve"
       },
       "evidence": {
         "bundle_count": 0
@@ -23,19 +23,19 @@
       },
       "notes": [
         {
-          "ts": "2026-03-06T05:33:41.570392+00:00",
+          "ts": "2026-03-06T06:54:21.392416+00:00",
           "author": "codex",
-          "text": "Post-fix runtime validation on pid 16298: andy-developer successfully spawned container, produced output 'Hi! How can I help?', and sent message. No new ERR_FS_CP_EINVAL/EEXIST/XPC lines for this pid. Remaining reliability fail is unrelated stale worker run userflow-1772654367569-bsprb (jarvis-worker-1, 2026-03-04)."
+          "text": "Added linkage-audit (stale/unlinked request detection) and pre-dispatch hard gate integration to reduce accidental work dispatch propagation from misclassified frontdesk traffic."
         },
         {
-          "ts": "2026-03-06T05:38:03.897558+00:00",
+          "ts": "2026-03-06T06:56:42.367499+00:00",
           "author": "codex",
-          "text": "Targeted stale-run reconciliation applied for userflow-1772654367569-bsprb; worker_runs now failed_runtime terminal and linked andy_request req-1772654368751-pprimary set to failed. Added scripts/jarvis-reconcile-stale-runs.sh and jarvis-ops command reconcile-stale-runs (dry-run default, --apply to mutate with DB backup)."
+          "text": "Historical context restored: regression probe on 2026-03-04 for '@Andy are you doing any work?' did not reproduce misclassification (status-style reply, no andy_request rows, no worker runs in probe window)."
         },
         {
-          "ts": "2026-03-06T05:41:39.648923+00:00",
+          "ts": "2026-03-06T06:56:46.456431+00:00",
           "author": "codex",
-          "text": "Workflow update: scripts/qmd-session-sync.sh now auto-runs qmd embed when qmd status reports pending vectors; mirrored in docs/workflow/session-recall.md."
+          "text": "Historical context restored: targeted phrase probe at 2026-03-04T18:55:25Z returned status-style reply with no intake request and no matched worker run token."
         }
       ]
     },
@@ -45,7 +45,7 @@
       "status": "open",
       "severity": "medium",
       "created_at": "2026-03-04T11:08:50.813404+00:00",
-      "updated_at": "2026-03-05T17:31:00.115695+00:00",
+      "updated_at": "2026-03-06T06:56:37.967976+00:00",
       "summary": {
         "symptom": "Live Build App request created worker run and reached review_requested, but andy_requests.request_id=req-1772622326048-pprimary remained coordinator_active with empty worker_run_id.",
         "suspected_cause": "andy_no_output_timeout_watchdog_mismatch",
@@ -68,34 +68,34 @@
       },
       "notes": [
         {
-          "ts": "2026-03-04T19:57:52.765282+00:00",
-          "author": "operator",
-          "text": "2026-03-05 root-cause isolation: host timeout watchdog treated worker runs as silent until final OUTPUT marker; worker emitted stderr heartbeat only, so no_output_timeout fired and container exited 137 mid-run. Implemented fix in src/container-runner.ts: restore noOutput/idle config handling, add timeout reasons in timeout artifacts, and reset no-output watchdog on '[agent-runner] heartbeat worker-opencode-active'. Added regression test in src/container-runner.test.ts. Verification: npm run typecheck PASS, container-runner tests PASS, verify-worker-connectivity PASS on both worker lanes with no stale states."
-        },
-        {
-          "ts": "2026-03-04T20:03:50.770292+00:00",
-          "author": "operator",
-          "text": "Validation blocker after rebuilding dist on 2026-03-05: launchd service fails at startup because src/container-runtime.ts hardcodes CONTAINER_RUNTIME_BIN='docker' (docker absent on this host). Preflight reports com.nanoclaw state=spawnscheduled and logs show '/bin/sh: docker: command not found'. Need runtime adapter alignment (Apple container vs docker) before post-fix live verification can continue."
-        },
-        {
           "ts": "2026-03-05T17:31:00.115691+00:00",
           "author": "operator",
           "text": "Applied Apple-container patch in src/container-runtime.ts (runtime bin default container, health/list command adaptation, readonly mount adaptation) with passing typecheck/tests/build. Post-restart verification still blocked because app exits with FATAL 'No channels connected': src/channels/index.ts has no channel imports and src/channels contains only registry files in current workspace, so launchd service stays spawnscheduled."
+        },
+        {
+          "ts": "2026-03-06T06:54:15.429019+00:00",
+          "author": "codex",
+          "text": "P0 prevention controls added: jarvis-pre-dispatch-gate (dispatch lint + stale-state gate), jarvis-auth-health, and completion contract lint routed via jarvis-ops to reduce no-output timeout/watchdog drift before dispatch."
+        },
+        {
+          "ts": "2026-03-06T06:56:37.967972+00:00",
+          "author": "codex",
+          "text": "Historical context restored: 2026-03-05 root-cause isolation identified host no-output watchdog firing before final output when worker emitted heartbeat on stderr; prior fix path included container-runner watchdog reset on heartbeat and timeout-reason logging with regression test coverage."
         }
       ]
     },
     {
-      "id": "incident-20260304T173206Z",
-      "title": "Andy status check-in misclassified as work intake",
+      "id": "incident-20260305T180540Z",
+      "title": "Andy-Developer fails after restart with ERR_FS_CP_EINVAL in buildVolumeMounts",
       "status": "open",
-      "severity": "unknown",
-      "created_at": "2026-03-04T17:32:06.597235+00:00",
-      "updated_at": "2026-03-04T19:44:29.857438+00:00",
+      "severity": "medium",
+      "created_at": "2026-03-05T18:05:40.429157+00:00",
+      "updated_at": "2026-03-06T06:56:32.738853+00:00",
       "summary": {
-        "symptom": "Andy status check-in misclassified as work intake",
-        "suspected_cause": "Andy frontdesk classified work-check-in phrasing ('are you doing any work?') as work_intake, generating a frontdesk request and model-aut...",
-        "impact": "User received contextually incorrect reply in andy-developer chat, reducing trust in frontdesk status behavior",
-        "next_action": "Deploy updated classifier/status filter and verify with live WhatsApp check-in phrases before resolve"
+        "symptom": "Agent error: src and dest cannot be the same .../.claude/skills/.docs",
+        "suspected_cause": "skills sync attempted problematic symlink copies (.docs/self-path + symlink destination collisions) and Apple container runtime fails whe...",
+        "impact": "andy-developer agent failed to start containers and retried, causing no effective responses",
+        "next_action": "keep --user disabled for Apple container runtime and monitor live runs; address separate stale worker_runs record"
       },
       "evidence": {
         "bundle_count": 0
@@ -105,19 +105,19 @@
       },
       "notes": [
         {
-          "ts": "2026-03-04T17:59:55.260350+00:00",
-          "author": "operator",
-          "text": "Regression probe on 2026-03-04T17:59:40Z for '@Andy are you doing any work?' (message_id=uat-checkin-1772647180674-v463i): bot replied in 1326ms, andy_requests rows for probe=0, worker runs in probe window=0, message timeline confirmed run_id=None. Symptom not reproduced in this run."
+          "ts": "2026-03-06T05:41:39.648923+00:00",
+          "author": "codex",
+          "text": "Workflow update: scripts/qmd-session-sync.sh now auto-runs qmd embed when qmd status reports pending vectors; mirrored in docs/workflow/session-recall.md."
         },
         {
-          "ts": "2026-03-04T18:59:51+00:00",
+          "ts": "2026-03-06T06:54:26.690371+00:00",
           "author": "codex",
-          "text": "2026-03-04 targeted phrase probe for '@Andy are you doing any work?' at 18:55:25Z returned status-style reply in 169ms with andy_request_count=0 and worker_runs_matching_token=0, so intake misclassification did not reproduce in this run."
+          "text": "P0 tooling hardening shipped in scripts/jarvis-ops.sh with new auth-health, linkage-audit, completion-lint, and pre-dispatch-gate commands; these add deterministic guardrails and JSON evidence outputs for workflow governance."
         },
         {
-          "ts": "2026-03-04T19:44:29.857435+00:00",
+          "ts": "2026-03-06T06:56:32.738850+00:00",
           "author": "codex",
-          "text": "2026-03-05 targeted E2E check: npx tsx scripts/test-andy-user-e2e.ts PASS (greeting 430ms, natural status query 908ms, progress query 1133ms) with no intake-style reply for status checks. Misclassification not reproduced in this run."
+          "text": "Historical context restored: post-fix runtime validation on pid 16298 showed andy-developer spawned container, produced output, and sent message; remaining reliability issue at that point was stale run userflow-1772654367569-bsprb (jarvis-worker-1, 2026-03-04)."
         }
       ]
     },

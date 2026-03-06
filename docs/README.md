@@ -28,6 +28,9 @@ docs/
 - Workflow optimization loop: `docs/workflow/workflow-optimization-loop.md`
 - Weekly slop optimization loop: `docs/workflow/weekly-slop-optimization-loop.md`
 - Unified Claude/Codex loop: `docs/workflow/unified-codex-claude-loop.md`
+- GitHub offload boundary loop: `docs/workflow/github-offload-boundary-loop.md`
+- GitHub multi-agent collaboration loop: `docs/workflow/github-multi-agent-collaboration-loop.md`
+- Claude CLI resume consult lane: `docs/workflow/claude-cli-resume-consult-lane.md`
 - Session recall workflow: `docs/workflow/session-recall.md`
 - Runtime behavior: `docs/workflow/nanoclaw-jarvis-worker-runtime.md`
 - Acceptance gates: `docs/workflow/nanoclaw-jarvis-acceptance-checklist.md`
@@ -35,7 +38,7 @@ docs/
 - User happiness gate: `docs/workflow/nanoclaw-andy-user-happiness-gate.md`
 - Container debugging flow: `docs/workflow/nanoclaw-container-debugging.md`
 - User review readiness gate: `docs/workflow/nanoclaw-github-control-plane.md` (QA handoff section) + `docs/troubleshooting/DEBUG_CHECKLIST.md` (runtime recovery)
-- Ops scripts quick entrypoint: `scripts/jarvis-ops.sh` (`preflight`, `reliability`, `acceptance-gate`, `status`, `trace`, `verify-worker-connectivity`, `dispatch-lint`, `db-doctor`, `incident`, `probe`, `hotspots`, `incident-bundle`, `recover`, `smoke`, `watch`)
+- Ops scripts quick entrypoint: `scripts/jarvis-ops.sh` (`preflight`, `reliability`, `acceptance-gate`, `status`, `trace`, `verify-worker-connectivity`, `dispatch-lint`, `completion-lint`, `auth-health`, `linkage-audit`, `weekend-prevention`, `db-doctor`, `incident`, `probe`, `hotspots`, `incident-bundle`, `consult`, `recover`, `smoke`, `watch`)
 - Message timeline helper script: `scripts/jarvis-message-timeline.sh` (invoked by `scripts/jarvis-ops.sh message-timeline`)
 - Tooling governance lint (hooks/subagents/built-ins): `bash scripts/check-tooling-governance.sh`
 - Operational ownership: `docs/operations/roles-classification.md`

@@ -216,17 +216,31 @@ print(json.dumps(dispatch, ensure_ascii=True))
 PY
   fi
 
-  if [ "$SKIP_LINT" -eq 0 ] && [ -x "scripts/jarvis-dispatch-lint.sh" ]; then
-    if ! scripts/jarvis-dispatch-lint.sh --file "$payload_file" --target-folder "$folder" >/tmp/jarvis-probe-lint.out 2>&1; then
-      echo
-      echo "[PROBE] $folder ($jid)"
-      echo "  run_id: $run_id"
-      echo "  result: FAIL (dispatch lint failed before send)"
-      echo "  lint: $(tr '\n' ' ' </tmp/jarvis-probe-lint.out | sed 's/[[:space:]]\+/ /g')"
-      overall_fail=1
-      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$folder" "$jid" "$run_id" "failed" "dispatch_lint_failed" "" >>"$RESULTS_FILE"
-      rm -f "$payload_file"
-      continue
+  if [ "$SKIP_LINT" -eq 0 ]; then
+    if [ -x "scripts/jarvis-pre-dispatch-gate.sh" ]; then
+      if ! scripts/jarvis-pre-dispatch-gate.sh --file "$payload_file" --target-folder "$folder" --db "$DB_PATH" >/tmp/jarvis-probe-lint.out 2>&1; then
+        echo
+        echo "[PROBE] $folder ($jid)"
+        echo "  run_id: $run_id"
+        echo "  result: FAIL (pre-dispatch gate failed before send)"
+        echo "  gate: $(tr '\n' ' ' </tmp/jarvis-probe-lint.out | sed 's/[[:space:]]\+/ /g')"
+        overall_fail=1
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$folder" "$jid" "$run_id" "failed" "pre_dispatch_gate_failed" "" >>"$RESULTS_FILE"
+        rm -f "$payload_file"
+        continue
+      fi
+    elif [ -x "scripts/jarvis-dispatch-lint.sh" ]; then
+      if ! scripts/jarvis-dispatch-lint.sh --file "$payload_file" --target-folder "$folder" >/tmp/jarvis-probe-lint.out 2>&1; then
+        echo
+        echo "[PROBE] $folder ($jid)"
+        echo "  run_id: $run_id"
+        echo "  result: FAIL (dispatch lint failed before send)"
+        echo "  lint: $(tr '\n' ' ' </tmp/jarvis-probe-lint.out | sed 's/[[:space:]]\+/ /g')"
+        overall_fail=1
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$folder" "$jid" "$run_id" "failed" "dispatch_lint_failed" "" >>"$RESULTS_FILE"
+        rm -f "$payload_file"
+        continue
+      fi
     fi
   fi
 

@@ -26,6 +26,8 @@ Commands:
   probe           Dispatch worker-lane probes and wait for terminal statuses
   hotspots        Show recurring reliability hotspots over time window
   incident-bundle Collect a timestamped diagnostics bundle for an incident
+  reconcile-stale-runs
+                  Reconcile stale worker_runs (dry-run by default)
   recover         Run runtime/builder recovery and service restart
   smoke           Rebuild worker image and run worker e2e smoke
   help            Show this help
@@ -82,6 +84,9 @@ case "$command_name" in
     ;;
   incident-bundle)
     exec "$SCRIPT_DIR/jarvis-incident-bundle.sh" "$@"
+    ;;
+  reconcile-stale-runs)
+    exec "$SCRIPT_DIR/jarvis-reconcile-stale-runs.sh" "$@"
     ;;
   recover)
     exec "$SCRIPT_DIR/jarvis-recover.sh" "$@"

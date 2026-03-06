@@ -284,14 +284,38 @@ function buildVolumeMounts(
   }
 
   // Sync skills from container/skills/ into each group's .claude/skills/
-  const skillsSrc = path.join(process.cwd(), 'container', 'skills');
+  const skillsSrc = path.join(projectRoot, 'container', 'skills');
   const skillsDst = path.join(groupSessionsDir, 'skills');
   if (fs.existsSync(skillsSrc)) {
+    fs.mkdirSync(skillsDst, { recursive: true });
     for (const skillDir of fs.readdirSync(skillsSrc)) {
+      // Hidden entries (for example .docs symlinks) are metadata helpers, not
+      // runnable skills. Copying them can resolve to the same target path.
+      if (skillDir.startsWith('.')) continue;
+
       const srcDir = path.join(skillsSrc, skillDir);
-      if (!fs.statSync(srcDir).isDirectory()) continue;
+      const srcStat = fs.statSync(srcDir);
+      if (!srcStat.isDirectory()) continue;
       const dstDir = path.join(skillsDst, skillDir);
-      fs.cpSync(srcDir, dstDir, { recursive: true });
+
+      // Guard against symlinked skills resolving to the same real path.
+      if (fs.existsSync(dstDir)) {
+        try {
+          if (fs.realpathSync(srcDir) === fs.realpathSync(dstDir)) {
+            logger.debug(
+              { group: group.name, skillDir },
+              'Skipping skill sync for identical source and destination',
+            );
+            continue;
+          }
+        } catch {
+          // Fall through and let cpSync surface unexpected filesystem errors.
+        }
+      }
+
+      // Copy skill contents (dereferenced) so destination folders can be
+      // refreshed even when source skills are symlinks.
+      fs.cpSync(srcDir, dstDir, { recursive: true, dereference: true });
     }
   }
   mounts.push({
@@ -365,6 +389,9 @@ function buildContainerArgs(
   containerName: string,
 ): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
+  const isAppleContainerRuntime = /(^|\/)container$/.test(
+    CONTAINER_RUNTIME_BIN,
+  );
 
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
@@ -372,9 +399,16 @@ function buildContainerArgs(
   // Run as host user so bind-mounted files are accessible.
   // Skip when running as root (uid 0), as the container's node user (uid 1000),
   // or when getuid is unavailable (native Windows without WSL).
+  // Apple Container runtime currently fails to start when --user is passed,
+  // so keep default container user in that mode.
   const hostUid = process.getuid?.();
   const hostGid = process.getgid?.();
-  if (hostUid != null && hostUid !== 0 && hostUid !== 1000) {
+  if (
+    !isAppleContainerRuntime &&
+    hostUid != null &&
+    hostUid !== 0 &&
+    hostUid !== 1000
+  ) {
     args.push('--user', `${hostUid}:${hostGid}`);
     args.push('-e', 'HOME=/home/node');
   }

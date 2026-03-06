@@ -1,7 +1,44 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-05T17:31:00.115833+00:00",
+  "updated_at": "2026-03-06T05:41:39.649078+00:00",
   "incidents": [
+    {
+      "id": "incident-20260305T180540Z",
+      "title": "Andy-Developer fails after restart with ERR_FS_CP_EINVAL in buildVolumeMounts",
+      "status": "open",
+      "severity": "medium",
+      "created_at": "2026-03-05T18:05:40.429157+00:00",
+      "updated_at": "2026-03-06T05:41:39.648926+00:00",
+      "summary": {
+        "symptom": "Agent error: src and dest cannot be the same .../.claude/skills/.docs",
+        "suspected_cause": "skills sync attempted problematic symlink copies (.docs/self-path + symlink destination collisions) and Apple container runtime fails whe...",
+        "impact": "andy-developer agent failed to start containers and retried, causing no effective responses",
+        "next_action": "keep --user disabled for Apple container runtime and monitor live runs; address separate stale worker_runs record"
+      },
+      "evidence": {
+        "bundle_count": 0
+      },
+      "context": {
+        "lane": "andy-developer"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-06T05:33:41.570392+00:00",
+          "author": "codex",
+          "text": "Post-fix runtime validation on pid 16298: andy-developer successfully spawned container, produced output 'Hi! How can I help?', and sent message. No new ERR_FS_CP_EINVAL/EEXIST/XPC lines for this pid. Remaining reliability fail is unrelated stale worker run userflow-1772654367569-bsprb (jarvis-worker-1, 2026-03-04)."
+        },
+        {
+          "ts": "2026-03-06T05:38:03.897558+00:00",
+          "author": "codex",
+          "text": "Targeted stale-run reconciliation applied for userflow-1772654367569-bsprb; worker_runs now failed_runtime terminal and linked andy_request req-1772654368751-pprimary set to failed. Added scripts/jarvis-reconcile-stale-runs.sh and jarvis-ops command reconcile-stale-runs (dry-run default, --apply to mutate with DB backup)."
+        },
+        {
+          "ts": "2026-03-06T05:41:39.648923+00:00",
+          "author": "codex",
+          "text": "Workflow update: scripts/qmd-session-sync.sh now auto-runs qmd embed when qmd status reports pending vectors; mirrored in docs/workflow/session-recall.md."
+        }
+      ]
+    },
     {
       "id": "incident-20260304T110850Z",
       "title": "Andy request linkage missing after successful dispatch",

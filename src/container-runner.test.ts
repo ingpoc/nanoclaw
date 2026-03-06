@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
+import fs from 'fs';
 
 // Sentinel markers must match container-runner.ts
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
@@ -41,6 +42,12 @@ vi.mock('fs', async () => {
       readFileSync: vi.fn(() => ''),
       readdirSync: vi.fn(() => []),
       statSync: vi.fn(() => ({ isDirectory: () => false })),
+      lstatSync: vi.fn(() => ({
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+      })),
+      realpathSync: vi.fn((target: fs.PathLike) => String(target)),
+      cpSync: vi.fn(),
       copyFileSync: vi.fn(),
     },
   };
@@ -87,7 +94,7 @@ vi.mock('child_process', async () => {
 });
 
 import { runContainerAgent, ContainerOutput } from './container-runner.js';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import type { RegisteredGroup } from './types.js';
 
 const testGroup: RegisteredGroup = {
@@ -246,5 +253,81 @@ describe('container-runner timeout behavior', () => {
     const result = await resultPromise;
     expect(result.status).toBe('error');
     expect(result.error).toContain('no_output_timeout');
+  });
+
+  it('skips hidden skill entries during per-group skills sync', async () => {
+    vi.mocked(fs.existsSync).mockImplementation((target: fs.PathLike) => {
+      const targetPath = String(target);
+      return (
+        targetPath.endsWith('/container/skills') ||
+        targetPath.endsWith('/container/skills/agent-browser')
+      );
+    });
+
+    vi.mocked(fs.readdirSync).mockImplementation(
+      ((target: fs.PathLike) => {
+        const targetPath = String(target);
+        if (targetPath.endsWith('/container/skills')) {
+          return ['.docs', 'agent-browser'];
+        }
+        return [];
+      }) as unknown as typeof fs.readdirSync,
+    );
+
+    vi.mocked(fs.statSync).mockImplementation((target: fs.PathLike) => {
+      const targetPath = String(target);
+      return {
+        isDirectory: () =>
+          targetPath.endsWith('/agent-browser') ||
+          targetPath.endsWith('/container/skills/.docs'),
+      } as unknown as fs.Stats;
+    });
+
+    const resultPromise = runContainerAgent(
+      testGroup,
+      testInput,
+      () => {},
+      async () => {},
+    );
+
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+
+    const result = await resultPromise;
+    expect(result.status).toBe('success');
+    expect(fs.cpSync).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(fs.cpSync).mock.calls[0]?.[0]).toContain(
+      '/container/skills/agent-browser',
+    );
+    expect(vi.mocked(fs.cpSync).mock.calls[0]?.[1]).toContain(
+      '/tmp/nanoclaw-test-data/sessions/test-group/.claude/skills/agent-browser',
+    );
+    expect(vi.mocked(fs.cpSync).mock.calls[0]?.[2]).toEqual({
+      recursive: true,
+      dereference: true,
+    });
+    expect(vi.mocked(fs.cpSync)).not.toHaveBeenCalledWith(
+      expect.stringContaining('/container/skills/.docs'),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it('does not pass --user when using Apple container runtime', async () => {
+    const resultPromise = runContainerAgent(
+      testGroup,
+      testInput,
+      () => {},
+      async () => {},
+    );
+
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+
+    const result = await resultPromise;
+    expect(result.status).toBe('success');
+    const spawnArgs = vi.mocked(spawn).mock.calls[0]?.[1] as string[] | undefined;
+    expect(spawnArgs).toBeDefined();
+    expect(spawnArgs).not.toContain('--user');
   });
 });

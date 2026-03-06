@@ -10,11 +10,11 @@ errors=()
 collect_files=()
 collect_files+=("CLAUDE.md" "AGENTS.md" "DOCS.md" "docs/README.md")
 collect_files+=(
-  ".claude/rules/skill-routing-preflight.md"
-  ".claude/rules/jarvis-dispatch-contract-discipline.md"
-  ".claude/rules/nanoclaw-jarvis-debug-loop.md"
-  ".claude/rules/nanoclaw-root-claude-compression.md"
-  ".claude/rules/docs-pruning-loop.md"
+  "docs/workflow/skill-routing-preflight.md"
+  "docs/workflow/jarvis-dispatch-contract-discipline.md"
+  "docs/workflow/nanoclaw-jarvis-debug-loop.md"
+  "docs/workflow/nanoclaw-root-claude-compression.md"
+  "docs/workflow/docs-pruning-loop.md"
 )
 
 while IFS= read -r f; do collect_files+=("$f"); done < <(find docs/workflow docs/operations -type f -name '*.md' | sort)
@@ -111,7 +111,7 @@ if ! rg -q 'docs/operations/subagent-catalog.md' CLAUDE.md; then
   errors+=("CLAUDE.md is missing subagent-catalog trigger reference")
 fi
 
-if rg -q 'docs/nanoclaw-jarvis-dispatch-contract.md' .claude/rules/jarvis-dispatch-contract-discipline.md; then
+if rg -q 'docs/nanoclaw-jarvis-dispatch-contract.md' docs/workflow/jarvis-dispatch-contract-discipline.md; then
   errors+=("jarvis-dispatch-contract-discipline.md still references deprecated path docs/nanoclaw-jarvis-dispatch-contract.md")
 fi
 

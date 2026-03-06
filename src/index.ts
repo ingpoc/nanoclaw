@@ -81,6 +81,7 @@ import {
   completeAndyCoordinatorRequest,
   getAndyRequestsForMessages,
   handleAndyFrontdeskMessages,
+  handleMainLaneControlMessages,
   isInternalWorkerLaneGroup,
   isSimpleAndyGreeting,
   markAndyRequestsCoordinatorActive,
@@ -887,6 +888,27 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       TRIGGER_PATTERN.test(m.content.trim()),
     );
     if (!hasTrigger) return true;
+  }
+
+  if (
+    channel &&
+    isMainGroup &&
+    (await handleMainLaneControlMessages({
+      chatJid,
+      group,
+      messages: messagesToProcess,
+      channel,
+      queue,
+      registeredGroups,
+      runtime: {
+        markCursorInFlight,
+        clearInFlightCursor,
+        markBatchProcessed,
+        commitInFlightCursor,
+      },
+    }))
+  ) {
+    return true;
   }
 
   if (
@@ -1821,6 +1843,27 @@ async function startMessageLoop(): Promise<void> {
           // Never pipe additional dispatches into an active worker session.
           if (syntheticWorker) {
             queue.enqueueMessageCheck(chatJid);
+            continue;
+          }
+
+          if (
+            channel &&
+            isMainGroup &&
+            (await handleMainLaneControlMessages({
+              chatJid,
+              group,
+              messages: messagesToSend,
+              channel,
+              queue,
+              registeredGroups,
+              runtime: {
+                markCursorInFlight,
+                clearInFlightCursor,
+                markBatchProcessed,
+                commitInFlightCursor,
+              },
+            }))
+          ) {
             continue;
           }
 

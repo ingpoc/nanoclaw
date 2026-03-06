@@ -1,6 +1,6 @@
 # NanoClaw Feature Catalog
 
-Generated: 2026-03-06T19:21:08.386Z
+Generated: 2026-03-06T20:06:23.021Z
 Project: nanoclaw
 
 ## Features
@@ -21,6 +21,7 @@ Project: nanoclaw
   - src/routing.test.ts
 - Shared Files:
   - src/config.ts
+  - src/group-queue.ts
   - src/index.ts
   - src/router.ts
 - Suggested Verify:
@@ -244,30 +245,37 @@ Project: nanoclaw
 - Risk: high
 - Summary: Explicit Jarvis extension modules, lane identity, and dispatch-attempt state extracted out of NanoClaw core control files.
 - Keywords: jarvis extension, lane id, dispatch attempts, andy frontdesk, synthetic worker, architecture
-- Files (11):
+- Files (15):
   - docs/architecture/nanoclaw-jarvis.md
   - docs/architecture/nanoclaw-system-architecture.md
   - src/db.ts
   - src/extensions/jarvis/dispatch-service.ts
   - src/extensions/jarvis/frontdesk-service.ts
   - src/extensions/jarvis/index.ts
+  - src/extensions/jarvis/lane-control-service.test.ts
+  - src/extensions/jarvis/lane-control-service.ts
   - src/extensions/jarvis/lanes.ts
   - src/extensions/jarvis/request-state-service.ts
+  - src/group-queue.test.ts
+  - src/group-queue.ts
   - src/index.ts
   - src/ipc.ts
   - src/types.ts
-- Tests (2):
+- Tests (4):
+  - src/extensions/jarvis/lane-control-service.test.ts
+  - src/group-queue.test.ts
   - src/ipc-auth.test.ts
   - src/jarvis-worker-dispatch.test.ts
 - Shared Files:
   - docs/architecture/nanoclaw-system-architecture.md
   - src/db.ts
+  - src/group-queue.ts
   - src/index.ts
   - src/ipc.ts
   - src/types.ts
 - Suggested Verify:
   - npm run typecheck
-  - npx vitest run src/ipc-auth.test.ts src/jarvis-worker-dispatch.test.ts
+  - npx vitest run src/extensions/jarvis/lane-control-service.test.ts src/group-queue.test.ts src/ipc-auth.test.ts src/jarvis-worker-dispatch.test.ts
 
 ### architecture-boundary-governance - Architecture Boundary Governance
 - Risk: high

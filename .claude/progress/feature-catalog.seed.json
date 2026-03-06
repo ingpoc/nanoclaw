@@ -272,17 +272,23 @@
         "src/ipc.ts",
         "src/db.ts",
         "src/types.ts",
+        "src/group-queue.ts",
         "src/extensions/jarvis/index.ts",
         "src/extensions/jarvis/lanes.ts",
         "src/extensions/jarvis/frontdesk-service.ts",
+        "src/extensions/jarvis/lane-control-service.ts",
         "src/extensions/jarvis/dispatch-service.ts",
         "src/extensions/jarvis/request-state-service.ts",
+        "src/group-queue.test.ts",
+        "src/extensions/jarvis/lane-control-service.test.ts",
         "docs/architecture/nanoclaw-jarvis.md",
         "docs/architecture/nanoclaw-system-architecture.md"
       ],
       "tests": [
+        "src/group-queue.test.ts",
         "src/ipc-auth.test.ts",
-        "src/jarvis-worker-dispatch.test.ts"
+        "src/jarvis-worker-dispatch.test.ts",
+        "src/extensions/jarvis/lane-control-service.test.ts"
       ]
     },
     {

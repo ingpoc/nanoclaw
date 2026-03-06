@@ -67,12 +67,18 @@ jobs:
             const body = context.payload.pull_request.body || "";
             const closesKeyword = /\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#\d+\b/i;
             const genericIssueRef = /\B#\d+\b/;
+            const maintenanceFallback =
+              /\b(?:No issue|N\/A)\s*:\s*(maintenance|docs|governance|automation|admin)\b/i;
 
-            if (closesKeyword.test(body) || genericIssueRef.test(body)) {
-              core.info("Issue link detected in PR body.");
+            if (
+              closesKeyword.test(body) ||
+              genericIssueRef.test(body) ||
+              maintenanceFallback.test(body)
+            ) {
+              core.info("Issue link or approved maintenance fallback detected in PR body.");
               return;
             }
 
             core.setFailed(
-              "PR body must include at least one issue reference. Use `Fixes #<issue-id>` in the Linked Work Item section."
+              "PR body must include at least one issue reference. For maintenance/docs/governance work, use `No issue: maintenance` in the Linked Work Item section."
             );

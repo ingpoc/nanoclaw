@@ -23,21 +23,33 @@ For cross-domain ownership and update-location mapping, see
 2. Direct pushes to `main` are blocked.
 3. Required checks must pass before merge.
 4. Governance changes must include rollback notes in PR description.
+5. PRs should link an issue; maintenance/docs/governance PRs may use `No issue: maintenance` in the Linked Work Item section.
 
 ## Claude Review Automation Baseline
 
 - Use `anthropics/claude-code-action@v1` for PR review automation.
-- Default trigger should be on-demand (`@claude`) unless project requirements require always-on review.
+- Default trigger should be on-demand comment invocation (`@claude`) on PR threads/review comments unless project requirements require always-on review.
 - Keep permissions minimal (`contents: read`, `pull-requests: write`, `issues: write`).
 - Store API key in `ANTHROPIC_API_KEY` repository secret.
+- Bound the lane with workflow concurrency and a short timeout; Claude should stay review/discussion-first, not a required merge gate.
 - This repository ships an on-demand example at `.github/workflows/claude-review.yml`.
+
+## Codex Repair Automation Baseline
+
+- Use `openai/codex-action@v1` for explicit repair automation on trusted PR branches.
+- Keep Codex out of required merge checks; deterministic CI remains the merge gate.
+- Trigger Codex only from explicit collaborator intent (for example `@codex fix`), not on every PR event.
+- Restrict Codex repairs to same-repository PR branches and bounded branch-local edits.
+- Run Codex with `safety-strategy: drop-sudo` and the narrowest sandbox that can complete the repair (`workspace-write` by default).
+- Store API key in `OPENAI_API_KEY` repository secret.
+- This repository ships an on-demand repair lane at `.github/workflows/codex-repair.yml`.
 
 ## Workflow Selection Matrix (Andy-Owned)
 
 | Requirement Profile | Workflow Bundle | Claude Review Mode |
 |---------------------|-----------------|--------------------|
 | Low risk / internal utility | build + test only | disabled or manual dispatch |
-| Standard product change flow | build + test + optional review workflow | on-demand (`@claude`) |
+| Standard product change flow | build + test + optional review workflow + explicit repair lane | on-demand (`@claude`) |
 | High-risk / compliance-heavy | build + test + policy/security checks + review workflow | required per PR policy |
 
 Andy-developer should choose the minimum bundle that satisfies reliability and governance requirements.

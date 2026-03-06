@@ -1,6 +1,7 @@
 ## Linked Work Item
 
 - Fixes #<issue-id>
+- No issue: maintenance
 
 ## Type of Change
 

@@ -1,33 +1,54 @@
-name: Claude Review (On Demand)
+name: Claude Code (On Demand)
 
 on:
-  pull_request:
-    types: [opened, synchronize, edited]
-  workflow_dispatch:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
 
 permissions:
+  actions: read
   contents: read
-  pull-requests: write
   issues: write
+  pull-requests: write
+
+concurrency:
+  group: claude-code-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   claude-review:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.body, '@claude')
+    if: >
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        contains(github.event.comment.body, '@claude') &&
+        (
+          github.event.comment.author_association == 'OWNER' ||
+          github.event.comment.author_association == 'MEMBER' ||
+          github.event.comment.author_association == 'COLLABORATOR'
+        )
+      ) || (
+        github.event_name == 'pull_request_review_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        (
+          github.event.comment.author_association == 'OWNER' ||
+          github.event.comment.author_association == 'MEMBER' ||
+          github.event.comment.author_association == 'COLLABORATOR'
+        )
+      )
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Run Claude Code Review
+      - name: Run Claude Code
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
-            Review this pull request with a reviewer mindset.
-            Prioritize:
-            1) correctness and regressions
-            2) security and policy risks
-            3) missing tests and verification gaps
-            4) alignment with repository CLAUDE.md and workflow contracts
-
-            Return concise, actionable findings first.
+          additional_permissions: |
+            actions: read
+          claude_args: --max-turns 6

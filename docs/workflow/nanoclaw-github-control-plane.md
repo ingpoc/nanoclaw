@@ -23,21 +23,46 @@ For cross-domain ownership and update-location mapping, see
 2. Direct pushes to `main` are blocked.
 3. Required checks must pass before merge.
 4. Governance changes must include rollback notes in PR description.
+5. PRs should link an issue; maintenance/docs/governance PRs may use `No issue: maintenance` in the Linked Work Item section.
 
 ## Claude Review Automation Baseline
 
 - Use `anthropics/claude-code-action@v1` for PR review automation.
-- Default trigger should be on-demand (`@claude`) unless project requirements require always-on review.
+- Default trigger should be on-demand comment invocation (`@claude`) on PR threads, review comments, or submitted PR reviews unless project requirements require always-on review.
 - Keep permissions minimal (`contents: read`, `pull-requests: write`, `issues: write`).
-- Store API key in `ANTHROPIC_API_KEY` repository secret.
+- This repository currently authenticates Claude GitHub Actions through `ANTHROPIC_API_KEY`.
+- Repository Actions secrets are the authority for GitHub-hosted workflows; local `.env` auth values do not flow into GitHub Actions automatically.
+- Grant `id-token: write` so the action can mint the GitHub token it uses for repository interaction.
+- Restrict invocation to trusted repo actors (`OWNER`, `MEMBER`, `COLLABORATOR`) unless a project explicitly wants broader public triggering.
+- Bound the lane with workflow concurrency and a short timeout; Claude should stay review/discussion-first, not a required merge gate.
+- Maintain a single curated Claude workflow. If the Claude GitHub App opens bootstrap PRs with generated workflows, treat them as scaffolding to review and selectively absorb, not as the canonical control-plane implementation.
 - This repository ships an on-demand example at `.github/workflows/claude-review.yml`.
+
+## CI Failure Feedback Loop
+
+- Keep deterministic `CI` as the required merge gate.
+- On PR-scoped `CI` failure, post a single sticky summary comment with the failing job/step and logs link.
+- On the next successful `CI` run for that PR, remove the stale failure summary automatically.
+- Keep model analysis opt-in from that summary comment; do not auto-trigger Claude or Codex from a failing CI run by default.
+- `workflow_run` feedback workflows only become active after the workflow file exists on the default branch; do not expect the PR that introduces the workflow to self-summarize its own failures before merge.
+- This repository ships that feedback loop at `.github/workflows/ci-failure-summary.yml`.
+
+## Codex Repair Automation Baseline
+
+- Use `openai/codex-action@v1` for explicit repair automation on trusted PR branches.
+- Keep Codex out of required merge checks; deterministic CI remains the merge gate.
+- Trigger Codex only from explicit collaborator intent (for example `@codex fix`), not on every PR event.
+- Restrict Codex repairs to same-repository PR branches and bounded branch-local edits.
+- Run Codex with `safety-strategy: drop-sudo` and the narrowest sandbox that can complete the repair (`workspace-write` by default).
+- Store API key in `OPENAI_API_KEY` repository secret.
+- This repository keeps the repair lane scaffold at `.github/workflows/codex-repair.yml`, but it is intentionally disabled until `OPENAI_API_KEY` is provisioned.
 
 ## Workflow Selection Matrix (Andy-Owned)
 
 | Requirement Profile | Workflow Bundle | Claude Review Mode |
 |---------------------|-----------------|--------------------|
 | Low risk / internal utility | build + test only | disabled or manual dispatch |
-| Standard product change flow | build + test + optional review workflow | on-demand (`@claude`) |
+| Standard product change flow | build + test + optional review workflow + explicit repair lane | on-demand (`@claude`) |
 | High-risk / compliance-heavy | build + test + policy/security checks + review workflow | required per PR policy |
 
 Andy-developer should choose the minimum bundle that satisfies reliability and governance requirements.
@@ -56,6 +81,18 @@ Andy-developer should choose the minimum bundle that satisfies reliability and g
 - Keep product implementation branches on worker branches (`jarvis-*`).
 - Allow Andy-developer push only for control-plane/admin branches and worker branch seeding.
 - Do not bypass branch protection except for explicit emergency procedure.
+
+## App-Generated Workflow Intake
+
+Use this when installing GitHub Apps that auto-open workflow PRs.
+
+1. Review the generated PR as a reference implementation, not an auto-merge candidate.
+2. Port only the mechanics that are actually required for this repository's control-plane policy:
+   - missing permissions
+   - supported trigger shapes
+   - action-specific auth requirements
+3. Reject duplicated workflows, broader-than-needed trigger surfaces, or auth changes that conflict with the repository's chosen secret model.
+4. Land the curated change on the main control-plane PR/branch, then close the generated bootstrap PR as redundant.
 
 ## Fork Auth and Sync Workflow (Andy Analysis)
 

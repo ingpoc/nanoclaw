@@ -10,7 +10,7 @@ Use [`DOCS.md`](../DOCS.md) for the full inventory.
 ```text
 docs/
   architecture/     # system architecture and design rationale
-  workflow/         # dispatch/runtime workflow and acceptance gates
+  workflow/         # delivery/runtime/docs-discipline/strategy docs (currently flat)
   operations/       # role authority and change-management matrix
   reference/        # baseline requirements/spec/security documents
   troubleshooting/  # debug playbooks and platform-specific fixes
@@ -20,6 +20,7 @@ docs/
 ## Start Here
 
 - Mission and operating intent: `docs/MISSION.md`
+- Core-vs-extension ownership contract: `docs/ARCHITECTURE.md`
 - Core architecture: `docs/architecture/nanoclaw-system-architecture.md`
 - Jarvis architecture and delegation model: `docs/architecture/nanoclaw-jarvis.md`
 - Doc creation and pruning discipline: `docs/workflow/doc-creation-contract.md` + `docs/workflow/docs-pruning-loop.md`

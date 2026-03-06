@@ -8,6 +8,7 @@ Canonical classification for repository docs.
 - `CLAUDE.md`: compressed trigger index for agent runtime behavior
 - `DOCS.md`: top-level documentation classification (this file)
 - `docs/README.md`: curated landing page for `docs/`
+- `docs/ARCHITECTURE.md`: hard core-vs-extension boundary contract for agents and maintainers
 - `docs/MISSION.md`: mission statement and operating profile intent
 - `docs/CHANGELOG.md`: active changelog for current documentation era
 
@@ -23,17 +24,41 @@ Canonical classification for repository docs.
 
 ## `docs/workflow/`
 
-- `docs/workflow/doc-creation-contract.md`: admission gate and template for new docs and `CLAUDE.md` triggers
-- `docs/workflow/nanoclaw-jarvis-dispatch-contract.md`: strict dispatch/completion contract
+Workflow docs are currently stored in one folder.
+The subfamilies below are the intended semantic organization without changing file paths yet.
+
+### `docs/workflow/` Delivery
+
 - `docs/workflow/nanoclaw-development-loop.md`: default feature/bug/reliability delivery loop
+- `docs/workflow/unified-codex-claude-loop.md`: cross-tool anti-slop execution loop shared by Claude and Codex
+- `docs/workflow/nanoclaw-jarvis-acceptance-checklist.md`: acceptance and smoke validation gates
+- `docs/workflow/nanoclaw-andy-user-happiness-gate.md`: user-facing reliability sign-off protocol
+- `docs/workflow/nanoclaw-github-control-plane.md`: GitHub workflow/review control-plane rules
+
+### `docs/workflow/` Runtime
+
+- `docs/workflow/nanoclaw-jarvis-dispatch-contract.md`: strict dispatch/completion contract
+- `docs/workflow/jarvis-dispatch-contract-discipline.md`: edit protocol and verification for dispatch contract changes
+- `docs/workflow/nanoclaw-jarvis-worker-runtime.md`: worker runtime, mounts, model fallback, role bundles
+- `docs/workflow/nanoclaw-jarvis-debug-loop.md`: primary Jarvis runtime and incident debug loop
+- `docs/workflow/nanoclaw-container-debugging.md`: container/auth/session debug workflow
+- `docs/workflow/session-recall.md`: session reconstruction and handoff workflow
+
+### `docs/workflow/` Docs Discipline
+
+- `docs/workflow/doc-creation-contract.md`: admission gate and template for new docs and `CLAUDE.md` triggers
+- `docs/workflow/docs-pruning-loop.md`: docs lifecycle cleanup, deletion, and sync checks
+- `docs/workflow/nanoclaw-root-claude-compression.md`: root `CLAUDE.md` compression rule
+- `docs/workflow/andy-compression-loop.md`: Andy lane `CLAUDE.md` compression rule
+
+### `docs/workflow/` Strategy and Governance
+
 - `docs/workflow/workflow-optimization-loop.md`: research-to-pilot workflow optimization process and decision gates
 - `docs/workflow/weekly-slop-optimization-loop.md`: weekly deterministic slop-pruning workflow for docs/scripts/config/code surfaces
-- `docs/workflow/unified-codex-claude-loop.md`: cross-tool anti-slop execution loop shared by Claude and Codex
-- `docs/workflow/nanoclaw-jarvis-worker-runtime.md`: worker runtime, mounts, model fallback, role bundles
-- `docs/workflow/nanoclaw-jarvis-acceptance-checklist.md`: acceptance and smoke validation gates
-- `docs/workflow/nanoclaw-github-control-plane.md`: GitHub workflow/review control-plane rules
-- `docs/workflow/nanoclaw-andy-user-happiness-gate.md`: user-facing reliability sign-off protocol
-- `docs/workflow/nanoclaw-container-debugging.md`: container/auth/session debug workflow
+- `docs/workflow/github-offload-boundary-loop.md`: GitHub-vs-local workflow placement policy
+- `docs/workflow/github-multi-agent-collaboration-loop.md`: multi-agent GitHub coordination model
+- `docs/workflow/claude-cli-resume-consult-lane.md`: scoped Claude CLI consult lane guidance
+- `docs/workflow/skill-routing-preflight.md`: task-start routing checklist for skills, docs, and MCPs
 
 ## `docs/operations/`
 
@@ -98,3 +123,4 @@ When docs are added, moved, or removed:
 
 `docs/README.md` should stay curated.
 Exhaustive inventories belong in `DOCS.md`, not in the landing page.
+Semantic subfamilies may be reflected here before any physical file moves happen.

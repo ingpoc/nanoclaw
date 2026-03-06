@@ -350,9 +350,11 @@ export class WhatsAppChannel implements Channel {
     // On a shared number, prefix is also needed in DMs (including self-chat)
     // to distinguish bot output from user messages.
     // Skip only when the assistant has its own dedicated phone number.
-    const prefixed = ASSISTANT_HAS_OWN_NUMBER
-      ? text
-      : `${ASSISTANT_NAME}: ${text}`;
+    const alreadyPrefixed = text.startsWith(`${ASSISTANT_NAME}:`);
+    const prefixed =
+      ASSISTANT_HAS_OWN_NUMBER || alreadyPrefixed
+        ? text
+        : `${ASSISTANT_NAME}: ${text}`;
 
     if (!this.connected) {
       this.outgoingQueue.push({ jid, text: prefixed });

@@ -16,45 +16,25 @@ Do not start ad-hoc edits/debug loops before this check.
 
 1. Classify the user intent.
 2. Load required docs/rules from `CLAUDE.md` Docs Index for that intent.
-3. Check local skills under `.claude/skills/*/SKILL.md`.
-4. Route to the most specific matching skill or docs workflow.
-5. Choose the best matching MCP tool for the intent when available.
-6. If no specific skill matches, use `/customize` for feature/behavior changes.
-7. If no skill/MCP applies, proceed docs-first with normal engineering flow.
+3. Use `docs/operations/skills-vs-docs-map.md` to choose the canonical skill-first or docs-first path.
+4. Check local skills under `.claude/skills/*/SKILL.md`.
+5. Route to the most specific matching skill or docs workflow.
+6. Choose the best matching MCP tool for the intent when available.
+7. If no specific skill matches, use `/customize` for feature/behavior changes.
+8. If no skill/MCP applies, proceed docs-first with normal engineering flow.
 
-## Mandatory Routing
+## Quick Routing Shortcuts
 
-Use this as an abbreviated start-of-task router. For full matrix and rationale, defer to `docs/operations/skills-vs-docs-map.md`.
-
-- New feature or behavior change -> `/customize` (unless a more specific `/add-*` or domain skill exists)
-- Container/auth/runtime/linking failures -> `/debug`
-- Incident triage/history tracking/resolution workflow -> docs-first (`docs/workflow/nanoclaw-jarvis-debug-loop.md`, `docs/workflow/nanoclaw-container-debugging.md`, `.claude/progress/incident.json`), combine with `/debug` if runtime is failing
-- Cross-tool Claude/Codex assignment, worktree parallelism, or subagent fanout policy -> docs-first (`docs/workflow/unified-codex-claude-loop.md`, `docs/operations/claude-codex-adapter-matrix.md`, `docs/operations/subagent-catalog.md`)
-- First-time install/onboarding -> `/setup`
-- Upstream sync request -> `/update`
-- Docker -> Apple Container runtime migration -> `/convert-to-apple-container`
-
-## Selection Priority
-
-When multiple skills match, use this order:
-
-1. Specific integration/domain skill (`/add-*`, `/x-integration`, etc.)
-2. docs-first incident workflow (`docs/workflow/nanoclaw-jarvis-debug-loop.md` + incident registry updates)
-3. `/debug` for break/fix runtime incidents
-4. `/customize` for general feature/custom behavior work
-5. `/setup` or `/update` for lifecycle operations
-
-For tool routing, prefer intent-matched MCPs before ad-hoc shell/web:
-
-1. `chrome-devtools` for browser diagnostics and browser automation tasks (default browser MCP)
-2. `comet-bridge` for real-browser/deep browsing flows
-3. `context7` for library/framework docs
-4. `deepwiki` for GitHub repo architecture/Q&A
-5. `token-efficient` for large log/CSV/data processing and sandboxed code execution
+- Feature or behavior change: use the most specific `/add-*` skill, otherwise `/customize`.
+- Container/auth/runtime failures: `/debug`.
+- Incident lifecycle work: docs-first via `docs/workflow/nanoclaw-jarvis-debug-loop.md`, `docs/workflow/nanoclaw-container-debugging.md`, and `.claude/progress/incident.json`.
+- Cross-tool Claude/Codex execution policy, worktrees, or subagent fanout: docs-first via `docs/workflow/unified-codex-claude-loop.md`, `docs/operations/claude-codex-adapter-matrix.md`, and `docs/operations/subagent-catalog.md`.
+- Setup, upstream sync, and Apple Container migration: `/setup`, `/update`, `/convert-to-apple-container`.
 
 ## MCP Reliability Loop (Mandatory)
 
 When an intent-matched MCP exists, do not sidestep immediately on first failure.
+Preferred MCP routing and fallback policy are defined in `docs/operations/skills-vs-docs-map.md`.
 
 1. Capture the exact tool error and failing call.
 2. Attempt to fix the MCP server/config at source first (project-agnostic servers under `/Users/gurusharan/Documents/remote-claude/mcp-servers`).

@@ -4,11 +4,10 @@ Applies when changing worker dispatch flow, worker CLAUDE docs, or `src/dispatch
 
 ## Non-Negotiables
 
-1. Worker dispatch must be strict JSON (no plain-text fallback).
-2. `run_id` is caller-provided and canonical for retries/audit.
-3. Dispatch requires: `run_id`, `request_id`, `task_type`, `input`, `repo`, `branch`, `acceptance_tests`, `output_contract`.
-4. Completion requires: `run_id`, `branch`, `commit_sha`, `files_changed`, `test_result`, `risk`, and `pr_url|pr_skipped_reason`.
-5. Completion `run_id` must match dispatch `run_id`.
+1. `docs/workflow/nanoclaw-jarvis-dispatch-contract.md` is the only field-level source of truth for dispatch and completion requirements.
+2. Worker dispatch and completion remain strict JSON; no plain-text fallback.
+3. `src/dispatch-validator.ts`, caller behavior, docs, and tests must change together.
+4. Do not create partial field mirrors in helper docs or worker lane docs.
 
 ## Edit Protocol
 
@@ -28,5 +27,6 @@ Run:
 
 - `npm run build`
 - `npm test`
+- `bash scripts/check-workflow-contracts.sh`
 
 before considering contract changes complete.

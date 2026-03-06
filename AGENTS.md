@@ -4,10 +4,12 @@
 
 - Read and follow `CLAUDE.md` as the single source of truth for repository instructions, including upstream sync policy.
 - At the start of every task, load `CLAUDE.md` first, then follow its `Docs Index` trigger lines for progressive disclosure.
+- `docs/README.md` is the curated docs landing page; `DOCS.md` is the full inventory.
 - At session start or when resuming interrupted work, follow `docs/workflow/session-recall.md` to reconstruct personal session context before loading project docs.
 - Use `scripts/qmd-context-recall.sh` for recall-only workflows and `scripts/qmd-session-sync.sh` for session export sync + qmd update + git add/commit.
 - Before ending a session with in-progress work or blockers, follow `docs/workflow/session-recall.md` handoff flow (`qctx --close`).
 - Before changing session recall/sync/export behavior, follow `docs/workflow/session-recall.md`.
+- Before creating a new docs file or adding a new `CLAUDE.md` trigger, follow `docs/workflow/doc-creation-contract.md`.
 - Run the task-start skill/MCP routing preflight defined by `CLAUDE.md` before ad-hoc implementation/debugging.
 - Before starting feature/bug/reliability implementation (default single-lane), follow `docs/workflow/nanoclaw-development-loop.md`.
 - Before changing workflow strategy/cadence based on external research, follow `docs/workflow/workflow-optimization-loop.md`.

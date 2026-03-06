@@ -1,8 +1,8 @@
 # Unified Codex + Claude Delivery Loop
 
-Canonical anti-slop workflow for feature implementation and review, regardless of whether work is assigned to Claude Code or Codex.
+Canonical anti-slop workflow for feature implementation and review when execution is intentionally split across Claude Code and Codex lanes.
 
-This loop is mandatory for non-trivial feature, bug-fix, or reliability work.
+Select this loop for non-trivial feature, bug-fix, or reliability work only when execution is intentionally split across tools, parallel worktrees, or review fanout.
 
 ## Precedence
 

@@ -7,7 +7,7 @@ Canonical classification for repository docs.
 - `README.md`: product overview, setup, philosophy
 - `CLAUDE.md`: compressed trigger index for agent runtime behavior
 - `DOCS.md`: top-level documentation classification (this file)
-- `docs/README.md`: in-folder index for `docs/`
+- `docs/README.md`: curated landing page for `docs/`
 - `docs/MISSION.md`: mission statement and operating profile intent
 - `docs/CHANGELOG.md`: active changelog for current documentation era
 
@@ -23,6 +23,7 @@ Canonical classification for repository docs.
 
 ## `docs/workflow/`
 
+- `docs/workflow/doc-creation-contract.md`: admission gate and template for new docs and `CLAUDE.md` triggers
 - `docs/workflow/nanoclaw-jarvis-dispatch-contract.md`: strict dispatch/completion contract
 - `docs/workflow/nanoclaw-development-loop.md`: default feature/bug/reliability delivery loop
 - `docs/workflow/workflow-optimization-loop.md`: research-to-pilot workflow optimization process and decision gates
@@ -94,3 +95,6 @@ When docs are added, moved, or removed:
 2. Update `docs/README.md`.
 3. Update root trigger links in `CLAUDE.md` if any trigger paths changed.
 4. Keep `README.md` pointer to `DOCS.md` intact.
+
+`docs/README.md` should stay curated.
+Exhaustive inventories belong in `DOCS.md`, not in the landing page.

@@ -62,10 +62,10 @@ bash scripts/jarvis-ops.sh incident-bundle --window-minutes 180 --lane andy-deve
 
 ## 3) Auth + Session Path
 
-Check auth/env state:
+Check auth/quota state without printing secrets:
 
 ```bash
-grep -E "CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY" .env
+bash scripts/jarvis-ops.sh auth-health
 bash scripts/jarvis-ops.sh preflight
 ```
 

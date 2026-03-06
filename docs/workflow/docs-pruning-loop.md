@@ -2,6 +2,8 @@
 
 Applies when adding/updating `docs/*.md` or root `CLAUDE.md`.
 
+Before creating a new doc or trigger, apply `docs/workflow/doc-creation-contract.md` first.
+
 ## Keep Docs Lean
 
 - Prefer one canonical doc per topic.

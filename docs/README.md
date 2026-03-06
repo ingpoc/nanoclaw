@@ -10,7 +10,7 @@ Use [`DOCS.md`](../DOCS.md) for the full inventory.
 ```text
 docs/
   architecture/     # system architecture and design rationale
-  workflow/         # dispatch/runtime workflow and acceptance gates
+  workflow/         # delivery/runtime/docs-discipline/strategy docs (currently flat)
   operations/       # role authority and change-management matrix
   reference/        # baseline requirements/spec/security documents
   troubleshooting/  # debug playbooks and platform-specific fixes

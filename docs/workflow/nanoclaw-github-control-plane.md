@@ -35,6 +35,14 @@ For cross-domain ownership and update-location mapping, see
 - Bound the lane with workflow concurrency and a short timeout; Claude should stay review/discussion-first, not a required merge gate.
 - This repository ships an on-demand example at `.github/workflows/claude-review.yml`.
 
+## CI Failure Feedback Loop
+
+- Keep deterministic `CI` as the required merge gate.
+- On PR-scoped `CI` failure, post a single sticky summary comment with the failing job/step and logs link.
+- On the next successful `CI` run for that PR, remove the stale failure summary automatically.
+- Keep model analysis opt-in from that summary comment; do not auto-trigger Claude or Codex from a failing CI run by default.
+- This repository ships that feedback loop at `.github/workflows/ci-failure-summary.yml`.
+
 ## Codex Repair Automation Baseline
 
 - Use `openai/codex-action@v1` for explicit repair automation on trusted PR branches.

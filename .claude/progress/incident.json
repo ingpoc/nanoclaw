@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-06T18:37:17.284851+00:00",
+  "updated_at": "2026-03-06T19:22:55.806826+00:00",
   "incidents": [
     {
       "id": "incident-20260306T183606Z",
@@ -8,7 +8,7 @@
       "status": "open",
       "severity": "medium",
       "created_at": "2026-03-06T18:36:06.524378+00:00",
-      "updated_at": "2026-03-06T18:37:17.284665+00:00",
+      "updated_at": "2026-03-06T19:22:55.806653+00:00",
       "summary": {
         "symptom": "GitHub Actions CI run 22776655927 failed at npm run format:check on PR #21",
         "suspected_cause": "Prettier formatting was not applied before commit on 18 src/*.ts files",
@@ -28,6 +28,11 @@
           "ts": "2026-03-06T18:37:17.284661+00:00",
           "author": "codex",
           "text": "Applied npm run format:fix plus direct prettier write for src/db.ts after CI run 22776655927 failed at format:check. Local rerun now passes: npm run format:check, npm run typecheck, npm test, npm run build. Awaiting GitHub rerun after push."
+        },
+        {
+          "ts": "2026-03-06T19:22:55.806650+00:00",
+          "author": "codex",
+          "text": "Formatting drift fixed during runtime-ownership refactor. npm run format:fix and npm run format:check both pass on 2026-03-07 after the final code/docs updates."
         }
       ]
     },
@@ -37,7 +42,7 @@
       "status": "open",
       "severity": "high",
       "created_at": "2026-03-06T18:08:37.562648+00:00",
-      "updated_at": "2026-03-06T18:09:55.006315+00:00",
+      "updated_at": "2026-03-06T19:22:55.718464+00:00",
       "summary": {
         "symptom": "After restarting the rebuilt NanoClaw host, the WhatsApp socket repeatedly closes with conflict type=replaced every few seconds.",
         "suspected_cause": "wa_conflict_churn",
@@ -60,6 +65,11 @@
           "ts": "2026-03-06T18:09:55.006311+00:00",
           "author": "codex",
           "text": "During restarted-build validation on 2026-03-06, the new schema migrated successfully (dispatch_attempts table present) but WhatsApp remained unstable. Two NanoClaw host processes (PIDs 25950 and 26037) were found and duplicate processes were killed, yet conflict type=replaced continued, indicating a remaining competing WhatsApp session or supervisor-owned runtime outside this shell."
+        },
+        {
+          "ts": "2026-03-06T19:22:55.718460+00:00",
+          "author": "codex",
+          "text": "Implemented runtime ownership isolation with runtime_owners heartbeat, restarted com.nanoclaw onto the new build, and reran live preflight/reliability on 2026-03-07. Preflight passed with runtime owner host=service pid=88657. Reliability passed with runtime owner pid alive; remaining WhatsApp conflict warnings are historical log lines from older PIDs, not fresh post-restart conflicts."
         }
       ]
     },

@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
+import { DisconnectReason } from '@whiskeysockets/baileys';
+
 import {
   ANDY_BUSY_ACK_COOLDOWN_MS,
   ANDY_BUSY_PREEMPT_MS,
@@ -14,11 +16,16 @@ import {
   IDLE_TIMEOUT,
   MAIN_GROUP_FOLDER,
   POLL_INTERVAL,
+  RUNTIME_OWNER_HEARTBEAT_MS,
   RUNTIME_OPS_EXTENDED,
   SHUTDOWN_DRAIN_MS,
   TRIGGER_PATTERN,
 } from './config.js';
-import { WhatsAppChannel } from './channels/whatsapp.js';
+import {
+  type WhatsAppChannelOpts,
+  type WhatsAppCloseContext,
+  WhatsAppChannel,
+} from './channels/whatsapp.js';
 import {
   ContainerOutput,
   DispatchBlockSnapshotEntry,
@@ -42,7 +49,6 @@ import {
   getAndyRequestById,
   getLatestAndyRequestForChat,
   getMessagesSince,
-  getLatestReusableWorkerSession,
   getNewMessages,
   getWorkerRuns,
   getWorkerRun,
@@ -52,7 +58,6 @@ import {
   getProcessedMessageIds,
   isNonRetryableWorkerStatus,
   markMessagesProcessed,
-  requeueWorkerRunForReplay,
   setRegisteredGroup,
   setRouterState,
   setSession,
@@ -79,13 +84,27 @@ import {
   isInternalWorkerLaneGroup,
   isSimpleAndyGreeting,
   markAndyRequestsCoordinatorActive,
+  recoverInterruptedWorkerDispatches,
+  recoverPendingMessages,
+  reconcileJarvisStaleWorkerRuns,
+  selectWorkerSessionForDispatch,
   syncAndyRequestWithWorkerRun,
+  type WorkerSessionSelection,
 } from './extensions/jarvis/index.js';
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { emitBridgeEvent } from './event-bridge.js';
 import { startIpcWatcher } from './ipc.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
+import {
+  claimRuntimeOwnership,
+  getCurrentRuntimeOwner,
+  heartbeatRuntimeOwnership,
+  isOwnedByCurrentProcess,
+  logRuntimeOwnershipClaim,
+  releaseRuntimeOwnership,
+  RuntimeOwnershipConflictError,
+} from './runtime-ownership.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import {
   Channel,
@@ -109,6 +128,8 @@ let messageLoopRunning = false;
 let whatsapp: WhatsAppChannel;
 const channels: Channel[] = [];
 const queue = new GroupQueue();
+let runtimeOwnershipHeartbeat: ReturnType<typeof setInterval> | null = null;
+let shutdownPromise: Promise<void> | null = null;
 const ANDY_DEVELOPER_FOLDER = 'andy-developer';
 const MISSION_CORE_FOLDERS = new Set([
   MAIN_GROUP_FOLDER,
@@ -148,11 +169,6 @@ interface WorkerRunContext {
   requiredFields: string[];
   browserEvidenceRequired?: boolean;
   dispatchPayload: DispatchPayload;
-}
-
-interface WorkerSessionSelection {
-  selectedSessionId?: string;
-  source: 'explicit' | 'auto_repo_branch' | 'new';
 }
 
 interface RunAgentResult {
@@ -575,33 +591,6 @@ function extractWorkerRunContext(
   return null;
 }
 
-function selectWorkerSessionForDispatch(
-  groupFolder: string,
-  payload: DispatchPayload,
-): WorkerSessionSelection | null {
-  if (payload.context_intent === 'fresh') {
-    return { source: 'new' };
-  }
-
-  if (payload.session_id) {
-    return { selectedSessionId: payload.session_id, source: 'explicit' };
-  }
-
-  const reusable = getLatestReusableWorkerSession(
-    groupFolder,
-    payload.repo,
-    payload.branch,
-  );
-  if (!reusable?.effective_session_id) {
-    return null;
-  }
-
-  return {
-    selectedSessionId: reusable.effective_session_id,
-    source: 'auto_repo_branch',
-  };
-}
-
 function buildWorkerDispatchPrompt(payload: DispatchPayload): string {
   const acceptanceTests = payload.acceptance_tests
     .map((test, idx) => `${idx + 1}. ${test}`)
@@ -732,16 +721,11 @@ function shouldAllowNoCodeCompletion(runId: string): boolean {
   return /^(ping|smoke|health|sync)-/i.test(runId);
 }
 
-function findChatJidByGroupFolder(groupFolder: string): string | undefined {
-  return Object.entries(registeredGroups).find(
-    ([, group]) => group.folder === groupFolder,
-  )?.[0];
-}
-
 function reconcileStaleWorkerRuns(): void {
-  const changed = workerRunSupervisor.reconcile({
+  const changed = reconcileJarvisStaleWorkerRuns({
+    workerRunSupervisor,
     lastAgentTimestamp,
-    resolveChatJid: findChatJidByGroupFolder,
+    registeredGroups,
   });
   if (changed && ENABLE_CONTROL_PLANE_SNAPSHOTS) {
     refreshWorkerRunSnapshotsForGroups();
@@ -1906,198 +1890,186 @@ async function startMessageLoop(): Promise<void> {
   }
 }
 
-/**
- * Startup recovery: check for unprocessed messages in registered groups.
- * Handles crash between advancing the message cursor and processing messages.
- */
-function recoverPendingMessages(): void {
-  for (const [chatJid, group] of Object.entries(registeredGroups)) {
-    const sinceTimestamp = lastAgentTimestamp[chatJid] || '';
-    const pending = getMessagesSince(chatJid, sinceTimestamp, ASSISTANT_NAME);
-    if (pending.length > 0) {
-      logger.info(
-        { group: group.name, pendingCount: pending.length },
-        'Recovery: found unprocessed messages',
-      );
-      queue.enqueueMessageCheck(chatJid);
-    }
-  }
-}
-
-function recoverInterruptedWorkerDispatches(): void {
-  const activeRuns = getWorkerRuns({
-    groupFolderLike: 'jarvis-worker-%',
-    statuses: ['queued', 'running'],
-    limit: 200,
-  });
-
-  if (activeRuns.length === 0) return;
-
-  let replayed = 0;
-  let skipped = 0;
-  for (const run of activeRuns) {
-    const chatJid = findChatJidByGroupFolder(run.group_folder);
-    if (!chatJid) {
-      skipped += 1;
-      logger.warn(
-        { runId: run.run_id, groupFolder: run.group_folder },
-        'Startup replay skipped: worker chat JID not registered',
-      );
-      continue;
-    }
-
-    const payloadText = run.dispatch_payload || '';
-    const parsed = parseDispatchPayload(payloadText);
-    if (!parsed) {
-      skipped += 1;
-      logger.warn(
-        { runId: run.run_id, groupFolder: run.group_folder },
-        'Startup replay skipped: missing or invalid dispatch payload',
-      );
-      continue;
-    }
-
-    if (run.status === 'running') {
-      requeueWorkerRunForReplay(run.run_id, 'startup_replay_after_restart');
-    }
-
-    const replayTimestamp = new Date().toISOString();
-    storeChatMetadata(
-      chatJid,
-      replayTimestamp,
-      registeredGroups[chatJid]?.name || run.group_folder,
-      'nanoclaw',
-      true,
-    );
-    storeMessage({
-      id: `replay-${run.run_id}-${Date.now()}`,
-      chat_jid: chatJid,
-      sender: 'nanoclaw-replay@nanoclaw',
-      sender_name: 'nanoclaw-replay',
-      content: JSON.stringify(parsed),
-      timestamp: replayTimestamp,
-      is_from_me: false,
-      is_bot_message: false,
-    });
-    queue.enqueueMessageCheck(chatJid);
-    replayed += 1;
-  }
-
-  logger.info(
-    { activeRuns: activeRuns.length, replayed, skipped },
-    'Startup worker dispatch replay complete',
-  );
-}
-
 function ensureContainerSystemRunning(): void {
   ensureContainerRuntimeRunning();
   cleanupOrphans();
 }
 
-async function main(): Promise<void> {
-  ensureContainerSystemRunning();
-  initDatabase();
-  setRouterState('process_start_at', PROCESS_START_AT_ISO);
-  logger.info('Database initialized');
-  loadState();
+function stopRuntimeOwnershipHeartbeat(): void {
+  if (!runtimeOwnershipHeartbeat) return;
+  clearInterval(runtimeOwnershipHeartbeat);
+  runtimeOwnershipHeartbeat = null;
+}
 
-  // Graceful shutdown handlers
-  const shutdown = async (signal: string) => {
+function startRuntimeOwnershipHeartbeat(): void {
+  stopRuntimeOwnershipHeartbeat();
+  runtimeOwnershipHeartbeat = setInterval(() => {
+    const result = heartbeatRuntimeOwnership();
+    if (result.ok) return;
+    logger.error(
+      {
+        currentOwnerPid: result.currentOwner?.pid,
+        currentOwnerMode: result.currentOwner?.owner_mode,
+      },
+      'Runtime ownership lost; stopping process',
+    );
+    requestShutdown('runtime_ownership_lost', 1);
+  }, RUNTIME_OWNER_HEARTBEAT_MS);
+}
+
+function requestShutdown(signal: string, exitCode = 0): void {
+  if (shutdownPromise) return;
+  shutdownPromise = (async () => {
     logger.info(
-      { signal, shutdownDrainMs: SHUTDOWN_DRAIN_MS },
+      { signal, shutdownDrainMs: SHUTDOWN_DRAIN_MS, exitCode },
       'Shutdown signal received',
     );
-    await queue.shutdown(SHUTDOWN_DRAIN_MS);
-    for (const ch of channels) await ch.disconnect();
-    process.exit(0);
-  };
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+    stopRuntimeOwnershipHeartbeat();
+    try {
+      await queue.shutdown(SHUTDOWN_DRAIN_MS);
+      for (const ch of channels) await ch.disconnect();
+    } finally {
+      releaseRuntimeOwnership();
+      process.exit(exitCode);
+    }
+  })();
+}
 
-  // Channel callbacks (shared by all channels)
-  const channelOpts = {
-    onMessage: (_chatJid: string, msg: NewMessage) => storeMessage(msg),
-    onChatMetadata: (
-      chatJid: string,
-      timestamp: string,
-      name?: string,
-      channel?: string,
-      isGroup?: boolean,
-    ) => storeChatMetadata(chatJid, timestamp, name, channel, isGroup),
-    registeredGroups: () => registeredGroups,
-  };
+async function main(): Promise<void> {
+  initDatabase();
+  logger.info('Database initialized');
+  const ownership = claimRuntimeOwnership();
+  try {
+    logRuntimeOwnershipClaim(ownership);
+    startRuntimeOwnershipHeartbeat();
 
-  // Create and connect channels
-  whatsapp = new WhatsAppChannel(channelOpts);
-  channels.push(whatsapp);
-  await whatsapp.connect();
+    ensureContainerSystemRunning();
+    setRouterState('process_start_at', PROCESS_START_AT_ISO);
+    loadState();
 
-  // Start subsystems (independently of connection handler)
-  if (ENABLE_SCHEDULER) {
-    startSchedulerLoop({
+    process.on('SIGTERM', () => requestShutdown('SIGTERM'));
+    process.on('SIGINT', () => requestShutdown('SIGINT'));
+
+    // Channel callbacks (shared by all channels)
+    const channelOpts: WhatsAppChannelOpts = {
+      onMessage: (_chatJid: string, msg: NewMessage) => storeMessage(msg),
+      onChatMetadata: (
+        chatJid: string,
+        timestamp: string,
+        name?: string,
+        channel?: string,
+        isGroup?: boolean,
+      ) => storeChatMetadata(chatJid, timestamp, name, channel, isGroup),
       registeredGroups: () => registeredGroups,
-      getSessions: () => sessions,
-      queue,
-      onProcess: (groupJid, proc, containerName, groupFolder) =>
-        queue.registerProcess(groupJid, proc, containerName, groupFolder),
-      sendMessage: async (jid, rawText) => {
-        const channel = findChannel(channels, jid);
-        if (!channel) {
-          console.log(
-            `Warning: no channel owns JID ${jid}, cannot send message`,
-          );
+      onConnectionClose: async ({
+        reason,
+        defaultShouldReconnect,
+        queuedMessages,
+      }: WhatsAppCloseContext) => {
+        if (
+          !defaultShouldReconnect ||
+          reason !== DisconnectReason.connectionReplaced
+        ) {
           return;
         }
-        const text = formatOutbound(rawText);
-        if (text) await channel.sendMessage(jid, text);
+        const owner = getCurrentRuntimeOwner();
+        if (!owner || isOwnedByCurrentProcess(owner)) {
+          return;
+        }
+        logger.error(
+          {
+            reason,
+            queuedMessages,
+            ownerPid: owner.pid,
+            ownerMode: owner.owner_mode,
+            ownerClaimedBy: owner.claimed_by,
+          },
+          'WhatsApp session conflict with another active runtime owner',
+        );
+        requestShutdown('whatsapp_connection_replaced', 1);
+        return 'stop_reconnect';
+      },
+    };
+
+    whatsapp = new WhatsAppChannel(channelOpts);
+    channels.push(whatsapp);
+    await whatsapp.connect();
+
+    if (ENABLE_SCHEDULER) {
+      startSchedulerLoop({
+        registeredGroups: () => registeredGroups,
+        getSessions: () => sessions,
+        queue,
+        onProcess: (groupJid, proc, containerName, groupFolder) =>
+          queue.registerProcess(groupJid, proc, containerName, groupFolder),
+        sendMessage: async (jid, rawText) => {
+          const channel = findChannel(channels, jid);
+          if (!channel) {
+            console.log(
+              `Warning: no channel owns JID ${jid}, cannot send message`,
+            );
+            return;
+          }
+          const text = formatOutbound(rawText);
+          if (text) await channel.sendMessage(jid, text);
+        },
+      });
+    } else {
+      logger.info('Scheduler disabled by runtime profile');
+    }
+    startIpcWatcher({
+      sendMessage: (jid, text, sourceGroup) => {
+        const target = registeredGroups[jid];
+        if (target && isSyntheticWorkerGroup(target)) {
+          const timestamp = new Date().toISOString();
+          // Ensure parent chat row exists before inserting message row (FK on messages.chat_jid).
+          storeChatMetadata(jid, timestamp, target.name, 'nanoclaw', true);
+          storeMessage({
+            id: `ipc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            chat_jid: jid,
+            sender: `${sourceGroup}@nanoclaw`,
+            sender_name: sourceGroup,
+            content: text,
+            timestamp,
+            is_from_me: false,
+            is_bot_message: false,
+          });
+          return Promise.resolve();
+        }
+        const channel = findChannel(channels, jid);
+        if (!channel) throw new Error(`No channel for JID: ${jid}`);
+        return channel.sendMessage(jid, text);
+      },
+      registeredGroups: () => registeredGroups,
+      registerGroup,
+      syncGroupMetadata: (force) =>
+        whatsapp?.syncGroupMetadata(force) ?? Promise.resolve(),
+      getAvailableGroups,
+      writeGroupsSnapshot: (gf, im, ag, rj) =>
+        writeGroupsSnapshot(gf, im, ag, rj),
+      options: {
+        taskControlEnabled: ENABLE_SCHEDULER,
+        workerSteeringEnabled: ENABLE_WORKER_STEERING,
+        dynamicGroupRegistrationEnabled: ENABLE_DYNAMIC_GROUP_REGISTRATION,
       },
     });
-  } else {
-    logger.info('Scheduler disabled by runtime profile');
+    queue.setProcessMessagesFn(processGroupMessages);
+    recoverInterruptedWorkerDispatches({ registeredGroups, queue });
+    recoverPendingMessages({
+      registeredGroups,
+      lastAgentTimestamp,
+      assistantName: ASSISTANT_NAME,
+      queue,
+    });
+    startMessageLoop().catch((err) => {
+      logger.fatal({ err }, 'Message loop crashed unexpectedly');
+      requestShutdown('message_loop_crashed', 1);
+    });
+  } catch (err) {
+    stopRuntimeOwnershipHeartbeat();
+    releaseRuntimeOwnership();
+    throw err;
   }
-  startIpcWatcher({
-    sendMessage: (jid, text, sourceGroup) => {
-      const target = registeredGroups[jid];
-      if (target && isSyntheticWorkerGroup(target)) {
-        const timestamp = new Date().toISOString();
-        // Ensure parent chat row exists before inserting message row (FK on messages.chat_jid).
-        storeChatMetadata(jid, timestamp, target.name, 'nanoclaw', true);
-        storeMessage({
-          id: `ipc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          chat_jid: jid,
-          sender: `${sourceGroup}@nanoclaw`,
-          sender_name: sourceGroup,
-          content: text,
-          timestamp,
-          is_from_me: false,
-          is_bot_message: false,
-        });
-        return Promise.resolve();
-      }
-      const channel = findChannel(channels, jid);
-      if (!channel) throw new Error(`No channel for JID: ${jid}`);
-      return channel.sendMessage(jid, text);
-    },
-    registeredGroups: () => registeredGroups,
-    registerGroup,
-    syncGroupMetadata: (force) =>
-      whatsapp?.syncGroupMetadata(force) ?? Promise.resolve(),
-    getAvailableGroups,
-    writeGroupsSnapshot: (gf, im, ag, rj) =>
-      writeGroupsSnapshot(gf, im, ag, rj),
-    options: {
-      taskControlEnabled: ENABLE_SCHEDULER,
-      workerSteeringEnabled: ENABLE_WORKER_STEERING,
-      dynamicGroupRegistrationEnabled: ENABLE_DYNAMIC_GROUP_REGISTRATION,
-    },
-  });
-  queue.setProcessMessagesFn(processGroupMessages);
-  recoverInterruptedWorkerDispatches();
-  recoverPendingMessages();
-  startMessageLoop().catch((err) => {
-    logger.fatal({ err }, 'Message loop crashed unexpectedly');
-    process.exit(1);
-  });
 }
 
 // Guard: only run when executed directly, not when imported by tests
@@ -2108,6 +2080,16 @@ const isDirectRun =
 
 if (isDirectRun) {
   main().catch((err) => {
+    if (err instanceof RuntimeOwnershipConflictError) {
+      logger.error(
+        {
+          currentOwnerPid: err.currentOwner.pid,
+          currentOwnerMode: err.currentOwner.owner_mode,
+          currentOwnerClaimedBy: err.currentOwner.claimed_by,
+        },
+        'Failed to start NanoClaw because another runtime owner is active',
+      );
+    }
     logger.error({ err }, 'Failed to start NanoClaw');
     process.exit(1);
   });

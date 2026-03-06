@@ -1,6 +1,6 @@
 # NanoClaw Feature Catalog
 
-Generated: 2026-03-06T18:27:07.324Z
+Generated: 2026-03-06T19:21:08.386Z
 Project: nanoclaw
 
 ## Features
@@ -39,6 +39,7 @@ Project: nanoclaw
 - Tests (1):
   - src/channels/whatsapp.test.ts
 - Shared Files:
+  - src/channels/whatsapp.ts
   - src/config.ts
   - src/types.ts
 - Validation Warnings:
@@ -88,6 +89,38 @@ Project: nanoclaw
 - Suggested Verify:
   - npm run typecheck
   - npx vitest run src/container-runner.test.ts src/container-runtime.test.ts src/worker-run-supervisor.test.ts
+
+### runtime-ownership-isolation - Runtime Ownership Isolation
+- Risk: high
+- Summary: Single active NanoClaw host ownership, heartbeat/lease tracking, and service-vs-manual session isolation to prevent WhatsApp conflict churn.
+- Keywords: runtime ownership, session isolation, launchd, whatsapp conflict, single owner, manual override
+- Files (11):
+  - docs/architecture/nanoclaw-system-architecture.md
+  - docs/reference/SPEC.md
+  - docs/workflow/nanoclaw-container-debugging.md
+  - launchd/com.nanoclaw.plist
+  - scripts/jarvis-preflight.sh
+  - scripts/jarvis-reliability.sh
+  - src/channels/whatsapp.ts
+  - src/config.ts
+  - src/db.ts
+  - src/index.ts
+  - src/runtime-ownership.ts
+- Tests (3):
+  - src/channels/whatsapp.test.ts
+  - src/db.test.ts
+  - src/runtime-ownership.test.ts
+- Shared Files:
+  - docs/architecture/nanoclaw-system-architecture.md
+  - scripts/jarvis-preflight.sh
+  - scripts/jarvis-reliability.sh
+  - src/channels/whatsapp.ts
+  - src/config.ts
+  - src/db.ts
+  - src/index.ts
+- Suggested Verify:
+  - npm run typecheck
+  - npx vitest run src/channels/whatsapp.test.ts src/db.test.ts src/runtime-ownership.test.ts
 
 ### task-scheduling - Task Scheduling
 - Risk: medium
@@ -227,6 +260,7 @@ Project: nanoclaw
   - src/ipc-auth.test.ts
   - src/jarvis-worker-dispatch.test.ts
 - Shared Files:
+  - docs/architecture/nanoclaw-system-architecture.md
   - src/db.ts
   - src/index.ts
   - src/ipc.ts
@@ -309,6 +343,8 @@ Project: nanoclaw
 - Shared Files:
   - scripts/jarvis-happiness-gate.sh
   - scripts/jarvis-incident.sh
+  - scripts/jarvis-preflight.sh
+  - scripts/jarvis-reliability.sh
   - scripts/jarvis-worker-probe.sh
 - Suggested Verify:
   - npm run typecheck

@@ -95,6 +95,38 @@
       ]
     },
     {
+      "id": "runtime-ownership-isolation",
+      "name": "Runtime Ownership Isolation",
+      "summary": "Single active NanoClaw host ownership, heartbeat/lease tracking, and service-vs-manual session isolation to prevent WhatsApp conflict churn.",
+      "risk": "high",
+      "keywords": [
+        "runtime ownership",
+        "session isolation",
+        "launchd",
+        "whatsapp conflict",
+        "single owner",
+        "manual override"
+      ],
+      "files": [
+        "launchd/com.nanoclaw.plist",
+        "src/runtime-ownership.ts",
+        "src/channels/whatsapp.ts",
+        "src/config.ts",
+        "src/db.ts",
+        "src/index.ts",
+        "scripts/jarvis-preflight.sh",
+        "scripts/jarvis-reliability.sh",
+        "docs/workflow/nanoclaw-container-debugging.md",
+        "docs/architecture/nanoclaw-system-architecture.md",
+        "docs/reference/SPEC.md"
+      ],
+      "tests": [
+        "src/runtime-ownership.test.ts",
+        "src/channels/whatsapp.test.ts",
+        "src/db.test.ts"
+      ]
+    },
+    {
       "id": "task-scheduling",
       "name": "Task Scheduling",
       "summary": "Time-based task definitions and execution pipeline.",

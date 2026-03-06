@@ -8,6 +8,7 @@ import { logger } from './logger.js';
 import {
   NewMessage,
   RegisteredGroup,
+  RuntimeOwnerRecord,
   ScheduledTask,
   TaskRunLog,
 } from './types.js';
@@ -168,6 +169,18 @@ function createSchema(database: Database.Database): void {
       run_id TEXT,
       PRIMARY KEY (chat_jid, message_id)
     );
+    CREATE TABLE IF NOT EXISTS runtime_owners (
+      owner_name TEXT PRIMARY KEY,
+      owner_mode TEXT NOT NULL,
+      pid INTEGER NOT NULL,
+      started_at TEXT NOT NULL,
+      heartbeat_at TEXT NOT NULL,
+      auth_scope TEXT NOT NULL,
+      launchd_label TEXT,
+      claimed_by TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_owners_heartbeat
+      ON runtime_owners(heartbeat_at);
     CREATE TABLE IF NOT EXISTS worker_steering_events (
       steer_id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,
@@ -718,6 +731,79 @@ export function setRouterState(key: string, value: string): void {
   db.prepare(
     'INSERT OR REPLACE INTO router_state (key, value) VALUES (?, ?)',
   ).run(key, value);
+}
+
+// --- Runtime ownership accessors ---
+
+export function getRuntimeOwner(
+  ownerName: string,
+): RuntimeOwnerRecord | undefined {
+  return db
+    .prepare(
+      `SELECT owner_name, owner_mode, pid, started_at, heartbeat_at, auth_scope, launchd_label, claimed_by
+       FROM runtime_owners
+       WHERE owner_name = ?`,
+    )
+    .get(ownerName) as RuntimeOwnerRecord | undefined;
+}
+
+export function upsertRuntimeOwner(record: RuntimeOwnerRecord): void {
+  db.prepare(
+    `INSERT INTO runtime_owners (
+      owner_name,
+      owner_mode,
+      pid,
+      started_at,
+      heartbeat_at,
+      auth_scope,
+      launchd_label,
+      claimed_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_name) DO UPDATE SET
+      owner_mode = excluded.owner_mode,
+      pid = excluded.pid,
+      started_at = excluded.started_at,
+      heartbeat_at = excluded.heartbeat_at,
+      auth_scope = excluded.auth_scope,
+      launchd_label = excluded.launchd_label,
+      claimed_by = excluded.claimed_by`,
+  ).run(
+    record.owner_name,
+    record.owner_mode,
+    record.pid,
+    record.started_at,
+    record.heartbeat_at,
+    record.auth_scope,
+    record.launchd_label,
+    record.claimed_by,
+  );
+}
+
+export function updateRuntimeOwnerHeartbeat(
+  ownerName: string,
+  pid: number,
+  heartbeatAt: string,
+): boolean {
+  const result = db
+    .prepare(
+      `UPDATE runtime_owners
+       SET heartbeat_at = ?
+       WHERE owner_name = ? AND pid = ?`,
+    )
+    .run(heartbeatAt, ownerName, pid);
+  return result.changes > 0;
+}
+
+export function deleteRuntimeOwner(ownerName: string, pid?: number): boolean {
+  const stmt =
+    pid === undefined
+      ? db.prepare(`DELETE FROM runtime_owners WHERE owner_name = ?`)
+      : db.prepare(
+          `DELETE FROM runtime_owners WHERE owner_name = ? AND pid = ?`,
+        );
+  const result =
+    pid === undefined ? stmt.run(ownerName) : stmt.run(ownerName, pid);
+  return result.changes > 0;
 }
 
 // --- Session accessors ---

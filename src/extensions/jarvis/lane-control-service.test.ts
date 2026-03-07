@@ -9,6 +9,7 @@ import {
 import { claimRuntimeOwnership } from '../../runtime-ownership.js';
 import { MAIN_GROUP_FOLDER } from '../../config.js';
 import {
+  buildControlPlaneStatusSnapshot,
   handleMainLaneControlMessages,
   type LaneControlQueue,
 } from './lane-control-service.js';
@@ -130,7 +131,7 @@ describe('lane-control-service', () => {
     expect(runtime.markBatchProcessed).not.toHaveBeenCalled();
   });
 
-  it('answers andy-developer status from state without touching the active coordinator session', async () => {
+  it('lets natural andy-developer status prompts fall through to the model/tool path', async () => {
     const sent: string[] = [];
     const runtime = createRuntimeCallbacks();
     const queue = createQueueStub({
@@ -159,11 +160,39 @@ describe('lane-control-service', () => {
       runtime,
     });
 
-    expect(handled).toBe(true);
-    expect(sent).toHaveLength(1);
-    expect(sent[0]).toContain('Andy Developer is busy.');
-    expect(sent[0]).toContain('There are no worker runs yet');
+    expect(handled).toBe(false);
+    expect(sent).toHaveLength(0);
     expect(queue.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('builds a control-plane snapshot with queue-aware andy-developer status', () => {
+    const queue = createQueueStub({
+      getStatus: vi.fn(() => ({
+        active: true,
+        idleWaiting: false,
+        isTaskContainer: false,
+        runningTaskId: null,
+        pendingMessages: false,
+        pendingTaskCount: 0,
+        containerName: 'andy-container',
+        groupFolder: 'andy-developer',
+      })),
+    });
+
+    const snapshot = buildControlPlaneStatusSnapshot({
+      registeredGroups: {
+        'main@g.us': MAIN_GROUP,
+        'andy-developer@g.us': ANDY_GROUP,
+      },
+      queue,
+    });
+
+    expect(snapshot.lanes['andy-developer']).toBeDefined();
+    expect(snapshot.lanes['andy-developer']?.availability).toBe('busy');
+    expect(snapshot.lanes['andy-developer']?.summary).toContain(
+      'There are no worker runs yet',
+    );
+    expect(snapshot.lanes['andy-developer']?.active_requests).toHaveLength(0);
   });
 
   it('answers request status by request id from persisted state', async () => {

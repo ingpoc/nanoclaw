@@ -33,8 +33,6 @@ import {
 type LaneControlAvailability = 'idle' | 'busy' | 'queued' | 'offline';
 type LaneControlMode = 'append' | 'interrupt';
 
-const ANDY_DEVELOPER_STATUS_PATTERN =
-  /^(?:status\s+andy(?:[\s-]+developer)?|what(?:'|’)s\s+andy(?:[\s-]+developer)?\s+doing|what\s+is\s+andy(?:[\s-]+developer)?\s+doing|is\s+andy(?:[\s-]+developer)?\s+busy)\s*[.!?]*$/i;
 const REQUEST_STATUS_PATTERN = /^status\s+(req-[a-z0-9-]+)\s*[.!?]*$/i;
 const LANE_CONTROL_COMMAND_PATTERN =
   /^(steer|interrupt)\s+([^:]+?)\s*:\s*([\s\S]+)$/i;
@@ -58,6 +56,15 @@ export interface RequestStatus {
   updated_at: string;
 }
 
+export interface ControlPlaneLaneStatus extends LaneStatus {
+  active_requests: RequestStatus[];
+}
+
+export interface ControlPlaneStatusSnapshot {
+  generated_at: string;
+  lanes: Partial<Record<LaneId, ControlPlaneLaneStatus>>;
+}
+
 export interface LaneControlQueue {
   getStatus(groupJid: string): GroupQueueStatusSnapshot;
   sendMessage(groupJid: string, text: string): boolean;
@@ -66,7 +73,6 @@ export interface LaneControlQueue {
 }
 
 type MainLaneControlIntent =
-  | { kind: 'lane_status'; laneId: LaneId }
   | { kind: 'request_status'; requestId: string }
   | {
       kind: 'lane_control';
@@ -105,26 +111,10 @@ function findChatJidForLane(
   })?.[0];
 }
 
-function describeAvailability(availability: LaneControlAvailability): string {
-  switch (availability) {
-    case 'busy':
-      return 'Andy Developer is busy.';
-    case 'queued':
-      return 'Andy Developer has queued work.';
-    case 'offline':
-      return 'Andy Developer is offline.';
-    case 'idle':
-    default:
-      return 'Andy Developer is idle.';
-  }
-}
-
-function authorizeLaneAction(
+function authorizeLaneSteer(
   actorLaneId: LaneId,
   targetLaneId: LaneId,
-  action: 'read_status' | 'steer',
 ): boolean {
-  if (action === 'read_status') return actorLaneId === MAIN_LANE_ID;
   return (
     actorLaneId === MAIN_LANE_ID && targetLaneId === ANDY_DEVELOPER_LANE_ID
   );
@@ -143,10 +133,6 @@ function parseMainLaneControlIntent(
   const requestMatch = body.match(REQUEST_STATUS_PATTERN);
   if (requestMatch?.[1]) {
     return { kind: 'request_status', requestId: requestMatch[1] };
-  }
-
-  if (ANDY_DEVELOPER_STATUS_PATTERN.test(body)) {
-    return { kind: 'lane_status', laneId: ANDY_DEVELOPER_LANE_ID };
   }
 
   const controlMatch = body.match(LANE_CONTROL_COMMAND_PATTERN);
@@ -273,13 +259,24 @@ export function getLaneStatus(input: {
   };
 }
 
-function buildLaneStatusReply(input: {
-  laneId: LaneId;
+export function buildControlPlaneStatusSnapshot(input: {
   registeredGroups: Record<string, RegisteredGroup>;
   queue: Pick<LaneControlQueue, 'getStatus'>;
-}): string {
-  const status = getLaneStatus(input);
-  return `${ASSISTANT_NAME}: ${describeAvailability(status.availability)} ${status.summary}`;
+}): ControlPlaneStatusSnapshot {
+  const laneId = ANDY_DEVELOPER_LANE_ID;
+  return {
+    generated_at: new Date().toISOString(),
+    lanes: {
+      [laneId]: {
+        ...getLaneStatus({
+          laneId,
+          registeredGroups: input.registeredGroups,
+          queue: input.queue,
+        }),
+        active_requests: listActiveRequests(input.registeredGroups),
+      },
+    },
+  };
 }
 
 function buildRequestStatusReply(requestId: string): string {
@@ -306,7 +303,7 @@ export function steerLane(input: {
     };
   }
 
-  if (!authorizeLaneAction(input.actorLaneId, input.targetLaneId, 'steer')) {
+  if (!authorizeLaneSteer(input.actorLaneId, input.targetLaneId)) {
     return {
       ok: false,
       reply: `${ASSISTANT_NAME}: Main may only steer \`andy-developer\`, not \`${input.targetLaneId}\`.`,
@@ -392,17 +389,7 @@ export async function handleMainLaneControlMessages(input: {
 
   let reply: string;
   try {
-    if (intent.kind === 'lane_status') {
-      if (!authorizeLaneAction(MAIN_LANE_ID, intent.laneId, 'read_status')) {
-        reply = `${ASSISTANT_NAME}: Main is not allowed to read that lane status.`;
-      } else {
-        reply = buildLaneStatusReply({
-          laneId: intent.laneId,
-          registeredGroups: input.registeredGroups,
-          queue: input.queue,
-        });
-      }
-    } else if (intent.kind === 'request_status') {
+    if (intent.kind === 'request_status') {
       reply = buildRequestStatusReply(intent.requestId);
     } else {
       reply = steerLane({

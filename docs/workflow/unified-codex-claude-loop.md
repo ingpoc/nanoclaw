@@ -131,6 +131,18 @@ When Codex is the primary orchestrator for this repo:
 5. `gpt-5.4` at `xhigh` is an escalation-only profile for cross-system ambiguity, giant-context synthesis, or repeated failed loops.
 6. Claude consult remains an escalation lane, not a routine second-review default.
 
+### Delegation Payoff Rule
+
+Codex should not use subagents for their own sake.
+
+Delegate only when at least one is true:
+
+1. The main lane has parallel work to do while the helper lane runs.
+2. The helper lane will return a materially better artifact than a direct main-lane pass.
+3. The task is long-running or noisy enough that isolating it improves focus in the main lane.
+
+If none of those are true, keep the work in the main lane.
+
 ## Exit Criteria
 
 A task is done when all are true:

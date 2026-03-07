@@ -1,7 +1,35 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-06T19:22:55.806826+00:00",
+  "updated_at": "2026-03-06T20:44:29.120801+00:00",
   "incidents": [
+    {
+      "id": "incident-20260306T204429Z",
+      "title": "Main lane natural-language Andy-Developer status query falls through to generic response",
+      "status": "open",
+      "severity": "medium",
+      "created_at": "2026-03-06T20:44:29.120584+00:00",
+      "updated_at": "2026-03-06T20:44:29.120584+00:00",
+      "summary": {
+        "symptom": "In the main WhatsApp lane, asking 'Do you have a view of Andy developer and its status' returned a generic 'I don't have direct visibility into andy-developer' answer instead of the deterministic control-plane status reply.",
+        "suspected_cause": "Main-lane lane-control intent parsing is regex-gated and does not match natural phrasings like 'view of Andy developer and its status' or...",
+        "impact": "Users cannot reliably ask Andy in the main lane for Andy-Developer status using natural language, so a core control-plane status function appears broken even while runtime health is otherwise green.",
+        "next_action": "Replace or augment phrase matching with a deterministic status tool/control-plane capability that main can invoke directly; at minimum expand parsing coverage and add live/main-lane regression tests."
+      },
+      "evidence": {
+        "bundle_count": 0
+      },
+      "context": {
+        "lane": "main",
+        "chat_jid": "120363425034645731@g.us"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-06T20:44:29.120584+00:00",
+          "author": "codex",
+          "text": "reported: In the main WhatsApp lane, asking 'Do you have a view of Andy developer and its status' returned a generic 'I don't have direct visibility into andy-developer' answer instead of the deterministic control-plane status reply."
+        }
+      ]
+    },
     {
       "id": "incident-20260306T183606Z",
       "title": "PR CI format check failed after Jarvis refactor",

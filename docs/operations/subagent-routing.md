@@ -44,6 +44,16 @@ Never delegate these away from the main Codex agent:
 | Large-context ambiguity or repeated failed loops | `gpt54_escalation` | foreground |
 | Prior Claude context or independent expert pass | `claude consult` | foreground |
 
+## Delegation Payoff Gate
+
+Before spawning any helper lane, the main agent must be able to answer "yes" to at least one of these:
+
+1. Will this delegation materially reduce wall-clock time because the main lane has useful parallel work to do?
+2. Will this delegation produce a better artifact than the main lane would produce directly right now?
+3. Will this delegation isolate a long-running or noisy task that would otherwise distract the main lane?
+
+If the answer is "no" to all three, do not delegate.
+
 ## Foreground vs Background
 
 - Keep `explorer`, `worker`, and `reviewer` in the foreground when their output changes the next decision immediately.
@@ -59,6 +69,7 @@ Do not delegate when:
 - Task requires user interaction mid-flow
 - Task requires cross-agent coordination judgment
 - Result is needed immediately and there is no parallel work to do locally
+- The main agent cannot name the exact artifact it expects back from the delegated lane
 
 ## Anti-Patterns
 

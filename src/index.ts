@@ -41,6 +41,7 @@ import {
 } from './container-runtime.js';
 import {
   acceptWorkerRunCompletion,
+  clearSession,
   completeWorkerRun,
   getAllChats,
   getAllRegisteredGroups,
@@ -78,6 +79,7 @@ import {
   ackAndyIntakeMessages,
   attachAndyRequestToWorkerRun,
   buildAndyFrontdeskContextBlock,
+  buildControlPlaneStatusSnapshot,
   completeAndyCoordinatorRequest,
   getAndyRequestsForMessages,
   handleAndyFrontdeskMessages,
@@ -93,10 +95,14 @@ import {
   type WorkerSessionSelection,
 } from './extensions/jarvis/index.js';
 import { GroupQueue } from './group-queue.js';
-import { resolveGroupFolderPath } from './group-folder.js';
+import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { emitBridgeEvent } from './event-bridge.js';
 import { startIpcWatcher } from './ipc.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
+import {
+  buildSessionContextVersion,
+  shouldInvalidateStoredSession,
+} from './session-compatibility.js';
 import {
   claimRuntimeOwnership,
   getCurrentRuntimeOwner,
@@ -121,6 +127,7 @@ export { escapeXml, formatMessages } from './router.js';
 
 let lastCursor = '';
 let sessions: Record<string, string> = {};
+let sessionContextVersions: Record<string, string> = {};
 let registeredGroups: Record<string, RegisteredGroup> = {};
 let lastAgentTimestamp: Record<string, string> = {};
 let inFlightAgentTimestamp: Record<string, string> = {};
@@ -151,6 +158,12 @@ const WORKER_SNAPSHOT_REFRESH_INTERVAL_MS = 15_000;
 const WORKER_SUPERVISOR_OWNER = `nanoclaw-${process.pid}`;
 const PROCESS_START_AT_MS = Date.now();
 const PROCESS_START_AT_ISO = new Date(PROCESS_START_AT_MS).toISOString();
+const MAIN_SESSION_CONTEXT_SALT = 'main-lane-context-v1';
+const MAIN_SESSION_CONTEXT_FILES = [
+  'groups/main/CLAUDE.md',
+  'container/agent-runner/src/index.ts',
+  'container/agent-runner/src/ipc-mcp-stdio.ts',
+];
 const andyBusyAckLastSentMs: Record<string, number> = {};
 const andyRetryNoticeState: Record<
   string,
@@ -569,6 +582,21 @@ function refreshWorkerRunSnapshotsForGroups(folders?: string[]): void {
   }
 }
 
+function writeMainControlPlaneStatusSnapshot(): void {
+  if (!ENABLE_CONTROL_PLANE_SNAPSHOTS) return;
+
+  const snapshot = buildControlPlaneStatusSnapshot({
+    registeredGroups,
+    queue,
+  });
+  const groupIpcDir = resolveGroupIpcPath(MAIN_GROUP_FOLDER);
+  fs.mkdirSync(groupIpcDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(groupIpcDir, 'control_plane_status.json'),
+    JSON.stringify(snapshot, null, 2),
+  );
+}
+
 function extractWorkerRunContext(
   group: RegisteredGroup,
   messages: NewMessage[],
@@ -736,11 +764,20 @@ function reconcileStaleWorkerRuns(): void {
 function loadState(): void {
   lastCursor = getRouterState('last_timestamp') || '';
   const agentTs = getRouterState('last_agent_timestamp');
+  const sessionContextState = getRouterState('session_context_versions');
   try {
     lastAgentTimestamp = agentTs ? JSON.parse(agentTs) : {};
   } catch {
     logger.warn('Corrupted last_agent_timestamp in DB, resetting');
     lastAgentTimestamp = {};
+  }
+  try {
+    sessionContextVersions = sessionContextState
+      ? JSON.parse(sessionContextState)
+      : {};
+  } catch {
+    logger.warn('Corrupted session_context_versions in DB, resetting');
+    sessionContextVersions = {};
   }
   inFlightAgentTimestamp = {};
   sessions = getAllSessions();
@@ -765,6 +802,45 @@ function loadState(): void {
 function saveState(): void {
   setRouterState('last_timestamp', lastCursor);
   setRouterState('last_agent_timestamp', JSON.stringify(lastAgentTimestamp));
+  setRouterState(
+    'session_context_versions',
+    JSON.stringify(sessionContextVersions),
+  );
+}
+
+function getMainSessionContextVersion(): string {
+  const entries = MAIN_SESSION_CONTEXT_FILES.map((relativePath) => {
+    const absolutePath = path.join(process.cwd(), relativePath);
+    let content = '__missing__';
+    try {
+      content = fs.readFileSync(absolutePath, 'utf-8');
+    } catch {
+      // Keep a deterministic marker if the file is unavailable.
+    }
+    return { path: relativePath, content };
+  });
+
+  return buildSessionContextVersion({
+    salt: MAIN_SESSION_CONTEXT_SALT,
+    entries,
+  });
+}
+
+function getSessionContextVersionForGroup(
+  group: RegisteredGroup,
+  isMain: boolean,
+): string | undefined {
+  if (!isMain || group.folder !== MAIN_GROUP_FOLDER) return undefined;
+  return getMainSessionContextVersion();
+}
+
+function setSessionContextVersion(
+  groupFolder: string,
+  version: string | undefined,
+): void {
+  if (!version) return;
+  sessionContextVersions[groupFolder] = version;
+  saveState();
 }
 
 function registerGroup(jid: string, group: RegisteredGroup): void {
@@ -1617,10 +1693,31 @@ async function runAgent(
   workerRunId?: string,
 ): Promise<RunAgentResult> {
   const isMain = group.folder === MAIN_GROUP_FOLDER;
-  const sessionId =
+  let sessionId =
     sessionOverride === undefined
       ? sessions[group.folder]
       : (sessionOverride ?? undefined);
+  const sessionContextVersion = getSessionContextVersionForGroup(group, isMain);
+  if (
+    shouldInvalidateStoredSession({
+      sessionId,
+      storedVersion: sessionContextVersions[group.folder],
+      currentVersion: sessionContextVersion,
+    })
+  ) {
+    logger.info(
+      {
+        group: group.name,
+        groupFolder: group.folder,
+        storedVersion: sessionContextVersions[group.folder],
+        currentVersion: sessionContextVersion,
+      },
+      'Invalidating stored session because the session context changed',
+    );
+    delete sessions[group.folder];
+    clearSession(group.folder);
+    sessionId = undefined;
+  }
   if (sessionId) {
     sessions[group.folder] = sessionId;
     setSession(group.folder, sessionId);
@@ -1655,6 +1752,9 @@ async function runAgent(
 
     workerRunsSnapshot = buildWorkerRunsSnapshot(group, isMain);
     writeWorkerRunsSnapshot(group.folder, workerRunsSnapshot);
+    if (isMain) {
+      writeMainControlPlaneStatusSnapshot();
+    }
   }
   const effectivePrompt =
     group.folder === ANDY_DEVELOPER_FOLDER && workerRunsSnapshot
@@ -1667,6 +1767,7 @@ async function runAgent(
         if (output.newSessionId) {
           sessions[group.folder] = output.newSessionId;
           setSession(group.folder, output.newSessionId);
+          setSessionContextVersion(group.folder, sessionContextVersion);
         }
         await onOutput(output);
       }
@@ -1705,6 +1806,9 @@ async function runAgent(
     if (output.newSessionId) {
       sessions[group.folder] = output.newSessionId;
       setSession(group.folder, output.newSessionId);
+      setSessionContextVersion(group.folder, sessionContextVersion);
+    } else if (sessionId) {
+      setSessionContextVersion(group.folder, sessionContextVersion);
     }
 
     if (output.status === 'error') {
@@ -1884,6 +1988,10 @@ async function startMessageLoop(): Promise<void> {
             }))
           ) {
             continue;
+          }
+
+          if (isMainGroup && ENABLE_CONTROL_PLANE_SNAPSHOTS) {
+            writeMainControlPlaneStatusSnapshot();
           }
 
           if (queue.sendMessage(chatJid, formatted)) {

@@ -70,7 +70,7 @@ export const ENABLE_DYNAMIC_GROUP_REGISTRATION = envBool(
 );
 export const ENABLE_CONTROL_PLANE_SNAPSHOTS = envBool(
   process.env.NANOCLAW_ENABLE_CONTROL_PLANE_SNAPSHOTS,
-  RUNTIME_OPS_EXTENDED,
+  true,
 );
 
 export const CONTAINER_IMAGE =

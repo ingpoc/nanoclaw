@@ -1,6 +1,7 @@
 # GitHub Agent Collaboration Loop
 
 ## Purpose
+
 Canonical day-to-day workflow for how Claude, Codex, and humans use GitHub Discussions, Issues, and the Project board together in this repository.
 This is the operator-facing playbook for deciding where collaboration starts, when it becomes committed work, and how execution state is recorded without creating duplicate trackers.
 
@@ -28,21 +29,26 @@ Use instead:
 3. `docs/workflow/github/github-offload-boundary-loop.md` for placement decisions
 
 ## Doc Type
+
 `workflow-loop`
 
 ## Canonical Owner
+
 This document owns the operating workflow for active agent use of GitHub collaboration surfaces.
 Do not duplicate its day-to-day execution rules in `docs/workflow/github/github-multi-agent-collaboration-loop.md` or `docs/workflow/github/nanoclaw-github-control-plane.md`.
 
 ## Use When
+
 Use this before agents create, update, promote, or close GitHub Discussions, Issues, or Project items for collaboration work.
 
 ## Do Not Use When
+
 - You are bootstrapping the GitHub governance stack itself; use `docs/workflow/github/github-multi-agent-collaboration-loop.md`.
 - You are changing workflow auth, Actions, or review policy; use `docs/workflow/github/nanoclaw-github-control-plane.md`.
 - You are changing branch/ruleset/security offload boundaries; use `docs/workflow/github/github-offload-boundary-loop.md`.
 
 ## Verification
+
 - `bash scripts/check-workflow-contracts.sh`
 - `bash scripts/check-claude-codex-mirror.sh`
 - `bash scripts/check-tooling-governance.sh`
@@ -50,12 +56,14 @@ Use this before agents create, update, promote, or close GitHub Discussions, Iss
 - `gh api graphql -f query='query { repository(owner: "ingpoc", name: "nanoclaw") { discussionCategories(first: 10) { nodes { name slug } } } }'`
 
 ## Related Docs
+
 - `docs/workflow/github/github-multi-agent-collaboration-loop.md`
 - `docs/workflow/github/nanoclaw-github-control-plane.md`
 - `docs/workflow/github/github-offload-boundary-loop.md`
 - `docs/operations/workflow-setup-responsibility-map.md`
 
 ## Precedence
+
 1. This doc governs ongoing agent use of GitHub collaboration surfaces in this repository.
 2. `docs/workflow/github/github-multi-agent-collaboration-loop.md` governs initial setup shape, Project schema, and portable rollout.
 3. `docs/workflow/github/nanoclaw-github-control-plane.md` governs workflow auth, review automation, and GitHub-hosted control-plane policy.
@@ -229,16 +237,59 @@ Human-admin only:
 4. changing secrets/variables
 5. changing the Project schema beyond the accepted field model
 
+## Session Start Sweep
+
+Run this before any task work every session:
+
+```bash
+# Claude
+bash scripts/workflow/gh-collab-sweep.sh --agent claude
+
+# Codex
+bash scripts/workflow/gh-collab-sweep.sh --agent codex
+```
+
+The sweep surfaces: owned Issues, items needing review, stale discussions in your affinity categories, handoff comments from the other agent, and blocked items.
+Act on sweep output before starting new work. See `docs/workflow/github/github-collab-sweep.md` for the full protocol.
+
+## Agent-Category Affinity
+
+Each agent owns first response for a subset of Discussion categories:
+
+| Category | First Responder |
+|----------|----------------|
+| Workflow / Operating Model | Claude |
+| Claude/Codex Collaboration | Claude |
+| Feature Ideas | Codex |
+| SDK / Tooling Opportunities | Codex |
+| Upstream NanoClaw Sync | Codex |
+
+## Handoff Format
+
+When leaving work for the other agent, post a comment on the Issue:
+
+```
+<!-- agent-handoff -->
+From: claude|codex
+To: claude|codex
+Status: completed|blocked|needs-review|needs-input
+Next: <concrete next action>
+Context: <brief context>
+```
+
 ## Daily Loop
 
-1. Start in the correct surface using the selector above.
-2. Keep exploratory work in Discussions until a next action is concrete.
-3. Promote concrete work into an Issue with owner + acceptance criteria.
-4. Add the Issue to the Project and keep status current.
-5. Link the PR back to the Issue and let the Project show review state.
-6. Close the Issue when acceptance is met; do not hide follow-up work in comments.
+1. Run session-start sweep and act on output.
+2. Start in the correct surface using the selector above.
+3. Keep exploratory work in Discussions until a next action is concrete.
+4. Promote concrete work into an Issue with owner + acceptance criteria.
+5. Add the Issue to the Project and keep status current.
+6. Link the PR back to the Issue and let the Project show review state.
+7. Post a handoff comment if leaving work for the other agent.
+8. Close the Issue when acceptance is met; do not hide follow-up work in comments.
 
 ## Exit Criteria
+
 This workflow is being followed correctly when all are true:
 
 1. Every active Project item is an Issue, not a PR
@@ -249,6 +300,7 @@ This workflow is being followed correctly when all are true:
 6. Discussion taxonomy and Project schema remain aligned with the accepted collaboration model
 
 ## Anti-Patterns
+
 1. Using the Project as a brainstorming board
 2. Tracking execution in Discussion comments instead of Issues/Project fields
 3. Opening PR cards as duplicates of Issue cards

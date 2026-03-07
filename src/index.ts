@@ -19,6 +19,7 @@ import {
   RUNTIME_OWNER_HEARTBEAT_MS,
   RUNTIME_OPS_EXTENDED,
   SHUTDOWN_DRAIN_MS,
+  TIMEZONE,
   TRIGGER_PATTERN,
 } from './config.js';
 import {
@@ -1036,7 +1037,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     );
     if (!hasTrigger) return true;
   }
-
   if (
     channel &&
     isMainGroup &&
@@ -1096,7 +1096,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   const workerRun = extractWorkerRunContext(group, messagesToProcess);
   const basePrompt = workerRun
     ? buildWorkerDispatchPrompt(workerRun.dispatchPayload)
-    : formatMessages(messagesToProcess);
+    : formatMessages(messagesToProcess, TIMEZONE);
   const prompt =
     !workerRun && group.folder === ANDY_DEVELOPER_FOLDER && activeAndyRequestId
       ? `${buildAndyFrontdeskContextBlock(chatJid, activeAndyRequestId)}\n\n${basePrompt}`
@@ -2030,7 +2030,7 @@ async function startMessageLoop(): Promise<void> {
             );
           }
           const activeRequestForSend = andyRequestsToSend[0]?.requestId;
-          const baseFormatted = formatMessages(messagesToSend);
+          const baseFormatted = formatMessages(messagesToSend, TIMEZONE);
           const formatted =
             group.folder === ANDY_DEVELOPER_FOLDER && activeRequestForSend
               ? `${buildAndyFrontdeskContextBlock(chatJid, activeRequestForSend)}\n\n${baseFormatted}`

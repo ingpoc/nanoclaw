@@ -480,6 +480,19 @@ export function storeMessage(msg: NewMessage): void {
   );
 }
 
+export function getStoredMessage(
+  chatJid: string,
+  messageId: string,
+): NewMessage | undefined {
+  return db
+    .prepare(
+      `SELECT id, chat_jid, sender, sender_name, content, timestamp, is_from_me, is_bot_message
+       FROM messages
+       WHERE chat_jid = ? AND id = ?`,
+    )
+    .get(chatJid, messageId) as NewMessage | undefined;
+}
+
 /**
  * Store a message directly (for non-WhatsApp channels that don't use Baileys proto).
  */
@@ -1014,6 +1027,8 @@ export type AndyRequestState =
   | 'worker_queued'
   | 'worker_running'
   | 'worker_review_requested'
+  | 'review_in_progress'
+  | 'andy_patch_in_progress'
   | 'completed'
   | 'failed'
   | 'cancelled';

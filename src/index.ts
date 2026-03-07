@@ -51,6 +51,7 @@ import {
   getLatestAndyRequestForChat,
   getMessagesSince,
   getNewMessages,
+  getStoredMessage,
   getWorkerRuns,
   getWorkerRun,
   getRouterState,
@@ -77,7 +78,9 @@ import {
 } from './dispatch-validator.js';
 import {
   ackAndyIntakeMessages,
+  applyAndyReviewStateUpdates,
   attachAndyRequestToWorkerRun,
+  buildAndyReviewTriggerMessage,
   buildAndyFrontdeskContextBlock,
   buildControlPlaneStatusSnapshot,
   completeAndyCoordinatorRequest,
@@ -87,10 +90,13 @@ import {
   isInternalWorkerLaneGroup,
   isSimpleAndyGreeting,
   markAndyRequestsCoordinatorActive,
+  markAndyRequestsReviewInProgress,
+  parseAndyReviewStateUpdates,
   recoverInterruptedWorkerDispatches,
   recoverPendingMessages,
   reconcileJarvisStaleWorkerRuns,
   selectWorkerSessionForDispatch,
+  stripAndyReviewStateUpdates,
   syncAndyRequestWithWorkerRun,
   type WorkerSessionSelection,
 } from './extensions/jarvis/index.js';
@@ -199,6 +205,16 @@ function isMissionCoreAllowedFolder(folder: string): boolean {
 
 function isSyntheticWorkerGroup(group: RegisteredGroup): boolean {
   return isInternalWorkerLaneGroup(group);
+}
+
+function findGroupJidByFolder(
+  groups: Record<string, RegisteredGroup>,
+  folder: string,
+): string | undefined {
+  for (const [jid, group] of Object.entries(groups)) {
+    if (group.folder === folder) return jid;
+  }
+  return undefined;
 }
 
 function stripCodeFence(raw: string): string {
@@ -595,6 +611,61 @@ function writeMainControlPlaneStatusSnapshot(): void {
     path.join(groupIpcDir, 'control_plane_status.json'),
     JSON.stringify(snapshot, null, 2),
   );
+}
+
+function enqueueAndyReviewTrigger(input: {
+  runId: string;
+  dispatchPayload: DispatchPayload;
+  workerGroupFolder: string;
+  completion: {
+    branch: string;
+    commit_sha: string;
+    test_result: string;
+    risk: string;
+    pr_url?: string | null;
+    pr_skipped_reason?: string | null;
+  };
+  effectiveSessionId?: string | null;
+}): void {
+  const requestId = input.dispatchPayload.request_id?.trim();
+  if (!requestId) return;
+
+  const andyJid = findGroupJidByFolder(registeredGroups, ANDY_DEVELOPER_FOLDER);
+  if (!andyJid) return;
+
+  const timestamp = new Date().toISOString();
+  const message = buildAndyReviewTriggerMessage({
+    chatJid: andyJid,
+    timestamp,
+    payload: {
+      request_id: requestId,
+      run_id: input.runId,
+      repo: input.dispatchPayload.repo,
+      branch: input.completion.branch,
+      worker_group_folder: input.workerGroupFolder,
+      summary: `Worker run ${input.runId} completed and needs Andy review.`,
+      session_id: input.effectiveSessionId ?? null,
+      parent_run_id: input.dispatchPayload.parent_run_id ?? null,
+      commit_sha: input.completion.commit_sha,
+      test_result: input.completion.test_result,
+      risk: input.completion.risk,
+      pr_url: input.completion.pr_url ?? null,
+      pr_skipped_reason: input.completion.pr_skipped_reason ?? null,
+    },
+  });
+
+  storeChatMetadata(
+    andyJid,
+    timestamp,
+    registeredGroups[andyJid]?.name ?? 'Andy Developer',
+    'nanoclaw',
+    true,
+  );
+
+  if (!getStoredMessage(andyJid, message.id)) {
+    storeMessage(message);
+  }
+  queue.enqueueMessageCheck(andyJid);
 }
 
 function extractWorkerRunContext(
@@ -1015,6 +1086,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         ? `Coordinator picked up ${messagesToProcess.length} pending message(s)`
         : 'Coordinator is processing your request';
     markAndyRequestsCoordinatorActive(andyRequestsInBatch, coordinatorText);
+    markAndyRequestsReviewInProgress(
+      andyRequestsInBatch,
+      'Andy is reviewing worker completion artifacts',
+    );
   }
   const activeAndyRequestId = andyRequestsInBatch[0]?.requestId;
 
@@ -1257,8 +1332,18 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         if (workerRun) {
           workerOutputBuffer += `${raw}\n`;
         }
+        let cleaned = raw;
+        if (group.folder === ANDY_DEVELOPER_FOLDER) {
+          const reviewStateUpdates = parseAndyReviewStateUpdates(raw);
+          if (reviewStateUpdates.length > 0) {
+            applyAndyReviewStateUpdates(reviewStateUpdates);
+            cleaned = stripAndyReviewStateUpdates(cleaned);
+          }
+        }
         // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
-        const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+        const text = cleaned
+          .replace(/<internal>[\s\S]*?<\/internal>/g, '')
+          .trim();
         logger.info(
           { group: group.name },
           `Agent output: ${raw.slice(0, 200)}`,
@@ -1454,6 +1539,13 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           'worker_review_requested',
           `Worker run ${workerRun.runId} reached review_requested on ${group.folder}`,
         );
+        enqueueAndyReviewTrigger({
+          runId: workerRun.runId,
+          dispatchPayload: workerRun.dispatchPayload,
+          workerGroupFolder: group.folder,
+          completion,
+          effectiveSessionId: runtimeEffectiveSessionId ?? null,
+        });
         void emitBridgeEvent({
           event_type: 'worker_completed',
           summary: `[${group.folder}] ✓ review: ${completion.branch}`,
@@ -1931,9 +2023,10 @@ async function startMessageLoop(): Promise<void> {
               ? getAndyRequestsForMessages(messagesToSend)
               : [];
           if (andyRequestsToSend.length > 0) {
-            markAndyRequestsCoordinatorActive(
+            markAndyRequestsCoordinatorActive(andyRequestsToSend, 'Coordinator is processing your request');
+            markAndyRequestsReviewInProgress(
               andyRequestsToSend,
-              'Coordinator is processing your request',
+              'Andy is reviewing worker completion artifacts',
             );
           }
           const activeRequestForSend = andyRequestsToSend[0]?.requestId;

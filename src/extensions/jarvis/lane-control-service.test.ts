@@ -10,6 +10,7 @@ import { claimRuntimeOwnership } from '../../runtime-ownership.js';
 import { MAIN_GROUP_FOLDER } from '../../config.js';
 import {
   buildControlPlaneStatusSnapshot,
+  getLaneStatus,
   handleMainLaneControlMessages,
   type LaneControlQueue,
 } from './lane-control-service.js';
@@ -193,6 +194,35 @@ describe('lane-control-service', () => {
       'There are no worker runs yet',
     );
     expect(snapshot.lanes['andy-developer']?.active_requests).toHaveLength(0);
+  });
+
+  it('treats active Andy review ownership as busy work', () => {
+    createAndyRequestIfAbsent({
+      request_id: 'req-review-busy-1',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      user_message_id: 'msg-review-busy-1',
+      user_prompt: 'review the worker output',
+      intent: 'work_intake',
+      state: 'worker_review_requested',
+    });
+    updateAndyRequestState(
+      'req-review-busy-1',
+      'review_in_progress',
+      'Reviewing completion artifacts',
+    );
+
+    const status = getLaneStatus({
+      laneId: 'andy-developer',
+      registeredGroups: {
+        'main@g.us': MAIN_GROUP,
+        'andy-developer@g.us': ANDY_GROUP,
+      },
+      queue: createQueueStub(),
+    });
+
+    expect(status.availability).toBe('busy');
+    expect(status.summary).toContain('Andy review in progress');
   });
 
   it('answers request status by request id from persisted state', async () => {

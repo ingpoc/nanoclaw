@@ -120,6 +120,14 @@ function authorizeLaneSteer(
   );
 }
 
+function isBusyAndyRequestState(state: string | null | undefined): boolean {
+  return (
+    state === 'coordinator_active' ||
+    state === 'review_in_progress' ||
+    state === 'andy_patch_in_progress'
+  );
+}
+
 function parseMainLaneControlIntent(
   group: RegisteredGroup,
   messages: NewMessage[],
@@ -231,10 +239,7 @@ export function getLaneStatus(input: {
   let availability: LaneControlAvailability = 'idle';
   if (!runtimeOwner) {
     availability = 'offline';
-  } else if (
-    queueStatus?.active ||
-    latestRequest?.state === 'coordinator_active'
-  ) {
+  } else if (queueStatus?.active || isBusyAndyRequestState(latestRequest?.state)) {
     availability = 'busy';
   } else if (hasQueuedWork) {
     availability = 'queued';

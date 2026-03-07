@@ -8,6 +8,7 @@ import {
   getAllRegisteredGroups,
   getMessagesSince,
   getNewMessages,
+  getStoredMessage,
   getTaskById,
   setRegisteredGroup,
   storeChatMetadata,
@@ -137,6 +138,24 @@ describe('storeMessage', () => {
     );
     expect(messages).toHaveLength(1);
     expect(messages[0].content).toBe('updated');
+  });
+
+  it('retrieves a stored message by chat and id', () => {
+    storeChatMetadata('group@g.us', '2024-01-01T00:00:00.000Z');
+
+    store({
+      id: 'msg-direct-lookup',
+      chat_jid: 'group@g.us',
+      sender: '123@s.whatsapp.net',
+      sender_name: 'Alice',
+      content: 'lookup me',
+      timestamp: '2024-01-01T00:00:06.000Z',
+    });
+
+    const message = getStoredMessage('group@g.us', 'msg-direct-lookup');
+
+    expect(message?.content).toBe('lookup me');
+    expect(message?.sender_name).toBe('Alice');
   });
 });
 

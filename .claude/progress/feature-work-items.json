@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-06T15:30:00.000Z",
+  "updated_at": "2026-03-07T18:59:23.870Z",
   "items": [
     {
       "id": "work-architecture-boundary-governance-1772821500000",
@@ -235,6 +235,36 @@
       ],
       "created_at": "2026-03-06T09:23:10.923Z",
       "updated_at": "2026-03-06T09:27:59.409Z"
+    },
+    {
+      "id": "work-andy-review-ownership-1772866769087",
+      "title": "Implement Andy review ownership workflow",
+      "feature_id": "andy-review-ownership",
+      "status": "done",
+      "request": "Auto-trigger Andy review on worker completion, allow bounded review-only direct patches, and align rework lineage/state handling.",
+      "notes": [
+        "2026-03-07T17:50:24.282Z: Implemented Andy review ownership with deterministic internal review triggers, explicit review states, bounded same-branch Andy patching contract, and corrected post-review rework lineage. Verification passed after runtime recovery: build, targeted tests, full tests, preflight, verify-worker-connectivity, acceptance-gate, and happiness-gate."
+      ],
+      "evidence": [
+        "data/diagnostics/acceptance/acceptance-20260307T174420Z.json"
+      ],
+      "created_at": "2026-03-07T06:59:29.087Z",
+      "updated_at": "2026-03-07T17:50:24.282Z"
+    },
+    {
+      "id": "work-andy-request-admin-cleanup-1772909699391",
+      "title": "Add stale Andy request admin cleanup command",
+      "feature_id": "andy-request-admin-cleanup",
+      "status": "done",
+      "request": "Create an admin command/script to archive or close stale Andy requests for testing and control-plane cleanup.",
+      "notes": [
+        "2026-03-07T18:59:23.870Z: Added bash scripts/jarvis-ops.sh reconcile-stale-andy-requests with dry-run-by-default stale request targeting, targeted request-id cleanup, DB backups on apply, and terminal close-state control. Verified with npm run build, feature test artifact, and real-DB dry-run via bash scripts/jarvis-ops.sh reconcile-stale-andy-requests --stale-minutes 720 --limit 2."
+      ],
+      "evidence": [
+        ".claude/progress/test-report-andy-request-admin-cleanup.json"
+      ],
+      "created_at": "2026-03-07T18:54:59.391Z",
+      "updated_at": "2026-03-07T18:59:23.870Z"
     }
   ]
 }

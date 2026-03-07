@@ -292,6 +292,60 @@
       ]
     },
     {
+      "id": "andy-review-ownership",
+      "name": "Andy Review Ownership",
+      "summary": "Auto-triggered review workflow for Andy-developer, including review-state progression, bounded direct review patches, and rework lineage.",
+      "risk": "high",
+      "keywords": [
+        "andy review",
+        "review requested",
+        "review trigger",
+        "direct patch",
+        "rework lineage",
+        "request state"
+      ],
+      "files": [
+        "src/index.ts",
+        "src/db.ts",
+        "src/extensions/jarvis/frontdesk-service.ts",
+        "src/extensions/jarvis/request-state-service.ts",
+        "groups/andy-developer/CLAUDE.md",
+        "groups/andy-developer/docs/github.md",
+        "groups/andy-developer/docs/jarvis-dispatch.md",
+        "groups/jarvis-worker-1/docs/workflow/worker-skill-policy.md",
+        "groups/jarvis-worker-2/docs/workflow/worker-skill-policy.md",
+        "docs/architecture/nanoclaw-jarvis.md",
+        "docs/workflow/nanoclaw-jarvis-dispatch-contract.md"
+      ],
+      "tests": [
+        "src/extensions/jarvis/frontdesk-service.test.ts",
+        "src/jarvis-worker-dispatch.test.ts",
+        "src/db.test.ts"
+      ]
+    },
+    {
+      "id": "andy-request-admin-cleanup",
+      "name": "Andy Request Admin Cleanup",
+      "summary": "Administrative cleanup tooling for stale non-terminal Andy requests, including dry-run inspection and explicit archival/closure.",
+      "risk": "medium",
+      "keywords": [
+        "andy requests",
+        "stale request cleanup",
+        "archive requests",
+        "cancel stale requests",
+        "admin command",
+        "testing backlog"
+      ],
+      "files": [
+        "scripts/jarvis-ops.sh",
+        "scripts/jarvis-reconcile-stale-andy-requests.sh",
+        ".claude/progress/feature-catalog.seed.json"
+      ],
+      "tests": [
+        "src/jarvis-reconcile-stale-andy-requests.test.ts"
+      ]
+    },
+    {
       "id": "architecture-boundary-governance",
       "name": "Architecture Boundary Governance",
       "summary": "Hard boundary contract and deterministic checks that keep upstream NanoClaw core separate from Jarvis extension logic.",

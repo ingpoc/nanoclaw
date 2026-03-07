@@ -1,6 +1,6 @@
 # NanoClaw Feature Catalog
 
-Generated: 2026-03-07T19:58:58.918Z
+Generated: 2026-03-07T20:22:00.510Z
 Project: nanoclaw
 
 ## Features
@@ -568,8 +568,6 @@ Project: nanoclaw
   - CLAUDE.md
   - DOCS.md
   - docs/README.md
-- Validation Warnings:
-  - missing file: docs/workflow/github-agent-collaboration-loop.md
 - Suggested Verify:
   - npm run typecheck
   - npx vitest run setup/github-project-sync.test.ts

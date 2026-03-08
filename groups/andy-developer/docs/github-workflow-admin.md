@@ -22,6 +22,41 @@ Andy-developer must not directly implement product source code.
 5. Decide review mode: request Claude review (`@claude`) only when required by project policy/risk.
 6. Merge only after required checks pass.
 
+## NanoClaw Platform Claude Loop
+
+Use the dedicated Claude `/loop` lane only for `NanoClaw Platform` issues that are already decision-complete.
+
+Required runtime surfaces:
+
+- `.claude/commands/platform-pickup.md`
+- `scripts/workflow/run-platform-claude-session.sh`
+- `scripts/workflow/platform-loop.js`
+- `scripts/workflow/start-platform-loop.sh`
+- `scripts/workflow/trigger-platform-pickup-now.sh`
+- `scripts/workflow/check-platform-loop.sh`
+- `launchd/com.nanoclaw-platform-loop.plist`
+
+Operating rules:
+
+1. the loop confirms local GitHub auth is `ingpoc` before reading or mutating the NanoClaw platform board
+2. unanimous discussion promotion creates the platform Issue, but does not make it `Ready`
+3. before an issue can be marked `Ready`, Codex must write or normalize the scope, acceptance, checks, evidence, blocked conditions, and checked `Ready Checklist` on the Issue body
+4. the loop claims only one `Ready` platform issue at a time
+5. if any Claude-owned platform item is already `Review`, the loop must no-op
+6. the loop must move active implementation to `In Progress` and set `Agent=claude`
+7. the loop must move review-ready PRs to `Review`
+8. on ambiguity or failed required checks, the loop must move the item to `Blocked` with a concrete `Next Decision`
+9. the loop must leave issue comments when it claims work, blocks, and hands off to review so monitoring never depends on the Claude terminal alone
+10. Codex is the default review lane after the loop finishes implementation
+11. merge remains human-only
+
+CLI mode rule:
+
+1. use an interactive Claude Code session for `/loop`
+2. run the unattended platform loop in a dedicated git worktree so Claude changes stay isolated from the maintainer working tree
+3. launch that dedicated loop session with `--permission-mode bypassPermissions` so the unattended run cannot stall on interactive tool prompts
+4. load the repo `CLAUDE_CODE_OAUTH_TOKEN` into that session when present so the platform loop uses the subscription auth lane deterministically
+5. do not use `claude -p` to invoke `/platform-pickup`, because headless mode is for non-interactive prompts and interactive slash commands are unavailable there
 ## Requirement-Based Review Decision
 
 | Profile | `@claude` Review |

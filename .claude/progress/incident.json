@@ -1,7 +1,122 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-07T17:49:30Z",
+  "updated_at": "2026-03-08T11:21:59Z",
   "incidents": [
+    {
+      "id": "incident-20260308T111215Z",
+      "title": "Tooling-governance budget drift blocks PR #48 merge",
+      "status": "resolved",
+      "severity": "medium",
+      "created_at": "2026-03-08T11:12:15Z",
+      "updated_at": "2026-03-08T11:21:59Z",
+      "summary": {
+        "symptom": "PR #48 fails CI at scripts/check-tooling-governance.sh even though the scoped diff only adds src/extensions/jarvis/dispatch-service.test.ts.",
+        "suspected_cause": ".claude/settings.local.json currently exceeds the ratcheted tooling-governance budget for permissions.allow entries and wildcard permissions.",
+        "impact": "Codex review found no scoped code defects in PR #48, but the PR cannot become merge-ready until the governance-budget drift is corrected or intentionally re-budgeted.",
+        "next_action": "Prune .claude/settings.local.json allow entries or intentionally raise docs/operations/tooling-governance-budget.json with rationale, then rerun CI for PR #48."
+      },
+      "evidence": {
+        "bundle_count": 0
+      },
+      "context": {
+        "lane": "codex",
+        "issue": 38,
+        "pr": 48
+      },
+      "notes": [
+        {
+          "ts": "2026-03-08T11:12:15Z",
+          "author": "codex",
+          "text": "During Codex review of PR #48, required scoped checks passed locally (`npm run build`; `npm test -- src/extensions/jarvis/dispatch-service.test.ts src/jarvis-worker-dispatch.test.ts` => 114 passed). CI failure is at tooling-governance lint with `permissions.allow entries exceeded budget (53 > 50)` and `wildcard permissions exceeded budget (43 > 40)`. Branch diff against origin/main only contains src/extensions/jarvis/dispatch-service.test.ts, so the red check is unrelated baseline governance drift rather than a defect in the scoped implementation."
+        },
+        {
+          "ts": "2026-03-08T11:21:59Z",
+          "author": "codex",
+          "text": "Resolved during Codex review completion for PR #48. Pruned stale Claude allow rules back to budget, formatted the new dispatch contract test file, added the missing qrcode-terminal dependency and types, and fixed a time-relative stale-request cleanup test assertion that had started failing once 2026-03-08 crossed the 60-minute threshold. Final GitHub CI run 22820036731 passed on Node 20."
+      }
+      ],
+      "resolution": {
+        "summary": "PR #48 is merge-ready after clearing the governance budget drift and subsequent CI blockers discovered during review.",
+        "confirmed_by_user": "",
+        "confirmed_at": "2026-03-08T11:21:59Z",
+        "verification": "GitHub CI run 22820036731 PASS; project-sync PASS; governance, format, typecheck, and tests green on PR #48",
+        "fix_reference": "PR #48 commits 79bb735, 7b5f284, a38d0bd, 7c25c49",
+        "resolved_by": "codex"
+      },
+      "resolved_at": "2026-03-08T11:21:59Z"
+    },
+    {
+      "id": "incident-20260308T065300Z",
+      "title": "Delivery board execution state not synced automatically from Andy/Jarvis runtime",
+      "status": "open",
+      "severity": "medium",
+      "created_at": "2026-03-08T06:53:54.063083+00:00",
+      "updated_at": "2026-03-08T07:55:35.447571+00:00",
+      "summary": {
+        "symptom": "Andy can create a real worker_run for delivery issue #46, but the linked GitHub issue/project state stays unchanged during execution.",
+        "suspected_cause": "Execution tracking currently depends on Andy/worker lane behavior inside task prompts instead of a deterministic host-side sync from andy...",
+        "impact": "Delivery board does not reliably show which worker is active, issue labels/comments remain stale, and project execution tracking is not autonomous.",
+        "next_action": "Implement host-managed delivery sync on request/worker state transitions or explicitly scope Andy to own GitHub issue updates after accepted dispatch, then rerun issue #46 verification."
+      },
+      "evidence": {
+        "bundle_count": 0
+      },
+      "context": {
+        "lane": "andy-developer",
+        "chat_jid": "120363407693898924@g.us",
+        "run_id": "task-verify-62307a04"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-08T06:54:07.287419+00:00",
+          "author": "codex",
+          "text": "2026-03-08 live verification after board setup: issue #46 is on Andy/Jarvis Delivery and local dual-board sync works. After runtime restart, Andy accepted the tightened dispatch rules and created a real worker run task-verify-62307a04 on jarvis-worker-1 for request req-1772951897937-6899aea5; worker state reached running/completion_repair_active and a second queued retry task-verify-eabb68df was also created. However GitHub issue #46 still has no comments, labels remain agent:andy-developer, and project item PVTI_lAHOAezAjs4BRGsUzgm6fME remains status=Backlog worker=none. This proves dispatch works but GitHub execution tracking is not autonomously synced from runtime state yet."
+        },
+        {
+          "ts": "2026-03-08T07:54:13.288163+00:00",
+          "author": "codex",
+          "text": "Implemented host-managed delivery sync: andy_requests now persist GitHub issue/project linkage, runtime transitions schedule GitHub sync, the delivery board on openclaw-gurusharan now has Workflow Status Triage/Architecture/Ready/Worker Running/Review/Blocked/Done plus runtime text fields, and a live smoke check created issue #47 with a blocked milestone comment and Project item PVTI_lAHOD2hLn84BRG0Yzgm6kj0 showing worker/request/run state. Remaining note: explicit prompt references like issue #46 are now reused by code and covered by tests, but the first smoke run had already created #47 before that reuse fix landed."
+        },
+        {
+          "ts": "2026-03-08T07:55:35.447567+00:00",
+          "author": "codex",
+          "text": "Post-implementation runtime restart complete via scripts/jarvis-recover.sh; follow-up preflight passed after the expected short settle window. launchd service is now running pid 84878 with runtime owner row restored, so the new delivery-sync code path is live for future requests."
+        }
+      ]
+    },
+    {
+      "id": "incident-20260308T053300Z",
+      "title": "Stale UAT andy_requests polluted main-lane Andy status",
+      "status": "open",
+      "severity": "medium",
+      "created_at": "2026-03-08T05:33:00.810542+00:00",
+      "updated_at": "2026-03-08T05:33:00.813550+00:00",
+      "summary": {
+        "symptom": "Main lane reported Andy-developer as queued/stalled because stale test-created worker_review_requested rows were treated as live work.",
+        "suspected_cause": "Shared-DB E2E scripts left non-terminal uat-* andy_requests behind, and status logic surfaced stale worker_review_requested rows as curre...",
+        "impact": "Main-lane control-plane status overstated backlog and falsely implied Andy-developer was hung/queued.",
+        "next_action": "Await user confirmation, then resolve after live main-lane status verification remains stable."
+      },
+      "evidence": {
+        "bundle_count": 0
+      },
+      "context": {
+        "lane": "main",
+        "chat_jid": "120363425034645731@g.us"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-08T05:33:00.810542+00:00",
+          "author": "user",
+          "text": "reported: Main lane reported Andy-developer as queued/stalled because stale test-created worker_review_requested rows were treated as live work."
+        },
+        {
+          "ts": "2026-03-08T05:33:00.813544+00:00",
+          "author": "codex",
+          "text": "Implemented two-part fix on 2026-03-08: scripts/test-andy-full-user-journey-e2e.ts now cancels its temporary andy_requests on exit; status logic now excludes stale worker_review_requested rows from live active work and reports them as stale backlog instead of queued/stalled. Backed up store/messages.db to data/diagnostics/db-backups/messages-pre-uat-cleanup-20260308T110200.db and closed 28 stale uat-* review requests. Verification: npm test -- --run src/extensions/jarvis/frontdesk-service.test.ts src/extensions/jarvis/lane-control-service.test.ts PASS; npm run build PASS; main-lane status E2E PASS after restart; current control_plane_status.json shows availability=idle and active_requests=[]; bash scripts/jarvis-preflight.sh PASS after settle."
+        }
+      ]
+    },
     {
       "id": "incident-20260307T174930Z",
       "title": "Worker review_requested backlog lacked deterministic Andy review ownership",

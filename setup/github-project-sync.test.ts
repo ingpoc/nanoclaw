@@ -4,11 +4,38 @@ import {
   deriveIssueStatus,
   derivePullRequestStatus,
   extractIssueNumbers,
+  extractPullRequestLinkedIssueNumbers,
 } from '../scripts/workflow/github-project-sync.js';
 
 describe('extractIssueNumbers', () => {
   it('deduplicates issue references from PR bodies', () => {
     expect(extractIssueNumbers('Fixes #12\nRelated to #12 and #19')).toEqual([12, 19]);
+  });
+
+  it('uses the Linked Work Item section as the authoritative PR sync source', () => {
+    const body = `## Linked Work Item
+
+- Fixes #12
+
+## Summary
+
+References PR #48 and issue #19 for background only.
+`;
+
+    expect(extractPullRequestLinkedIssueNumbers(body)).toEqual([12]);
+  });
+
+  it('treats No issue: maintenance as a PR sync no-op', () => {
+    const body = `## Linked Work Item
+
+- No issue: maintenance
+
+## Summary
+
+References PR #48 for context.
+`;
+
+    expect(extractPullRequestLinkedIssueNumbers(body)).toEqual([]);
   });
 });
 

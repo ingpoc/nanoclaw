@@ -47,6 +47,16 @@ body:
       placeholder: What would we implement, replace, or pilot?
     validations:
       required: true
+  - type: dropdown
+    id: board_target
+    attributes:
+      label: Board Target
+      description: Choose the execution board if this discussion is promoted.
+      options:
+        - NanoClaw Platform
+        - Andy/Jarvis Delivery
+    validations:
+      required: true
   - type: textarea
     id: evidence_links
     attributes:
@@ -67,7 +77,7 @@ body:
     id: decision_contract
     attributes:
       label: Decision Contract
-      description: Claude and Codex must both comment with one of `accept`, `pilot`, `defer`, or `reject`. Promotion to an Issue requires unanimous `accept` or `pilot`, unless a human explicitly overrides.
-      placeholder: What exact decision should come out of this discussion?
+      description: Claude and Codex must both comment with an explicit agent label (`Agent Label: Claude Code` or `Agent Label: Codex`) plus one of `accept`, `pilot`, `defer`, or `reject`. Unanimous `accept` or `pilot` means dedupe against any existing promoted Issues, then create or reuse the execution Issue, add it to the selected board, and leave a promotion summary comment in the Discussion, unless a human explicitly overrides.
+      placeholder: Require labeled Claude/Codex decision comments, dedupe promotions, then move the surviving accept/pilot items to the chosen board with a summary comment.
     validations:
       required: true

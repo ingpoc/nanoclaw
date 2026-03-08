@@ -69,6 +69,7 @@ Baseline Project rule:
 1. Use Issue cards only.
 2. Do not add PRs as first-class Project cards.
 3. Use the built-in `Linked pull requests` field to expose PR progress from the Issue card.
+4. If the repository needs more than one board, split them by work domain, not by duplicating the same execution lane across boards.
 
 ## Capability Model
 
@@ -102,13 +103,18 @@ Baseline Project rule:
    - Claude/Codex collaboration patterns
    - SDK/tooling opportunities
 2. Promote a Discussion to an Issue only when there is a concrete next action with acceptance criteria.
-3. Create Issue using an issue form (problem, scope, acceptance, risks).
-4. Add labels: `lane:*`, `priority:*`, `risk:*`, optional `agent:*`.
-5. If large, create sub-issues and link dependencies (`blocked-by`).
+3. If a `SDK / Tooling Opportunities` Discussion reaches unanimous `accept` or `pilot` from Claude and Codex, check for an existing open promoted Issue before creating another one.
+4. Choose the board by domain:
+   - `NanoClaw Platform` for platform/runtime/governance work
+   - `Andy/Jarvis Delivery` for user-project execution work
+5. Move the surviving execution Issue into the chosen board immediately and leave a promotion summary comment in the Discussion with the final Issue numbers and board target.
+6. Create Issue using an issue form (problem, scope, acceptance, risks).
+7. Add labels: `lane:*`, `priority:*`, `risk:*`, optional `agent:*`.
+8. If large, create sub-issues and link dependencies (`blocked-by`).
 
 ### Phase 2: Board and Schema Setup
 
-1. Add each Issue to Project v2.
+1. Add each Issue to the correct Project v2 board.
 2. Set required fields:
    - `Status`: Backlog/Ready/In Progress/Review/Blocked/Done
    - `Agent`
@@ -119,6 +125,16 @@ Baseline Project rule:
    - `Source`
    - `Review Lane`
 3. Keep only one active owner per Issue.
+
+Recommended two-board shape when both domains exist:
+
+1. `NanoClaw Platform`
+   - platform/runtime/governance items only
+2. `Andy/Jarvis Delivery`
+   - user-project delivery items only
+3. cross-board dependency rule:
+   - link blockers across boards
+   - never duplicate the same execution Issue on both boards
 
 ### Phase 3: Repo Workflow Setup
 
@@ -188,7 +204,7 @@ Keep operator load low with this split:
 
 Copy this workflow by applying:
 
-1. New Project board with standard fields/statuses.
+1. One or two Project boards with standard fields/statuses, depending on whether platform work and delivery work need separate execution surfaces.
 2. Shared label taxonomy (`lane:*`, `priority:*`, `risk:*`, `agent:*`).
 3. Ruleset baseline with minimal required checks.
 4. Security baseline workflows (dependency review, code scanning, secret scanning, Dependabot).
@@ -220,9 +236,10 @@ bash scripts/workflow/apply-branch-protection-baseline.sh <owner/repo> [branch]
 Project automation prerequisite:
 
 1. Add repository secret `ADD_TO_PROJECT_PAT` with `project` + repository scopes.
-2. Set `PROJECT_OWNER`, `PROJECT_NUMBER`, and `PROJECT_URL` in `.github/workflows/project-intake-sync.yml` and `.github/workflows/project-status-sync.yml`.
-3. Configure the Project `Status` field with `Backlog`, `Ready`, `In Progress`, `Review`, `Blocked`, and `Done`.
-4. Create the `Source` and `Review Lane` single-select fields on the Project board.
+2. Set the Project board owner to `openclaw-gurusharan` in `.github/workflows/project-intake-sync.yml` and `.github/workflows/project-status-sync.yml`, while keeping repo Issues/Discussions on `ingpoc/nanoclaw`.
+3. For `Andy/Jarvis Delivery`, configure `Workflow Status` with `Triage`, `Architecture`, `Ready`, `Worker Running`, `Review`, `Blocked`, and `Done`.
+4. Keep the default GitHub `Status` field as fallback only; runtime sync should prefer `Workflow Status`.
+5. Create the `Source`, `Review Lane`, `Worker`, `Agent`, `Priority`, and `Risk` single-select fields plus the runtime text fields `Request State`, `Worker Status`, `Request ID`, `Run ID`, `Branch`, `PR URL`, `Last Evidence`, and `Next Action`.
 
 ## Suggested Metrics
 

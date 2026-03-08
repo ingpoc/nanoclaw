@@ -27,6 +27,16 @@ body:
         - Documentation
     validations:
       required: true
+  - type: dropdown
+    id: execution_board
+    attributes:
+      label: Execution Board
+      description: Choose the one board that should track this work item.
+      options:
+        - NanoClaw Platform
+        - Andy/Jarvis Delivery
+    validations:
+      required: true
   - type: textarea
     id: scope
     attributes:

@@ -1,6 +1,6 @@
 # NanoClaw Feature Catalog
 
-Generated: 2026-03-07T21:13:31.610Z
+Generated: 2026-03-08T07:19:02.381Z
 Project: nanoclaw
 
 ## Features
@@ -569,6 +569,9 @@ Project: nanoclaw
   - none
 - Shared Files:
   - docs/workflow/runtime/nanoclaw-jarvis-debug-loop.md
+- Validation Warnings:
+  - missing file: .claude/skills/get-qodo-rules/SKILL.md
+  - missing file: .claude/skills/qodo-pr-resolver/SKILL.md
 - Suggested Verify:
   - npm run typecheck
 

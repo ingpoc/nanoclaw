@@ -52,7 +52,7 @@ Use this before agents create, update, promote, or close GitHub Discussions, Iss
 - `bash scripts/check-workflow-contracts.sh`
 - `bash scripts/check-claude-codex-mirror.sh`
 - `bash scripts/check-tooling-governance.sh`
-- `gh project field-list 1 --owner ingpoc --format json`
+- `gh project field-list 1 --owner openclaw-gurusharan --format json`
 - `gh api graphql -f query='query { repository(owner: "ingpoc", name: "nanoclaw") { discussionCategories(first: 10) { nodes { name slug } } } }'`
 
 ## Related Docs
@@ -103,6 +103,24 @@ Use GitHub with this exact separation of purpose:
 2. Issues = committed work
 3. Project = execution state
 
+Execution boards in this repository are split by domain, not by agent identity:
+
+1. `NanoClaw Platform` board:
+   - platform/runtime features
+   - SDK/tooling adoption
+   - dispatch/review contracts
+   - worker/runtime reliability
+   - governance/control-plane changes
+2. `Andy/Jarvis Delivery` board:
+   - user-provided project work
+   - delivery tasks, experiments, and follow-ups for the active project
+   - implementation items executed by Andy/Jarvis lanes for that project
+
+Board invariant:
+
+1. one execution item lives on one board only
+2. if delivery work depends on platform work, create a separate platform Issue and cross-link it instead of duplicating state across boards
+
 Current live Discussion taxonomy:
 
 1. `Workflow / Operating Model`
@@ -124,6 +142,9 @@ Project rules:
 2. Use `Linked pull requests` to expose PR state from the Issue card
 3. Keep the Project as the execution system of record
 4. Keep design debate, tradeoff analysis, and research notes out of Project field updates
+5. pick the board by domain:
+   - `NanoClaw Platform` for platform/runtime/governance items
+   - `Andy/Jarvis Delivery` for user-project execution items
 
 ## Discussion Contract
 
@@ -138,11 +159,13 @@ Expected outputs from a Discussion:
 
 For `SDK / Tooling Opportunities`, use this stricter decision contract:
 
-1. one comment from Claude with `accept`, `pilot`, `defer`, or `reject`
-2. one comment from Codex with `accept`, `pilot`, `defer`, or `reject`
-3. promote to an Issue only if both agents choose `accept` or `pilot`
-4. if agents disagree, keep the work in Discussion until a human resolves the tie
-5. if promoted, run one pilot at a time rather than bundling multiple tooling changes
+1. one comment from Claude with an explicit `Agent Label: Claude Code` line plus `accept`, `pilot`, `defer`, or `reject`
+2. one comment from Codex with an explicit `Agent Label: Codex` line plus `accept`, `pilot`, `defer`, or `reject`
+3. promote to an Issue and add that Issue to the correct board only if both agents choose `accept` or `pilot`
+4. before promotion, check whether the Discussion already has an open promoted execution Issue; if it does, update that Issue/Project item instead of creating a duplicate
+5. after promotion, leave one summary comment in the Discussion listing the execution Issue numbers and stating which board they were added to
+6. if agents disagree, keep the work in Discussion until a human resolves the tie
+7. if promoted, run one pilot at a time rather than bundling multiple tooling changes
 
 Do not use a Discussion to:
 
@@ -163,16 +186,22 @@ Every execution Issue should include:
 Promotion from Discussion to Issue:
 
 1. create the Issue when there is a concrete next action
-2. copy only the essential context from the Discussion
-3. set `Source=discussion`
-4. assign one owner in `Agent`
-5. add the Issue to the Project
+2. first check whether the Discussion already has an open execution Issue for the same candidate; if yes, reuse it instead of creating a duplicate
+3. copy only the essential context from the Discussion
+4. set `Source=discussion`
+5. choose the execution board by domain:
+   - `NanoClaw Platform` for platform/runtime/tooling/governance work
+   - `Andy/Jarvis Delivery` for user-project execution work
+6. assign one owner in `Agent`
+7. add the Issue to the chosen board immediately so the unanimous decision becomes visible in execution tracking
+8. leave a promotion summary comment in the Discussion with the surviving Issue numbers and board target
 
 For changelog- or research-driven tooling work:
 
 1. link the source Discussion in the Issue body
 2. preserve the unanimous agent decision in the Issue summary
-3. scope the first Issue as a pilot when the change affects workflow or lane behavior
+3. default the board target to `NanoClaw Platform` unless the result is explicitly scoped to a user-project delivery workflow
+4. scope the first Issue as a pilot when the change affects workflow or lane behavior
 
 Do not open an Issue for:
 
@@ -209,22 +238,39 @@ Recommended default:
 
 The Project answers only one question: what is the current execution state of committed work?
 
+Board selection rules:
+
+1. choose `NanoClaw Platform` when the work changes NanoClaw itself, its runtime, its worker contracts, or GitHub governance
+2. choose `Andy/Jarvis Delivery` when the work delivers user-requested project outcomes
+3. if one domain blocks the other, track each domain on its own board and cross-link the Issues
+4. do not mirror one execution item across both boards
+
+Delivery-board execution tracking:
+
+1. `Andy/Jarvis Delivery` may use a `Worker` field to show `none`, `andy-developer`, `jarvis-worker-1`, or `jarvis-worker-2`
+2. live delivery state is host-managed from `andy_requests` + `worker_runs`, not from worker-authored issue edits
+3. workers contribute execution evidence only; they do not manually manage board workflow state
+4. issue/PR lifecycle still initializes cards, but runtime transitions own delivery execution status after intake
+
 Execution status flow:
 
-1. `Backlog`: accepted but not active
-2. `Ready`: scoped and unblocked
-3. `In Progress`: one owner is executing
-4. `Review`: PR open or review lane active
-5. `Blocked`: waiting on dependency or decision
-6. `Done`: Issue closed and acceptance met
+1. `Triage`: request accepted and awaiting Andy scoping
+2. `Architecture`: Andy is actively planning or coordinating
+3. `Ready`: worker dispatch is queued and unblocked
+4. `Worker Running`: active Jarvis execution
+5. `Review`: worker completion returned to Andy
+6. `Blocked`: waiting on dependency or decision
+7. `Done`: Issue closed and acceptance met
 
 Default state transitions:
 
-1. new committed Issue -> `Backlog`
-2. claimed scoped work -> `In Progress`
-3. linked active PR -> `Review`
-4. blocked work -> `Blocked`
-5. merged/closed complete work -> `Done`
+1. new delivery Issue or auto-created Andy intake -> `Triage`
+2. Andy planning/scoping -> `Architecture`
+3. accepted dispatch queued -> `Ready`
+4. active worker run -> `Worker Running`
+5. review handoff to Andy or active PR -> `Review`
+6. blocked/cancelled/failed request -> `Blocked`
+7. merged/closed complete work -> `Done`
 
 Do not use the Project to store:
 

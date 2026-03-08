@@ -55,7 +55,7 @@ Record findings in `docs/research/` with:
 3. Preconditions.
 4. Failure modes.
 
-Before implementation discussion, open or update a GitHub Discussion in `SDK / Tooling Opportunities` and require both Claude and Codex to leave a decision comment (`accept`, `pilot`, `defer`, `reject`).
+Before implementation discussion, open or update a GitHub Discussion in `SDK / Tooling Opportunities` and require both Claude and Codex to leave a decision comment (`accept`, `pilot`, `defer`, `reject`) with explicit agent labels. If both choose `accept` or `pilot`, dedupe against existing promoted Issues first, then move the surviving execution Issue onto the correct board and leave a promotion summary comment in the Discussion. Default changelog/tooling adoption work to the `NanoClaw Platform` board unless it is explicitly scoped to a user-project delivery workflow.
 
 ## Phase 2: Translation to NanoClaw Context
 

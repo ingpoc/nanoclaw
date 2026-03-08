@@ -45,6 +45,8 @@ Use instead:
 - This repository ships two project workflows:
   - `.github/workflows/project-intake-sync.yml` for Issue intake + default field initialization
   - `.github/workflows/project-status-sync.yml` for status sync from Issue/PR lifecycle
+- Delivery execution state on `Andy/Jarvis Delivery` is additionally host-managed from `andy_requests` + `worker_runs` through `src/extensions/jarvis/github-delivery-sync.ts`.
+- Repo Issues/Discussions stay on `ingpoc/nanoclaw`; Project boards live on `openclaw-gurusharan`.
 - Discussion category taxonomy is only partially repo-configurable. The repository ships templates for the default GitHub categories (`General`, `Ideas`, `Q&A`), and any rename to the preferred collaboration taxonomy is a one-time GitHub UI admin action.
 - The operating rules for how agents use those surfaces are intentionally not repeated here; they belong in `docs/workflow/github/github-agent-collaboration-loop.md`.
 

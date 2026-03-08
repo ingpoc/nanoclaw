@@ -2,17 +2,46 @@
 
 import fs from 'node:fs';
 
-const PROJECT_OWNER = process.env.PROJECT_OWNER || 'ingpoc';
-const PROJECT_NUMBER = Number.parseInt(process.env.PROJECT_NUMBER || '1', 10);
-const PROJECT_URL =
-  process.env.PROJECT_URL || `https://github.com/users/${PROJECT_OWNER}/projects/${PROJECT_NUMBER}`;
+// Repo/issues/discussions live on ingpoc/nanoclaw, but execution boards for
+// Andy/Jarvis are owned by openclaw-gurusharan.
+const PROJECT_OWNER = process.env.PROJECT_OWNER || 'openclaw-gurusharan';
+const LEGACY_PROJECT_NUMBER = Number.parseInt(process.env.PROJECT_NUMBER || '1', 10);
+const LEGACY_PROJECT_URL =
+  process.env.PROJECT_URL || `https://github.com/users/${PROJECT_OWNER}/projects/${LEGACY_PROJECT_NUMBER}`;
+
+const BOARD_CONFIGS = [
+  {
+    key: 'platform',
+    name: process.env.PLATFORM_PROJECT_NAME || 'NanoClaw Platform',
+    number: Number.parseInt(process.env.PLATFORM_PROJECT_NUMBER || String(LEGACY_PROJECT_NUMBER), 10),
+    url:
+      process.env.PLATFORM_PROJECT_URL ||
+      process.env.PROJECT_URL ||
+      `https://github.com/users/${PROJECT_OWNER}/projects/${LEGACY_PROJECT_NUMBER}`,
+  },
+  ...(process.env.DELIVERY_PROJECT_NUMBER
+    ? [
+        {
+          key: 'delivery',
+          name: process.env.DELIVERY_PROJECT_NAME || 'Andy/Jarvis Delivery',
+          number: Number.parseInt(process.env.DELIVERY_PROJECT_NUMBER, 10),
+          url:
+            process.env.DELIVERY_PROJECT_URL ||
+            `https://github.com/users/${PROJECT_OWNER}/projects/${process.env.DELIVERY_PROJECT_NUMBER}`,
+        },
+      ]
+    : []),
+].filter((config, index, all) => Number.isFinite(config.number) && all.findIndex((entry) => entry.number === config.number) === index);
 
 const LABEL_FIELD_PREFIXES = {
   Agent: 'agent:',
+  Worker: 'agent:',
   Lane: 'lane:',
   Priority: 'priority:',
   Risk: 'risk:',
 };
+
+const STATUS_FIELD_NAMES = ['Workflow Status', 'Status'];
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -71,6 +100,41 @@ function labelValueForPrefix(labels, prefix) {
   return match ? match.slice(prefix.length) : null;
 }
 
+function normalizeBoardName(value) {
+  return value?.trim().toLowerCase().replace(/\s+/g, ' ') || null;
+}
+
+function extractFieldValue(text, label) {
+  const patterns = [
+    new RegExp(`^###\\s+${label}\\s*\\n+([^\\n]+)`, 'im'),
+    new RegExp(`^${label}:\\s*([^\\n]+)`, 'im'),
+  ];
+
+  for (const pattern of patterns) {
+    const match = text?.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+  return null;
+}
+
+export function extractExecutionBoard(body) {
+  return (
+    extractFieldValue(body, 'Execution Board') ||
+    extractFieldValue(body, 'Board Target') ||
+    extractFieldValue(body, 'Execution Surface')
+  );
+}
+
+export function resolveBoardKey(boardValue) {
+  const normalized = normalizeBoardName(boardValue);
+  if (!normalized) return 'platform';
+  if (normalized.includes('andy/jarvis delivery')) return 'delivery';
+  if (normalized.includes('delivery')) return 'delivery';
+  if (normalized.includes('nanoclaw platform')) return 'platform';
+  if (normalized.includes('platform')) return 'platform';
+  return 'platform';
+}
+
 export function extractIssueNumbers(text) {
   const matches = text?.match(/\B#(\d+)\b/g) || [];
   return Array.from(new Set(matches.map((match) => Number.parseInt(match.slice(1), 10)))).sort(
@@ -78,7 +142,17 @@ export function extractIssueNumbers(text) {
   );
 }
 
-export function deriveIssueStatus({ action, currentStatus, issueState, labels, assigneeCount }) {
+export function deriveIssueStatus({ action, currentStatus, issueState, labels, assigneeCount, boardKey }) {
+  if (boardKey === 'delivery') {
+    if (issueState === 'CLOSED') return 'Done';
+    if (labels.includes('status:blocked')) return 'Blocked';
+    if (action === 'opened' || action === 'reopened') return 'Triage';
+    if (action === 'unlabeled' && currentStatus === 'Blocked') {
+      return 'Triage';
+    }
+    return currentStatus || 'Triage';
+  }
+
   if (issueState === 'CLOSED') return 'Done';
   if (labels.includes('status:blocked')) return 'Blocked';
   if (action === 'opened' || action === 'reopened') return 'Backlog';
@@ -99,7 +173,15 @@ export function derivePullRequestStatus({
   isDraft,
   merged,
   currentStatus,
+  boardKey,
 }) {
+  if (boardKey === 'delivery') {
+    if (issueState === 'CLOSED' || merged) return 'Done';
+    if (labels.includes('status:blocked')) return 'Blocked';
+    if (pullRequestState === 'OPEN' && !isDraft) return 'Review';
+    return currentStatus || 'Triage';
+  }
+
   if (issueState === 'CLOSED' || merged) return 'Done';
   if (labels.includes('status:blocked')) return 'Blocked';
   if (pullRequestState === 'OPEN' && !isDraft) return 'Review';
@@ -108,48 +190,58 @@ export function derivePullRequestStatus({
   return currentStatus || 'Backlog';
 }
 
-async function getProject() {
-  const data = await githubGraphql(
-    `
-      query($owner: String!, $number: Int!) {
-        user(login: $owner) {
-          projectV2(number: $number) {
-            id
-            title
-            fields(first: 50) {
-              nodes {
-                __typename
-                ... on ProjectV2SingleSelectField {
-                  id
-                  name
-                  options {
+async function getProjects() {
+  const projects = [];
+  for (const config of BOARD_CONFIGS) {
+    const data = await githubGraphql(
+      `
+        query($owner: String!, $number: Int!) {
+          user(login: $owner) {
+            projectV2(number: $number) {
+              id
+              title
+              fields(first: 50) {
+                nodes {
+                  __typename
+                  ... on ProjectV2SingleSelectField {
                     id
                     name
+                    options {
+                      id
+                      name
+                    }
                   }
                 }
               }
             }
           }
         }
-      }
-    `,
-    { owner: PROJECT_OWNER, number: PROJECT_NUMBER },
-  );
+      `,
+      { owner: PROJECT_OWNER, number: config.number },
+    );
 
-  const project = data.user?.projectV2;
-  if (!project) {
-    throw new Error(`Project not found: ${PROJECT_URL}`);
-  }
+    const project = data.user?.projectV2;
+    if (!project) {
+      throw new Error(`Project not found: ${config.url}`);
+    }
 
-  const fields = new Map();
-  for (const field of project.fields.nodes || []) {
-    if (!field?.name) continue;
-    fields.set(field.name, field);
+    const fields = new Map();
+    for (const field of project.fields.nodes || []) {
+      if (!field?.name) continue;
+      fields.set(field.name, field);
+    }
+
+    projects.push({
+      ...config,
+      id: project.id,
+      title: project.title,
+      fields,
+    });
   }
-  return { id: project.id, title: project.title, fields };
+  return projects;
 }
 
-async function getIssue(owner, repo, number, projectId) {
+async function getIssue(owner, repo, number, projectIds) {
   const data = await githubGraphql(
     `
       query($owner: String!, $repo: String!, $number: Int!) {
@@ -158,6 +250,7 @@ async function getIssue(owner, repo, number, projectId) {
             id
             number
             state
+            body
             labels(first: 50) {
               nodes {
                 name
@@ -198,12 +291,33 @@ async function getIssue(owner, repo, number, projectId) {
   const issue = data.repository?.issue;
   if (!issue) return null;
 
-  const projectItem = (issue.projectItems.nodes || []).find((item) => item.project?.id === projectId) || null;
+  const projectItems = (issue.projectItems.nodes || [])
+    .filter((item) => projectIds.has(item.project?.id))
+    .map((item) => ({
+      ...item,
+      fieldValues: itemFieldValueByName(item),
+    }));
+
   return {
     ...issue,
-    projectItem,
-    fieldValues: itemFieldValueByName(projectItem),
+    projectItems,
   };
+}
+
+function resolveProjectForIssue(projects, issue) {
+  const existingItem = issue.projectItems[0];
+  if (existingItem) {
+    const existingProject = projects.find((project) => project.id === existingItem.project?.id);
+    if (existingProject) return existingProject;
+  }
+
+  const boardKey = resolveBoardKey(extractExecutionBoard(issue.body));
+  const matchedProject = projects.find((project) => project.key === boardKey);
+  return matchedProject || projects[0];
+}
+
+function projectItemForProject(issue, projectId) {
+  return issue.projectItems.find((item) => item.project?.id === projectId) || null;
 }
 
 async function addIssueToProject(projectId, issueId) {
@@ -223,9 +337,16 @@ async function addIssueToProject(projectId, issueId) {
   return data.addProjectV2ItemById.item.id;
 }
 
-async function ensureProjectItem(projectId, issue) {
-  if (issue.projectItem?.id) return issue.projectItem.id;
-  return addIssueToProject(projectId, issue.id);
+async function ensureProjectItem(project, issue) {
+  const existing = projectItemForProject(issue, project.id);
+  if (existing?.id) return existing.id;
+  const itemId = await addIssueToProject(project.id, issue.id);
+  issue.projectItems.push({
+    id: itemId,
+    project: { id: project.id },
+    fieldValues: new Map(),
+  });
+  return itemId;
 }
 
 function optionIdForField(fields, fieldName, optionName) {
@@ -233,6 +354,32 @@ function optionIdForField(fields, fieldName, optionName) {
   if (!field) return null;
   const option = (field.options || []).find((entry) => entry.name === optionName);
   return option?.id || null;
+}
+
+function getStatusFieldName(project) {
+  return STATUS_FIELD_NAMES.find((fieldName) => project.fields.has(fieldName)) || null;
+}
+
+function resolveStatusOption(project, fieldName, statusName) {
+  const direct = optionIdForField(project.fields, fieldName, statusName);
+  if (direct) return direct;
+
+  if (fieldName === 'Status') {
+    const fallbackMap = {
+      Backlog: 'Todo',
+      Ready: 'Todo',
+      Blocked: 'Todo',
+      Review: 'In Progress',
+      'In Progress': 'In Progress',
+      Done: 'Done',
+    };
+    const fallback = fallbackMap[statusName];
+    if (fallback) {
+      return optionIdForField(project.fields, fieldName, fallback);
+    }
+  }
+
+  return null;
 }
 
 async function setSingleSelectField(projectId, itemId, fieldId, optionId) {
@@ -259,6 +406,9 @@ async function setSingleSelectField(projectId, itemId, fieldId, optionId) {
 
 async function syncLabelBackedFields(project, issue, itemId) {
   const labels = labelNames(issue.labels);
+  const projectItem = projectItemForProject(issue, project.id);
+  const currentFieldValues = projectItem?.fieldValues || new Map();
+
   for (const [fieldName, prefix] of Object.entries(LABEL_FIELD_PREFIXES)) {
     const labelValue = labelValueForPrefix(labels, prefix);
     if (!labelValue) continue;
@@ -267,7 +417,7 @@ async function syncLabelBackedFields(project, issue, itemId) {
     const optionId = optionIdForField(project.fields, fieldName, labelValue);
     if (!field || !optionId) continue;
 
-    const current = issue.fieldValues.get(fieldName)?.optionId;
+    const current = currentFieldValues.get(fieldName)?.optionId;
     if (current === optionId) continue;
     await setSingleSelectField(project.id, itemId, field.id, optionId);
   }
@@ -275,37 +425,54 @@ async function syncLabelBackedFields(project, issue, itemId) {
 
 async function ensureDefaultFieldValue(project, issue, itemId, fieldName, optionName) {
   const field = project.fields.get(fieldName);
-  if (!field || issue.fieldValues.get(fieldName)?.optionId) return;
+  const projectItem = projectItemForProject(issue, project.id);
+  if (!field || projectItem?.fieldValues?.get(fieldName)?.optionId) return;
   const optionId = optionIdForField(project.fields, fieldName, optionName);
   if (!optionId) return;
   await setSingleSelectField(project.id, itemId, field.id, optionId);
 }
 
 async function setStatus(project, issue, itemId, statusName) {
-  const field = project.fields.get('Status');
-  const optionId = optionIdForField(project.fields, 'Status', statusName);
-  if (!field || !optionId) {
-    throw new Error(`Project is missing Status field option "${statusName}"`);
+  const fieldName = getStatusFieldName(project);
+  if (!fieldName) {
+    throw new Error(`Project ${project.title} is missing a status field`);
   }
 
-  if (issue.fieldValues.get('Status')?.optionId === optionId) return;
+  const field = project.fields.get(fieldName);
+  const optionId = resolveStatusOption(project, fieldName, statusName);
+  if (!field || !optionId) {
+    throw new Error(`Project ${project.title} is missing ${fieldName} field option "${statusName}"`);
+  }
+
+  const projectItem = projectItemForProject(issue, project.id);
+  if (projectItem?.fieldValues?.get(fieldName)?.optionId === optionId) return;
   await setSingleSelectField(project.id, itemId, field.id, optionId);
 }
 
-async function syncIssue(project, owner, repo, issueNumber, action) {
-  const issue = await getIssue(owner, repo, issueNumber, project.id);
+async function syncIssue(projects, owner, repo, issueNumber, action) {
+  const issue = await getIssue(owner, repo, issueNumber, new Set(projects.map((project) => project.id)));
   if (!issue) {
     console.log(`No issue found for #${issueNumber}; skipping.`);
     return;
   }
 
-  const itemId = await ensureProjectItem(project.id, issue);
+  const project = resolveProjectForIssue(projects, issue);
+  const itemId = await ensureProjectItem(project, issue);
   const labels = labelNames(issue.labels);
-  const currentStatus = issue.fieldValues.get('Status')?.value || null;
+  const boardKey = project.key;
+  const statusFieldName = getStatusFieldName(project);
+  const currentStatus =
+    (statusFieldName
+      ? projectItemForProject(issue, project.id)?.fieldValues?.get(statusFieldName)?.value
+      : null) || null;
 
   await syncLabelBackedFields(project, issue, itemId);
   await ensureDefaultFieldValue(project, issue, itemId, 'Source', 'user');
   await ensureDefaultFieldValue(project, issue, itemId, 'Review Lane', 'none');
+  await ensureDefaultFieldValue(project, issue, itemId, 'Worker', 'none');
+  if (boardKey === 'delivery') {
+    await ensureDefaultFieldValue(project, issue, itemId, 'Agent', 'andy-developer');
+  }
 
   const nextStatus = deriveIssueStatus({
     action,
@@ -313,13 +480,14 @@ async function syncIssue(project, owner, repo, issueNumber, action) {
     issueState: issue.state,
     labels,
     assigneeCount: issue.assignees.totalCount,
+    boardKey,
   });
   await setStatus(project, issue, itemId, nextStatus);
 
-  console.log(`Synced issue #${issue.number} -> ${nextStatus}`);
+  console.log(`Synced issue #${issue.number} on ${project.title} -> ${nextStatus}`);
 }
 
-async function syncPullRequest(project, payload) {
+async function syncPullRequest(projects, payload) {
   const owner = payload.repository.owner.login;
   const repo = payload.repository.name;
   const body = payload.pull_request.body || '';
@@ -330,17 +498,29 @@ async function syncPullRequest(project, payload) {
     return;
   }
 
+  const projectIds = new Set(projects.map((project) => project.id));
+
   for (const issueNumber of issueNumbers) {
-    const issue = await getIssue(owner, repo, issueNumber, project.id);
+    const issue = await getIssue(owner, repo, issueNumber, projectIds);
     if (!issue) continue;
 
-    const itemId = await ensureProjectItem(project.id, issue);
+    const project = resolveProjectForIssue(projects, issue);
+    const itemId = await ensureProjectItem(project, issue);
     const labels = labelNames(issue.labels);
-    const currentStatus = issue.fieldValues.get('Status')?.value || null;
+    const boardKey = project.key;
+    const statusFieldName = getStatusFieldName(project);
+    const currentStatus =
+      (statusFieldName
+        ? projectItemForProject(issue, project.id)?.fieldValues?.get(statusFieldName)?.value
+        : null) || null;
 
     await syncLabelBackedFields(project, issue, itemId);
     await ensureDefaultFieldValue(project, issue, itemId, 'Source', 'user');
     await ensureDefaultFieldValue(project, issue, itemId, 'Review Lane', 'none');
+    await ensureDefaultFieldValue(project, issue, itemId, 'Worker', 'none');
+    if (boardKey === 'delivery') {
+      await ensureDefaultFieldValue(project, issue, itemId, 'Agent', 'andy-developer');
+    }
 
     const nextStatus = derivePullRequestStatus({
       issueState: issue.state,
@@ -350,9 +530,10 @@ async function syncPullRequest(project, payload) {
       isDraft: Boolean(payload.pull_request.draft),
       merged: Boolean(payload.pull_request.merged_at),
       currentStatus,
+      boardKey,
     });
     await setStatus(project, issue, itemId, nextStatus);
-    console.log(`Synced linked issue #${issue.number} from PR #${payload.pull_request.number} -> ${nextStatus}`);
+    console.log(`Synced linked issue #${issue.number} on ${project.title} from PR #${payload.pull_request.number} -> ${nextStatus}`);
   }
 }
 
@@ -363,7 +544,7 @@ async function main() {
   }
 
   const payload = loadEventPayload();
-  const project = await getProject();
+  const projects = await getProjects();
 
   if (mode === 'intake') {
     if (!payload.issue) {
@@ -372,19 +553,19 @@ async function main() {
     }
     const owner = payload.repository.owner.login;
     const repo = payload.repository.name;
-    await syncIssue(project, owner, repo, payload.issue.number, payload.action);
+    await syncIssue(projects, owner, repo, payload.issue.number, payload.action);
     return;
   }
 
   if (payload.issue) {
     const owner = payload.repository.owner.login;
     const repo = payload.repository.name;
-    await syncIssue(project, owner, repo, payload.issue.number, payload.action);
+    await syncIssue(projects, owner, repo, payload.issue.number, payload.action);
     return;
   }
 
   if (payload.pull_request) {
-    await syncPullRequest(project, payload);
+    await syncPullRequest(projects, payload);
     return;
   }
 

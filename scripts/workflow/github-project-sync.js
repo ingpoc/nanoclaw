@@ -78,6 +78,30 @@ export function extractIssueNumbers(text) {
   );
 }
 
+function extractMarkdownSection(text, heading) {
+  if (!text) return null;
+  const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = text.match(
+    new RegExp(`^##\\s+${escapedHeading}\\s*$([\\s\\S]*?)(?=^##\\s+|\\Z)`, 'im'),
+  );
+  return match?.[1]?.trim() || null;
+}
+
+export function extractPullRequestLinkedIssueNumbers(body) {
+  const linkedWorkItemSection = extractMarkdownSection(body, 'Linked Work Item');
+  const maintenanceFallback =
+    /\b(?:No issue|N\/A)\s*:\s*(maintenance|docs|governance|automation|admin)\b/i;
+
+  if (linkedWorkItemSection) {
+    if (maintenanceFallback.test(linkedWorkItemSection)) {
+      return [];
+    }
+    return extractIssueNumbers(linkedWorkItemSection);
+  }
+
+  return extractIssueNumbers(body);
+}
+
 export function deriveIssueStatus({ action, currentStatus, issueState, labels, assigneeCount }) {
   if (issueState === 'CLOSED') return 'Done';
   if (labels.includes('status:blocked')) return 'Blocked';
@@ -323,7 +347,7 @@ async function syncPullRequest(project, payload) {
   const owner = payload.repository.owner.login;
   const repo = payload.repository.name;
   const body = payload.pull_request.body || '';
-  const issueNumbers = extractIssueNumbers(body);
+  const issueNumbers = extractPullRequestLinkedIssueNumbers(body);
 
   if (issueNumbers.length === 0) {
     console.log(`PR #${payload.pull_request.number} has no linked issue references; skipping.`);

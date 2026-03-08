@@ -92,9 +92,9 @@ describe('canJarvisDispatchToTarget', () => {
       trigger: '',
       added_at: '2024-01-01T00:00:00.000Z',
     };
-    expect(
-      canJarvisDispatchToTarget('random-group', false, WORKER_GROUP),
-    ).toBe(false);
+    expect(canJarvisDispatchToTarget('random-group', false, WORKER_GROUP)).toBe(
+      false,
+    );
   });
 
   it('allows dispatching to same group (self)', () => {

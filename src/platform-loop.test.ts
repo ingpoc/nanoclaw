@@ -9,9 +9,9 @@ import {
 
 describe('platform-loop helpers', () => {
   it('builds stable branch names', () => {
-    expect(buildPlatformBranchName(42, 'Claude /loop adoption for platform')).toBe(
-      'claude-platform-42-claude-loop-adoption-for-platform',
-    );
+    expect(
+      buildPlatformBranchName(42, 'Claude /loop adoption for platform'),
+    ).toBe('claude-platform-42-claude-loop-adoption-for-platform');
   });
 
   it('builds request and run ids', () => {

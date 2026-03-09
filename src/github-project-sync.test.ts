@@ -10,9 +10,11 @@ import {
 
 describe('github-project-sync helpers', () => {
   it('extracts linked issue numbers', () => {
-    expect(extractIssueNumbers('Fixes #12 and follows up on #14. Duplicate #12 reference.')).toEqual(
-      [12, 14],
-    );
+    expect(
+      extractIssueNumbers(
+        'Fixes #12 and follows up on #14. Duplicate #12 reference.',
+      ),
+    ).toEqual([12, 14]);
   });
 
   it('extracts execution board from issue form body', () => {
@@ -21,7 +23,9 @@ describe('github-project-sync helpers', () => {
   });
 
   it('extracts board target from discussion-style body text', () => {
-    expect(extractExecutionBoard('Board Target: NanoClaw Platform')).toBe('NanoClaw Platform');
+    expect(extractExecutionBoard('Board Target: NanoClaw Platform')).toBe(
+      'NanoClaw Platform',
+    );
   });
 
   it('resolves board key for delivery issues', () => {

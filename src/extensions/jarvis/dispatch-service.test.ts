@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { _initTestDatabase, createAndyRequestIfAbsent, getAndyRequestById } from '../../db.js';
+import {
+  _initTestDatabase,
+  createAndyRequestIfAbsent,
+  getAndyRequestById,
+} from '../../db.js';
 import { recordBlockedDispatchAttempt } from './dispatch-service.js';
 
 describe('recordBlockedDispatchAttempt', () => {
@@ -33,7 +37,9 @@ describe('recordBlockedDispatchAttempt', () => {
 
     const request = getAndyRequestById('req-dispatch-block-explicit');
     expect(request?.state).toBe('failed');
-    expect(request?.last_status_text).toContain('Dispatch blocked before worker queue');
+    expect(request?.last_status_text).toContain(
+      'Dispatch blocked before worker queue',
+    );
   });
 
   it('falls back to run_id when a blocked payload drops request_id', () => {
@@ -60,6 +66,8 @@ describe('recordBlockedDispatchAttempt', () => {
 
     const request = getAndyRequestById('req-dispatch-block-fallback');
     expect(request?.state).toBe('failed');
-    expect(request?.last_status_text).toContain('Dispatch blocked before worker queue');
+    expect(request?.last_status_text).toContain(
+      'Dispatch blocked before worker queue',
+    );
   });
 });

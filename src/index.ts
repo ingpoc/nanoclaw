@@ -1868,10 +1868,19 @@ async function runAgent(
             // updateWorkerRunAttribution validates both fields and throws for
             // partial/malformed payloads, making the failure explicit rather
             // than silently dropped.
-            updateWorkerRunAttribution(workerRunId, output.agentId!, output.agentType!);
+            updateWorkerRunAttribution(
+              workerRunId,
+              output.agentId!,
+              output.agentType!,
+            );
           } catch (err) {
             logger.warn(
-              { runId: workerRunId, agentId: output.agentId, agentType: output.agentType, err },
+              {
+                runId: workerRunId,
+                agentId: output.agentId,
+                agentType: output.agentType,
+                err,
+              },
               'Failed to record agent attribution',
             );
           }

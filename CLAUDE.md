@@ -36,6 +36,7 @@ NanoClaw baseline is the default. Jarvis docs apply only when working on the `ja
 AT SESSION START → run bash scripts/workflow/session-start.sh --agent <claude|codex>
 AT SESSION START, session handoff, or when changing recall/sync/export behavior → read docs/workflow/runtime/session-recall.md
 BEFORE using GitHub collab sweep, changing sweep protocol, or updating agent-category affinity → read docs/workflow/github/github-collab-sweep.md
+WHEN session start is blocked by required GitHub collaboration actions or when handling `Needs My Review` items from the sweep → read docs/workflow/github/github-collab-sweep.md
 BEFORE editing root CLAUDE.md → read docs/workflow/docs-discipline/nanoclaw-root-claude-compression.md
 BEFORE creating a new docs file or adding a new CLAUDE trigger → read docs/workflow/docs-discipline/doc-creation-contract.md
 BEFORE adding/removing/renaming docs → read docs/workflow/docs-discipline/docs-pruning-loop.md

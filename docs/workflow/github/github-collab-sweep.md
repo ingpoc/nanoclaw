@@ -16,6 +16,7 @@ Day-to-day collaboration rules remain in `docs/workflow/github/github-agent-coll
 ## Use When
 
 At the start of every Claude or Codex session, before any task work begins.
+Also use it immediately when `scripts/workflow/session-start.sh` exits blocked on required GitHub collaboration actions so the blocked follow-up uses the same review/handoff rules.
 
 ## Do Not Use When
 
@@ -105,6 +106,7 @@ The sweep reads `<!-- agent-handoff -->` markers in recent Issue comments and su
 ### Review Lane Resolution Rule
 
 If `Needs My Review` contains an item, resolve that review lane before starting unrelated task work.
+This same flow applies when session start stops with `ACTION REQUIRED` because of review-lane items.
 
 Required review flow:
 

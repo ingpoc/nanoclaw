@@ -205,58 +205,59 @@ export function derivePullRequestStatus({
   return currentStatus || 'Backlog';
 }
 
-async function getProjects() {
-  const projects = [];
-  for (const config of BOARD_CONFIGS) {
-    const data = await githubGraphql(
-      `
-        query($owner: String!, $number: Int!) {
-          user(login: $owner) {
-            projectV2(number: $number) {
-              id
-              title
-              fields(first: 50) {
-                nodes {
-                  __typename
-                  ... on ProjectV2SingleSelectField {
+async function getProject(config) {
+  const data = await githubGraphql(
+    `
+      query($owner: String!, $number: Int!) {
+        user(login: $owner) {
+          projectV2(number: $number) {
+            id
+            title
+            fields(first: 50) {
+              nodes {
+                __typename
+                ... on ProjectV2SingleSelectField {
+                  id
+                  name
+                  options {
                     id
                     name
-                    options {
-                      id
-                      name
-                    }
                   }
                 }
               }
             }
           }
         }
-      `,
-      { owner: config.owner, number: config.number },
-    );
+      }
+    `,
+    { owner: config.owner, number: config.number },
+  );
 
-    const project = data.user?.projectV2;
-    if (!project) {
-      throw new Error(`Project not found: ${config.url}`);
-    }
-
-    const fields = new Map();
-    for (const field of project.fields.nodes || []) {
-      if (!field?.name) continue;
-      fields.set(field.name, field);
-    }
-
-    projects.push({
-      ...config,
-      id: project.id,
-      title: project.title,
-      fields,
-    });
+  const project = data.user?.projectV2;
+  if (!project) {
+    throw new Error(`Project not found: ${config.url}`);
   }
-  return projects;
+
+  const fields = new Map();
+  for (const field of project.fields.nodes || []) {
+    if (!field?.name) continue;
+    fields.set(field.name, field);
+  }
+
+  return {
+    ...config,
+    id: project.id,
+    title: project.title,
+    fields,
+  };
 }
 
-async function getIssue(owner, repo, number, projectIds) {
+async function getProjectForBoard(boardKey) {
+  const config = BOARD_CONFIGS.find((entry) => entry.key === boardKey) || BOARD_CONFIGS[0];
+  return getProject(config);
+}
+
+async function getIssue(owner, repo, number) {
   const data = await githubGraphql(
     `
       query($owner: String!, $repo: String!, $number: Int!) {
@@ -306,29 +307,15 @@ async function getIssue(owner, repo, number, projectIds) {
   const issue = data.repository?.issue;
   if (!issue) return null;
 
-  const projectItems = (issue.projectItems.nodes || [])
-    .filter((item) => projectIds.has(item.project?.id))
-    .map((item) => ({
-      ...item,
-      fieldValues: itemFieldValueByName(item),
-    }));
+  const projectItems = (issue.projectItems.nodes || []).map((item) => ({
+    ...item,
+    fieldValues: itemFieldValueByName(item),
+  }));
 
   return {
     ...issue,
     projectItems,
   };
-}
-
-function resolveProjectForIssue(projects, issue) {
-  const existingItem = issue.projectItems[0];
-  if (existingItem) {
-    const existingProject = projects.find((project) => project.id === existingItem.project?.id);
-    if (existingProject) return existingProject;
-  }
-
-  const boardKey = resolveBoardKey(extractExecutionBoard(issue.body));
-  const matchedProject = projects.find((project) => project.key === boardKey);
-  return matchedProject || projects[0];
 }
 
 function projectItemForProject(issue, projectId) {
@@ -464,17 +451,17 @@ async function setStatus(project, issue, itemId, statusName) {
   await setSingleSelectField(project.id, itemId, field.id, optionId);
 }
 
-async function syncIssue(projects, owner, repo, issueNumber, action) {
-  const issue = await getIssue(owner, repo, issueNumber, new Set(projects.map((project) => project.id)));
+async function syncIssue(owner, repo, issueNumber, action) {
+  const issue = await getIssue(owner, repo, issueNumber);
   if (!issue) {
     console.log(`No issue found for #${issueNumber}; skipping.`);
     return;
   }
 
-  const project = resolveProjectForIssue(projects, issue);
+  const boardKey = resolveBoardKey(extractExecutionBoard(issue.body));
+  const project = await getProjectForBoard(boardKey);
   const itemId = await ensureProjectItem(project, issue);
   const labels = labelNames(issue.labels);
-  const boardKey = project.key;
   const statusFieldName = getStatusFieldName(project);
   const currentStatus =
     (statusFieldName
@@ -502,7 +489,7 @@ async function syncIssue(projects, owner, repo, issueNumber, action) {
   console.log(`Synced issue #${issue.number} on ${project.title} -> ${nextStatus}`);
 }
 
-async function syncPullRequest(projects, payload) {
+async function syncPullRequest(payload) {
   const owner = payload.repository.owner.login;
   const repo = payload.repository.name;
   const body = payload.pull_request.body || '';
@@ -513,16 +500,14 @@ async function syncPullRequest(projects, payload) {
     return;
   }
 
-  const projectIds = new Set(projects.map((project) => project.id));
-
   for (const issueNumber of issueNumbers) {
-    const issue = await getIssue(owner, repo, issueNumber, projectIds);
+    const issue = await getIssue(owner, repo, issueNumber);
     if (!issue) continue;
 
-    const project = resolveProjectForIssue(projects, issue);
+    const boardKey = resolveBoardKey(extractExecutionBoard(issue.body));
+    const project = await getProjectForBoard(boardKey);
     const itemId = await ensureProjectItem(project, issue);
     const labels = labelNames(issue.labels);
-    const boardKey = project.key;
     const statusFieldName = getStatusFieldName(project);
     const currentStatus =
       (statusFieldName
@@ -559,7 +544,6 @@ async function main() {
   }
 
   const payload = loadEventPayload();
-  const projects = await getProjects();
 
   if (mode === 'intake') {
     if (!payload.issue) {
@@ -568,19 +552,19 @@ async function main() {
     }
     const owner = payload.repository.owner.login;
     const repo = payload.repository.name;
-    await syncIssue(projects, owner, repo, payload.issue.number, payload.action);
+    await syncIssue(owner, repo, payload.issue.number, payload.action);
     return;
   }
 
   if (payload.issue) {
     const owner = payload.repository.owner.login;
     const repo = payload.repository.name;
-    await syncIssue(projects, owner, repo, payload.issue.number, payload.action);
+    await syncIssue(owner, repo, payload.issue.number, payload.action);
     return;
   }
 
   if (payload.pull_request) {
-    await syncPullRequest(projects, payload);
+    await syncPullRequest(payload);
     return;
   }
 

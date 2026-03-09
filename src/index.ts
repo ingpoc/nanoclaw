@@ -67,6 +67,7 @@ import {
   setSession,
   storeChatMetadata,
   storeMessage,
+  updateWorkerRunAttribution,
   updateWorkerRunDispatchMetadata,
   updateWorkerRunSessionMetadata,
   updateWorkerRunStatus,
@@ -1854,13 +1855,20 @@ async function runAgent(
       ? `${buildAndyPromptWorkerContext(workerRunsSnapshot)}\n\n${prompt}`
       : prompt;
 
-  // Wrap onOutput to track session ID from streamed results
+  // Wrap onOutput to track session ID and agent attribution from streamed results
   const wrappedOnOutput = onOutput
     ? async (output: ContainerOutput) => {
         if (output.newSessionId) {
           sessions[group.folder] = output.newSessionId;
           setSession(group.folder, output.newSessionId);
           setSessionContextVersion(group.folder, sessionContextVersion);
+        }
+        if (output.agentId && output.agentType && workerRunId) {
+          try {
+            updateWorkerRunAttribution(workerRunId, output.agentId, output.agentType);
+          } catch (err) {
+            logger.warn({ runId: workerRunId, err }, 'Failed to record agent attribution');
+          }
         }
         await onOutput(output);
       }

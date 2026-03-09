@@ -16,7 +16,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { query, HookCallback, PreCompactHookInput, PreToolUseHookInput } from '@anthropic-ai/claude-agent-sdk';
+import { query, HookCallback, PreCompactHookInput, PreToolUseHookInput, SubagentStartHookInput } from '@anthropic-ai/claude-agent-sdk';
 import { fileURLToPath } from 'url';
 
 interface ContainerInput {
@@ -35,6 +35,8 @@ interface ContainerOutput {
   result: string | null;
   newSessionId?: string;
   error?: string;
+  agentId?: string;
+  agentType?: string;
 }
 
 interface SessionEntry {
@@ -181,6 +183,22 @@ function createPreCompactHook(assistantName?: string): HookCallback {
       log(`Failed to archive transcript: ${err instanceof Error ? err.message : String(err)}`);
     }
 
+    return {};
+  };
+}
+
+// Agent attribution captured from SDK SubagentStart hooks across all queries in this run.
+let capturedAgentId: string | undefined;
+let capturedAgentType: string | undefined;
+
+function createAttributionHook(): HookCallback {
+  return async (input, _toolUseId, _context) => {
+    const subagentInput = input as SubagentStartHookInput;
+    if (!capturedAgentId && subagentInput.agent_id && subagentInput.agent_type) {
+      capturedAgentId = subagentInput.agent_id;
+      capturedAgentType = subagentInput.agent_type;
+      log(`Attribution captured: agent_id=${subagentInput.agent_id} agent_type=${subagentInput.agent_type}`);
+    }
     return {};
   };
 }
@@ -461,6 +479,7 @@ async function runQuery(
       hooks: {
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
         PreToolUse: [{ matcher: 'Bash', hooks: [createSanitizeBashHook()] }],
+        SubagentStart: [{ hooks: [createAttributionHook()] }],
       },
     }
   })) {
@@ -489,7 +508,9 @@ async function runQuery(
       writeOutput({
         status: 'success',
         result: textResult || null,
-        newSessionId
+        newSessionId,
+        agentId: capturedAgentId,
+        agentType: capturedAgentType,
       });
     }
   }

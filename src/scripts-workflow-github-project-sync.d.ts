@@ -1,7 +1,13 @@
 declare module '../scripts/workflow/github-project-sync.js' {
-  export function extractExecutionBoard(body: string | null | undefined): string | null;
-  export function resolveBoardKey(boardValue: string | null | undefined): 'platform' | 'delivery';
-  export function extractIssueNumbers(text: string | null | undefined): number[];
+  export function extractExecutionBoard(
+    body: string | null | undefined,
+  ): string | null;
+  export function resolveBoardKey(
+    boardValue: string | null | undefined,
+  ): 'platform' | 'delivery';
+  export function extractIssueNumbers(
+    text: string | null | undefined,
+  ): number[];
   export function deriveIssueStatus(args: {
     action: string;
     currentStatus: string | null;

@@ -62,10 +62,7 @@ export interface DeliverySyncClient {
     request: AndyRequestRecord,
     issue: DeliveryIssueInfo,
   ): Promise<string>;
-  updateFields(
-    itemId: string,
-    updates: Record<string, string>,
-  ): Promise<void>;
+  updateFields(itemId: string, updates: Record<string, string>): Promise<void>;
   postIssueComment(issueNumber: number, body: string): Promise<string | null>;
 }
 
@@ -116,10 +113,10 @@ function resolveGitHubToken(): string {
 function isDeliverySyncConfigured(): boolean {
   return Boolean(
     resolveGitHubToken() &&
-      DELIVERY_PROJECT_OWNER &&
-      DELIVERY_REPO_OWNER &&
-      DELIVERY_REPO_NAME &&
-      Number.isFinite(DELIVERY_PROJECT_NUMBER),
+    DELIVERY_PROJECT_OWNER &&
+    DELIVERY_REPO_OWNER &&
+    DELIVERY_REPO_NAME &&
+    Number.isFinite(DELIVERY_PROJECT_NUMBER),
   );
 }
 
@@ -419,7 +416,9 @@ async function githubRest<T>(
   return payload;
 }
 
-async function getDeliveryProject(fetchImpl: typeof fetch): Promise<DeliveryProject> {
+async function getDeliveryProject(
+  fetchImpl: typeof fetch,
+): Promise<DeliveryProject> {
   const now = Date.now();
   if (projectCache && now - projectCache.cachedAt < PROJECT_CACHE_TTL_MS) {
     return projectCache.project;
@@ -819,11 +818,17 @@ export async function syncTrackedDeliveryRequest(
   await client.updateFields(itemId, buildFieldUpdates(request, run));
 
   const milestone = deriveMilestoneComment(request, run);
-  if (!milestone || hasGitHubDeliveryEvent(request.request_id, milestone.eventKey)) {
+  if (
+    !milestone ||
+    hasGitHubDeliveryEvent(request.request_id, milestone.eventKey)
+  ) {
     return;
   }
 
-  const commentUrl = await client.postIssueComment(issue.number, milestone.body);
+  const commentUrl = await client.postIssueComment(
+    issue.number,
+    milestone.body,
+  );
   recordGitHubDeliveryEvent({
     requestId: request.request_id,
     eventKey: milestone.eventKey,
@@ -842,10 +847,7 @@ function queueSyncDrain(): void {
         try {
           await syncTrackedDeliveryRequest(requestId);
         } catch (err) {
-          logger.warn(
-            { err, requestId },
-            'GitHub delivery sync failed',
-          );
+          logger.warn({ err, requestId }, 'GitHub delivery sync failed');
         }
       }
     }

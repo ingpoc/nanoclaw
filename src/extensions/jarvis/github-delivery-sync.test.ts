@@ -52,7 +52,9 @@ describe('github-delivery-sync helpers', () => {
   it('builds auto-created delivery issue content with metadata markers', () => {
     const request = buildRequest();
 
-    expect(buildDeliveryIssueTitle(request.user_prompt)).toContain('[Delivery]');
+    expect(buildDeliveryIssueTitle(request.user_prompt)).toContain(
+      '[Delivery]',
+    );
     expect(buildDeliveryIssueBody(request)).toContain(
       '<!-- andy_request_id: req-delivery-1 -->',
     );
@@ -69,10 +71,14 @@ describe('github-delivery-sync helpers', () => {
 
   it('maps request states to delivery workflow statuses', () => {
     expect(
-      deriveDeliveryWorkflowStatus(buildRequest({ state: 'queued_for_coordinator' })),
+      deriveDeliveryWorkflowStatus(
+        buildRequest({ state: 'queued_for_coordinator' }),
+      ),
     ).toBe('Triage');
     expect(
-      deriveDeliveryWorkflowStatus(buildRequest({ state: 'coordinator_active' })),
+      deriveDeliveryWorkflowStatus(
+        buildRequest({ state: 'coordinator_active' }),
+      ),
     ).toBe('Architecture');
     expect(
       deriveDeliveryWorkflowStatus(buildRequest({ state: 'worker_running' })),

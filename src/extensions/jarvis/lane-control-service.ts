@@ -35,8 +35,7 @@ type LaneControlMode = 'append' | 'interrupt';
 
 const LANE_STATUS_PATTERN = /^status(?:\s+andy-developer)?\s*[.!?]*$/i;
 const REQUEST_STATUS_PATTERN = /^status\s+(req-[a-z0-9-]+)\s*[.!?]*$/i;
-const SHORTHAND_LANE_CONTROL_PATTERN =
-  /^(steer|interrupt)\s*:\s*([\s\S]+)$/i;
+const SHORTHAND_LANE_CONTROL_PATTERN = /^(steer|interrupt)\s*:\s*([\s\S]+)$/i;
 const LANE_CONTROL_COMMAND_PATTERN =
   /^(steer|interrupt)\s+([^:]+?)\s*:\s*([\s\S]+)$/i;
 
@@ -251,8 +250,7 @@ export function getLaneStatus(input: {
     };
   }
 
-  const activeRunId =
-    activeRequest?.worker_run_id ?? undefined;
+  const activeRunId = activeRequest?.worker_run_id ?? undefined;
   const hasQueuedWork = Boolean(
     activeRequest ||
     queueStatus?.pendingMessages ||

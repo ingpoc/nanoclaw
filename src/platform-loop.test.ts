@@ -12,9 +12,9 @@ import {
 
 describe('platform-loop helpers', () => {
   it('builds stable branch names', () => {
-    expect(buildPlatformBranchName(42, 'Claude /loop adoption for platform')).toBe(
-      'claude-platform-42-claude-loop-adoption-for-platform',
-    );
+    expect(
+      buildPlatformBranchName(42, 'Claude /loop adoption for platform'),
+    ).toBe('claude-platform-42-claude-loop-adoption-for-platform');
   });
 
   it('builds request and run ids', () => {
@@ -80,7 +80,13 @@ describe('platform-loop helpers', () => {
   it('extracts the issue base branch from issue-form sections', () => {
     expect(
       extractPlatformBaseBranch(
-        ['## Problem Statement', 'X', '', '## Base Branch', 'release/platform-pilot'].join('\n'),
+        [
+          '## Problem Statement',
+          'X',
+          '',
+          '## Base Branch',
+          'release/platform-pilot',
+        ].join('\n'),
       ),
     ).toBe('release/platform-pilot');
   });

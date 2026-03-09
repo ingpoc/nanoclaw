@@ -5,8 +5,8 @@ import { readEnvFile } from './env.js';
 import type { RuntimeOwnerMode } from './types.js';
 
 // Read config values from .env (falls back to process.env).
-// Secrets are NOT read here — they stay on disk and are loaded only
-// where needed (container-runner.ts) to avoid leaking to child processes.
+// Secrets (API keys, tokens) are NOT read here — they are loaded only
+// by the credential proxy (credential-proxy.ts), never exposed to containers.
 const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER']);
 
 export const ASSISTANT_NAME =
@@ -101,6 +101,10 @@ export const CONTAINER_PARSE_BUFFER_LIMIT = parseInt(
 export const CONTAINER_CPU_LIMIT = process.env.CONTAINER_CPU_LIMIT || '2';
 export const CONTAINER_MEMORY_LIMIT =
   process.env.CONTAINER_MEMORY_LIMIT || '4096M';
+export const CREDENTIAL_PROXY_PORT = parseInt(
+  process.env.CREDENTIAL_PROXY_PORT || '3001',
+  10,
+);
 export const IPC_POLL_INTERVAL = 1000;
 export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '300000', 10); // 5min default — close stdin after last result
 export const MAX_CONCURRENT_CONTAINERS = Math.max(

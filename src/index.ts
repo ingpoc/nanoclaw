@@ -8,6 +8,7 @@ import {
   ANDY_BUSY_PREEMPT_MS,
   ANDY_ERROR_NOTICE_COOLDOWN_MS,
   ASSISTANT_NAME,
+  CREDENTIAL_PROXY_PORT,
   DATA_DIR,
   ENABLE_CONTROL_PLANE_SNAPSHOTS,
   ENABLE_DYNAMIC_GROUP_REGISTRATION,
@@ -22,6 +23,7 @@ import {
   TIMEZONE,
   TRIGGER_PATTERN,
 } from './config.js';
+import { startCredentialProxy } from './credential-proxy.js';
 import {
   type WhatsAppChannelOpts,
   type WhatsAppCloseContext,
@@ -39,6 +41,7 @@ import {
 import {
   cleanupOrphans,
   ensureContainerRuntimeRunning,
+  PROXY_BIND_HOST,
 } from './container-runtime.js';
 import {
   acceptWorkerRunCompletion,
@@ -53,6 +56,7 @@ import {
   getMessagesSince,
   getLatestReusableWorkerSession,
   getNewMessages,
+  getRegisteredGroup,
   getStoredMessage,
   getWorkerRuns,
   getWorkerRun,
@@ -2218,6 +2222,9 @@ async function main(): Promise<void> {
     ensureContainerSystemRunning();
     setRouterState('process_start_at', PROCESS_START_AT_ISO);
     loadState();
+
+    // Start credential proxy (containers route API calls through this)
+    await startCredentialProxy(CREDENTIAL_PROXY_PORT, PROXY_BIND_HOST);
 
     process.on('SIGTERM', () => requestShutdown('SIGTERM'));
     process.on('SIGINT', () => requestShutdown('SIGINT'));

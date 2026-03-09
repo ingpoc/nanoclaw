@@ -59,7 +59,9 @@ export function validateGroupClaudeMd(folder: string, baseDir?: string): void {
   try {
     content = fs.readFileSync(claudeMdPath, 'utf8');
   } catch {
-    throw new Error(`InstructionsLoaded: ${claudeMdPath} is missing or unreadable`);
+    throw new Error(
+      `InstructionsLoaded: ${claudeMdPath} is missing or unreadable`,
+    );
   }
 
   if (!content.trim()) {

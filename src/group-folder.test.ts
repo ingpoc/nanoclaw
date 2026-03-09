@@ -59,26 +59,37 @@ describe('validateGroupClaudeMd', () => {
   it('passes for a group with a valid non-empty CLAUDE.md', () => {
     const groupDir = path.join(tmpDir, 'my-group');
     fs.mkdirSync(groupDir);
-    fs.writeFileSync(path.join(groupDir, 'CLAUDE.md'), '# My Group\nInstructions here.\n');
+    fs.writeFileSync(
+      path.join(groupDir, 'CLAUDE.md'),
+      '# My Group\nInstructions here.\n',
+    );
     expect(() => validateGroupClaudeMd('my-group', tmpDir)).not.toThrow();
   });
 
   it('throws InstructionsLoaded when CLAUDE.md is missing', () => {
     const groupDir = path.join(tmpDir, 'no-claude');
     fs.mkdirSync(groupDir);
-    expect(() => validateGroupClaudeMd('no-claude', tmpDir)).toThrow(/InstructionsLoaded/);
-    expect(() => validateGroupClaudeMd('no-claude', tmpDir)).toThrow(/missing or unreadable/);
+    expect(() => validateGroupClaudeMd('no-claude', tmpDir)).toThrow(
+      /InstructionsLoaded/,
+    );
+    expect(() => validateGroupClaudeMd('no-claude', tmpDir)).toThrow(
+      /missing or unreadable/,
+    );
   });
 
   it('throws InstructionsLoaded when CLAUDE.md is empty', () => {
     const groupDir = path.join(tmpDir, 'empty-group');
     fs.mkdirSync(groupDir);
     fs.writeFileSync(path.join(groupDir, 'CLAUDE.md'), '   \n\n  ');
-    expect(() => validateGroupClaudeMd('empty-group', tmpDir)).toThrow(/InstructionsLoaded/);
+    expect(() => validateGroupClaudeMd('empty-group', tmpDir)).toThrow(
+      /InstructionsLoaded/,
+    );
     expect(() => validateGroupClaudeMd('empty-group', tmpDir)).toThrow(/empty/);
   });
 
   it('throws InstructionsLoaded when the group directory does not exist', () => {
-    expect(() => validateGroupClaudeMd('ghost-group', tmpDir)).toThrow(/InstructionsLoaded/);
+    expect(() => validateGroupClaudeMd('ghost-group', tmpDir)).toThrow(
+      /InstructionsLoaded/,
+    );
   });
 });

@@ -158,6 +158,30 @@ export function extractIssueNumbers(text) {
   );
 }
 
+function extractMarkdownSection(text, heading) {
+  if (!text) return null;
+  const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = text.match(
+    new RegExp(`^##\\s+${escapedHeading}\\s*$([\\s\\S]*?)(?=^##\\s+|\\Z)`, 'im'),
+  );
+  return match?.[1]?.trim() || null;
+}
+
+export function extractPullRequestLinkedIssueNumbers(body) {
+  const linkedWorkItemSection = extractMarkdownSection(body, 'Linked Work Item');
+  const maintenanceFallback =
+    /\b(?:No issue|N\/A)\s*:\s*(maintenance|docs|governance|automation|admin)\b/i;
+
+  if (linkedWorkItemSection) {
+    if (maintenanceFallback.test(linkedWorkItemSection)) {
+      return [];
+    }
+    return extractIssueNumbers(linkedWorkItemSection);
+  }
+
+  return extractIssueNumbers(body);
+}
+
 export function deriveIssueStatus({ action, currentStatus, issueState, labels, assigneeCount, boardKey }) {
   if (boardKey === 'delivery') {
     if (issueState === 'CLOSED') return 'Done';
@@ -172,6 +196,8 @@ export function deriveIssueStatus({ action, currentStatus, issueState, labels, a
   if (issueState === 'CLOSED') return 'Done';
   if (labels.includes('status:blocked')) return 'Blocked';
   if (action === 'opened' || action === 'reopened') return 'Backlog';
+  if (action === 'assigned' && assigneeCount > 0) return 'In Progress';
+  if (action === 'unassigned' && assigneeCount === 0) return 'Ready';
   if (action === 'unlabeled' && currentStatus === 'Blocked') {
     return 'Backlog';
   }
@@ -201,7 +227,7 @@ export function derivePullRequestStatus({
   if (labels.includes('status:blocked')) return 'Blocked';
   if (pullRequestState === 'OPEN' && !isDraft) return 'Review';
   if (pullRequestState === 'OPEN' && isDraft) return currentStatus || 'In Progress';
-  if (pullRequestState === 'CLOSED') return currentStatus || 'Backlog';
+  if (pullRequestState === 'CLOSED') return assigneeCount > 0 ? currentStatus || 'In Progress' : 'Ready';
   return currentStatus || 'Backlog';
 }
 
@@ -493,7 +519,7 @@ async function syncPullRequest(payload) {
   const owner = payload.repository.owner.login;
   const repo = payload.repository.name;
   const body = payload.pull_request.body || '';
-  const issueNumbers = extractIssueNumbers(body);
+  const issueNumbers = extractPullRequestLinkedIssueNumbers(body);
 
   if (issueNumbers.length === 0) {
     console.log(`PR #${payload.pull_request.number} has no linked issue references; skipping.`);

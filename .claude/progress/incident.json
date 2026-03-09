@@ -1,7 +1,39 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-08T11:21:59Z",
+  "updated_at": "2026-03-09T06:03:47.487033+00:00",
   "incidents": [
+    {
+      "id": "incident-20260309T060321Z",
+      "title": "Platform loop can pick stale code and health rearm is brittle",
+      "status": "open",
+      "severity": "medium",
+      "created_at": "2026-03-09T06:03:33.956262+00:00",
+      "updated_at": "2026-03-09T06:03:47.486735+00:00",
+      "summary": {
+        "symptom": "The autonomous platform loop reused stale worktree state and launchd health checks logged Operation not permitted instead of reliably rearming the session.",
+        "suspected_cause": "The dedicated loop worktree was never refreshed from origin/main before pickup, and the launchd job shelled through zsh with a repo worki...",
+        "impact": "Claude could branch from stale code and the unattended platform lane could silently stop self-healing after process loss or age-out.",
+        "next_action": "Ship a shared platform-loop sync helper, wire it into launch and pickup flows, and simplify the launchd invocation path."
+      },
+      "evidence": {
+        "bundle_count": 0
+      },
+      "context": {
+        "lane": "claude-platform-loop"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-09T06:03:33.956262+00:00",
+          "author": "user",
+          "text": "reported: The autonomous platform loop reused stale worktree state and launchd health checks logged Operation not permitted instead of reliably rearming the session."
+        },
+        {
+          "ts": "2026-03-09T06:03:47.486730+00:00",
+          "author": "codex",
+          "text": "2026-03-09 implementation landed: added scripts/workflow/platform-loop-sync.sh, wired start/trigger/pickup to refresh the dedicated worktree from origin/main and re-overlay command/helper files, switched the platform loop launchd job to invoke /bin/bash directly, and added focused platform-loop sync tests. Targeted tests/build/workflow-contract/mirror passed; full acceptance-gate still fails on pre-existing unrelated tests (setup/github-project-sync.test.ts, src/jarvis-reconcile-stale-andy-requests.test.ts) and the existing tooling-governance budget overage."
+        }
+      ]
+    },
     {
       "id": "incident-20260308T111215Z",
       "title": "Tooling-governance budget drift blocks PR #48 merge",
@@ -11,7 +43,7 @@
       "updated_at": "2026-03-08T11:21:59Z",
       "summary": {
         "symptom": "PR #48 fails CI at scripts/check-tooling-governance.sh even though the scoped diff only adds src/extensions/jarvis/dispatch-service.test.ts.",
-        "suspected_cause": ".claude/settings.local.json currently exceeds the ratcheted tooling-governance budget for permissions.allow entries and wildcard permissions.",
+        "suspected_cause": ".claude/settings.local.json currently exceeds the ratcheted tooling-governance budget for permissions.allow entries and wildcard permissi...",
         "impact": "Codex review found no scoped code defects in PR #48, but the PR cannot become merge-ready until the governance-budget drift is corrected or intentionally re-budgeted.",
         "next_action": "Prune .claude/settings.local.json allow entries or intentionally raise docs/operations/tooling-governance-budget.json with rationale, then rerun CI for PR #48."
       },
@@ -19,9 +51,7 @@
         "bundle_count": 0
       },
       "context": {
-        "lane": "codex",
-        "issue": 38,
-        "pr": 48
+        "lane": "codex"
       },
       "notes": [
         {

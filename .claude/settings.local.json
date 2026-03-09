@@ -54,7 +54,8 @@
       "Bash(gh api:*)",
       "Bash(gh project:*)",
       "Bash(gh issue:*)",
-      "mcp__exa__get_code_context_exa"
+      "mcp__exa__get_code_context_exa",
+      "Bash(gh pr:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

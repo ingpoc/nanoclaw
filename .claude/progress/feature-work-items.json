@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-08T07:54:29.320Z",
+  "updated_at": "2026-03-09T06:03:21.000Z",
   "items": [
     {
       "id": "work-architecture-boundary-governance-1772821500000",
@@ -376,6 +376,31 @@
       ],
       "created_at": "2026-03-08T07:19:23.658Z",
       "updated_at": "2026-03-08T07:54:29.319Z"
+    },
+    {
+      "id": "work-github-collaboration-control-plane-1773036201000",
+      "title": "Refresh platform loop worktree before pickup and harden launchd rearm",
+      "feature_id": "github-collaboration-control-plane",
+      "status": "done",
+      "request": "Ensure the autonomous NanoClaw Platform Claude loop reseeds its dedicated worktree from origin/main before each pickup, preserves the repo-root command/helper overlays, and stops relying on a brittle launchd zsh working-directory invocation.",
+      "notes": [
+        "2026-03-09T06:03:21.000Z: Starting platform-loop reliability pass after confirming the dedicated worktree can drift from main and the launchd health job has been logging Operation not permitted instead of reliably rearming the session.",
+        "2026-03-09T06:03:21.000Z: Implemented a shared platform-loop sync helper, wired start/trigger/pickup flows to reseed the dedicated worktree from origin/main and re-overlay the root command/helper files, updated the platform loop docs/control-plane docs, and switched the launchd job to invoke the health script via /bin/bash directly.",
+        "2026-03-09T06:03:21.000Z: Verification passed for the new lane contract: focused vitest (src/platform-loop.test.ts, src/platform-loop-sync.test.ts, src/github-project-sync.test.ts), npm run build, workflow-contract-check PASS, claude-codex-mirror PASS, and platform-loop-sync dry-run PASS. Residual failures are pre-existing and outside this touch-set: feature-catalog validate still flags missing qodo skill files, tooling-governance exceeds the current permissions budget, and the full acceptance gate still fails on unrelated setup/github-project-sync and jarvis-reconcile stale-request tests."
+      ],
+      "evidence": [
+        "scripts/workflow/platform-loop-sync.sh",
+        "scripts/workflow/start-platform-loop.sh",
+        "scripts/workflow/trigger-platform-pickup-now.sh",
+        "scripts/workflow/check-platform-loop.sh",
+        ".claude/commands/platform-pickup.md",
+        "launchd/com.nanoclaw-platform-loop.plist",
+        "docs/workflow/github/nanoclaw-platform-loop.md",
+        "src/platform-loop-sync.test.ts",
+        ".claude/progress/feature-catalog.json"
+      ],
+      "created_at": "2026-03-09T06:03:21.000Z",
+      "updated_at": "2026-03-09T06:03:21.000Z"
     }
   ]
 }

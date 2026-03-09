@@ -77,9 +77,11 @@ Use instead:
 - The repo-tracked command surface is `.claude/commands/platform-pickup.md`.
 - The local bootstrap surfaces are:
   - `scripts/workflow/start-platform-loop.sh`
+  - `scripts/workflow/platform-loop-sync.sh`
   - `scripts/workflow/check-platform-loop.sh`
   - `launchd/com.nanoclaw-platform-loop.plist`
 - The `/loop` lane may claim only one platform item at a time and must stop if any Claude-owned item is already in `Review`.
+- The platform loop must reseed its dedicated worktree from `origin/main` before pickup and fail closed if that sync cannot be proven.
 - `/loop` may implement, test, branch, and open/update PRs, but it must not merge and it must not bypass deterministic required checks.
 - Codex remains the default review lane for these platform PRs.
 

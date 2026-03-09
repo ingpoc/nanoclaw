@@ -111,6 +111,10 @@ if [ ! -x "scripts/workflow/slop-inventory.sh" ]; then
   errors+=("Missing executable slop inventory helper: scripts/workflow/slop-inventory.sh")
 fi
 
+if [ ! -x "scripts/workflow/session-start.sh" ]; then
+  errors+=("Missing executable session-start helper: scripts/workflow/session-start.sh")
+fi
+
 if [ ! -x "scripts/check-architecture-boundary.sh" ]; then
   errors+=("Missing executable architecture boundary checker: scripts/check-architecture-boundary.sh")
 fi

@@ -33,7 +33,7 @@ NanoClaw baseline is the default. Jarvis docs apply only when working on the `ja
 ## Docs Index
 
 ```text
-AT SESSION START → run bash scripts/workflow/gh-collab-sweep.sh --agent claude, then read docs/workflow/runtime/session-recall.md; act on sweep output before task work
+AT SESSION START → run bash scripts/workflow/session-start.sh --agent <claude|codex>
 AT SESSION START, session handoff, or when changing recall/sync/export behavior → read docs/workflow/runtime/session-recall.md
 BEFORE using GitHub collab sweep, changing sweep protocol, or updating agent-category affinity → read docs/workflow/github/github-collab-sweep.md
 BEFORE editing root CLAUDE.md → read docs/workflow/docs-discipline/nanoclaw-root-claude-compression.md
@@ -42,6 +42,7 @@ BEFORE adding/removing/renaming docs → read docs/workflow/docs-discipline/docs
 BEFORE task-start routing for implementation/debug/setup/update work → read docs/workflow/docs-discipline/skill-routing-preflight.md
 BEFORE single-lane feature, bug-fix, or reliability delivery → read docs/workflow/delivery/nanoclaw-development-loop.md
 BEFORE workflow optimization from external research → read docs/workflow/strategy/workflow-optimization-loop.md
+BEFORE changing nighttime improvement evaluation, overnight research cadence, or token-budgeted upstream/tooling scanning → read docs/workflow/strategy/nightly-evaluation-loop.md
 BEFORE weekly slop cleanup or tooling-governance review → read docs/workflow/strategy/weekly-slop-optimization-loop.md
 BEFORE reviewing hooks/subagents or built-in routing budgets → read docs/operations/tooling-governance-budget.json
 BEFORE split-lane Claude/Codex worktrees or review fanout → read docs/workflow/delivery/unified-codex-claude-loop.md
@@ -86,6 +87,7 @@ AFTER task completion or BEFORE ending session, if you had to correct workflow m
 ## Quick Commands
 
 ```bash
+bash scripts/workflow/session-start.sh --agent codex
 bash scripts/qmd-context-recall.sh --bootstrap
 bash scripts/workflow/preflight.sh
 npm run build

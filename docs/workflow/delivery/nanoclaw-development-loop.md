@@ -20,11 +20,13 @@ Mission anchor: `docs/MISSION.md`.
 
 ## Phase 0: Task Start Preflight
 
-1. Run session recall:
+1. If this is a new session or resumed handoff, run canonical session start once:
+   - `bash scripts/workflow/session-start.sh --agent <claude|codex>`
+2. If session start already ran and you need recall again before a new debug/fix loop:
    - `bash scripts/qmd-context-recall.sh --bootstrap`
-2. Run skill/docs routing preflight:
+3. Run skill/docs routing preflight:
    - `docs/workflow/docs-discipline/skill-routing-preflight.md`
-3. If runtime issues are involved, open/continue incident tracking first:
+4. If runtime issues are involved, open/continue incident tracking first:
    - `bash scripts/jarvis-ops.sh incident list --status open`
 
 ## Phase 1: Plan Gate (Before Coding)

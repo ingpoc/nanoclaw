@@ -101,6 +101,9 @@ Do not delegate when:
 - `unified-codex-claude-loop.md` — defines cross-tool coordination
 - `session-recall.md` — script-driven, result is needed immediately
 
+Exception:
+- In interactive session start, post-bootstrap `qmd-session-sync.sh` remediation may be delegated to one background `monitor` lane after the main lane already has the recall result it needs.
+
 ## GitHub Governance Routing
 
 Use this for GitHub control-plane work owned by `docs/workflow/github/nanoclaw-github-control-plane.md`.

@@ -3,27 +3,19 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.nanoclaw.platform-loop</string>
+    <string>com.nanoclaw.nightly-improvement</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>{{PROJECT_ROOT}}/scripts/workflow/check-platform-loop.sh</string>
+        <string>{{PROJECT_ROOT}}/scripts/workflow/start-nightly-improvement.sh</string>
     </array>
     <key>StartCalendarInterval</key>
-    <array>
-        <dict>
-            <key>Hour</key>
-            <integer>10</integer>
-            <key>Minute</key>
-            <integer>0</integer>
-        </dict>
-        <dict>
-            <key>Hour</key>
-            <integer>15</integer>
-            <key>Minute</key>
-            <integer>0</integer>
-        </dict>
-    </array>
+    <dict>
+        <key>Hour</key>
+        <integer>0</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
@@ -32,8 +24,8 @@
         <string>{{HOME}}</string>
     </dict>
     <key>StandardOutPath</key>
-    <string>{{PROJECT_ROOT}}/logs/platform-loop.log</string>
+    <string>{{PROJECT_ROOT}}/logs/nightly-improvement.log</string>
     <key>StandardErrorPath</key>
-    <string>{{PROJECT_ROOT}}/logs/platform-loop.error.log</string>
+    <string>{{PROJECT_ROOT}}/logs/nightly-improvement.error.log</string>
 </dict>
 </plist>

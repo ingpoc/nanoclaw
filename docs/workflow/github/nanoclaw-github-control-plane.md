@@ -73,24 +73,35 @@ Use instead:
 
 ## NanoClaw Platform Claude Loop Baseline
 
-- The primary implementation lane for autonomous `NanoClaw Platform` pilots is local Claude Code `/loop`, not GitHub Actions.
+- The primary implementation lane for autonomous `NanoClaw Platform` pilots is the local sparse Claude pickup lane, not GitHub Actions.
 - The repo-tracked command surface is `.claude/commands/platform-pickup.md`.
 - The local bootstrap surfaces are:
   - `scripts/workflow/start-platform-loop.sh`
-<<<<<<< HEAD
   - `scripts/workflow/platform-loop-sync.sh`
   - `scripts/workflow/check-platform-loop.sh`
   - `launchd/com.nanoclaw-platform-loop.plist`
-- The `/loop` lane may claim only one platform item at a time and must stop if any Claude-owned item is already in `Review`.
-- The platform loop must reseed its dedicated worktree from `origin/main` before pickup and fail closed if that sync cannot be proven.
-||||||| 7476e8b
-=======
-  - `scripts/workflow/check-platform-loop.sh`
-  - `launchd/com.nanoclaw-platform-loop.plist`
-- The `/loop` lane may claim only one platform item at a time and must stop if any Claude-owned item is already in `Review`.
->>>>>>> origin/main
-- `/loop` may implement, test, branch, and open/update PRs, but it must not merge and it must not bypass deterministic required checks.
+- The launchd schedule is sparse: `10:00` and `15:00` Asia/Kolkata, with manual one-shot pickup still allowed between slots.
+- The pickup lane may claim only one platform item at a time and must stop if any Claude-owned item is already in `Review`.
+- The pickup lane must reseed its dedicated worktree from `origin/main` before pickup and fail closed if that sync cannot be proven.
+- The pickup lane may implement, test, branch, and open/update PRs, but it must not merge and it must not bypass deterministic required checks.
 - Codex remains the default review lane for these platform PRs.
+
+## Nightly Improvement Lane Baseline
+
+- The overnight improvement lane is local Claude Code automation, not GitHub Actions.
+- The repo-tracked command surface is `.claude/commands/nightly-improvement-eval.md`.
+- The local bootstrap surfaces are:
+  - `scripts/workflow/nightly-improvement.js`
+  - `scripts/workflow/start-nightly-improvement.sh`
+  - `launchd/com.nanoclaw-nightly-improvement.plist`
+- The nightly lane is research-only:
+  - it may create or update Discussions
+  - it may record runtime-local cursor state
+  - it must not create execution Issues directly
+  - it must not move Project state
+  - it must not open PRs
+- The nightly lane must skip already evaluated upstream heads and tool versions unless explicitly forced.
+- Codex remains the morning triage lane for selective promotion from nightly findings into execution work.
 
 ## CI Failure Feedback Loop
 

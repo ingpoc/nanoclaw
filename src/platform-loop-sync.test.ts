@@ -40,6 +40,14 @@ describe('platform-loop-sync launcher helper', () => {
       'latest pickup command\n',
     );
     fs.writeFileSync(
+      path.join(sourceRoot, '.claude', 'commands', 'nightly-improvement-eval.md'),
+      'latest nightly command\n',
+    );
+    fs.writeFileSync(
+      path.join(sourceRoot, 'scripts', 'workflow', 'nightly-improvement.js'),
+      'latest nightly helper\n',
+    );
+    fs.writeFileSync(
       path.join(sourceRoot, 'scripts', 'workflow', 'platform-loop.js'),
       'latest platform loop helper\n',
     );
@@ -167,7 +175,9 @@ exit 1
 
     const exclude = fs.readFileSync(excludePath, 'utf8');
     expect(exclude).toContain('.claude/commands/platform-pickup.md');
+    expect(exclude).toContain('.claude/commands/nightly-improvement-eval.md');
     expect(exclude).toContain('.claude/scheduled_tasks.lock');
+    expect(exclude).toContain('scripts/workflow/nightly-improvement.js');
     expect(exclude).toContain('scripts/workflow/platform-loop.js');
     expect(exclude).toContain('scripts/workflow/platform-loop-sync.sh');
 

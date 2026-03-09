@@ -242,15 +242,12 @@ Human-admin only:
 Run this before any task work every session:
 
 ```bash
-# Claude
-bash scripts/workflow/gh-collab-sweep.sh --agent claude
-
-# Codex
-bash scripts/workflow/gh-collab-sweep.sh --agent codex
+bash scripts/workflow/session-start.sh --agent claude
+bash scripts/workflow/session-start.sh --agent codex
 ```
 
-The sweep surfaces: owned Issues, items needing review, stale discussions in your affinity categories, handoff comments from the other agent, and blocked items.
-Act on sweep output before starting new work. See `docs/workflow/github/github-collab-sweep.md` for the full protocol.
+The wrapper runs recall bootstrap, the GitHub sweep, and workflow preflight in order.
+Act on blocked sweep output before starting new work. See `docs/workflow/github/github-collab-sweep.md` for the full protocol.
 
 ## Agent-Category Affinity
 
@@ -279,7 +276,7 @@ Context: <brief context>
 
 ## Daily Loop
 
-1. Run session-start sweep and act on output.
+1. Run session-start workflow and act on blocked sweep output.
 2. Start in the correct surface using the selector above.
 3. Keep exploratory work in Discussions until a next action is concrete.
 4. Promote concrete work into an Issue with owner + acceptance criteria.

@@ -2,19 +2,17 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-STATE_DIR="$ROOT_DIR/.nanoclaw/platform-loop"
+STATE_DIR="$ROOT_DIR/.nanoclaw/nightly-improvement"
 STATE_FILE="$STATE_DIR/launch-state.json"
-WORKTREE_PATH="${NANOCLAW_PLATFORM_LOOP_WORKTREE:-$ROOT_DIR/.worktrees/platform-loop}"
-WORKTREE_BRANCH="${NANOCLAW_PLATFORM_LOOP_BRANCH:-claude-platform-loop}"
-BASE_BRANCH="${NANOCLAW_PLATFORM_LOOP_BASE_BRANCH:-main}"
-REMOTE_NAME="${NANOCLAW_PLATFORM_LOOP_REMOTE:-origin}"
-LAUNCH_LABEL="${NANOCLAW_PLATFORM_LOOP_LABEL:-com.nanoclaw.platform-loop}"
+WORKTREE_PATH="${NANOCLAW_NIGHTLY_WORKTREE:-$ROOT_DIR/.worktrees/nightly-improvement}"
+WORKTREE_BRANCH="${NANOCLAW_NIGHTLY_WORKTREE_BRANCH:-claude-nightly-improvement}"
+BASE_BRANCH="${NANOCLAW_NIGHTLY_BASE_BRANCH:-main}"
+REMOTE_NAME="${NANOCLAW_NIGHTLY_REMOTE:-origin}"
+CLAUDE_PROMPT="${NANOCLAW_NIGHTLY_CLAUDE_PROMPT:-/nightly-improvement-eval}"
 GH_ACCOUNT="${NANOCLAW_PLATFORM_GH_ACCOUNT:-ingpoc}"
 CLAUDE_PERMISSION_MODE="${NANOCLAW_PLATFORM_CLAUDE_PERMISSION_MODE:-bypassPermissions}"
-CLAUDE_PROMPT="${NANOCLAW_PLATFORM_CLAUDE_PROMPT:-/platform-pickup}"
 SESSION_RUNNER="$ROOT_DIR/scripts/workflow/run-platform-claude-session.sh"
 SYNC_HELPER="$ROOT_DIR/scripts/workflow/platform-loop-sync.sh"
-LOG_DIR="$ROOT_DIR/logs"
 DRY_RUN=0
 
 while (($#)); do
@@ -30,7 +28,7 @@ while (($#)); do
   esac
 done
 
-mkdir -p "$STATE_DIR" "$LOG_DIR"
+mkdir -p "$STATE_DIR"
 
 if ! command -v claude >/dev/null 2>&1; then
   echo "claude CLI is required but not found in PATH" >&2
@@ -47,7 +45,7 @@ if command -v gh >/dev/null 2>&1; then
 fi
 
 if [[ ! -x "$SYNC_HELPER" ]]; then
-  echo "platform loop sync helper is missing or not executable: $SYNC_HELPER" >&2
+  echo "nightly improvement sync helper is missing or not executable: $SYNC_HELPER" >&2
   exit 1
 fi
 
@@ -74,7 +72,6 @@ PY
 record_state() {
   cat >"$STATE_FILE" <<EOF
 {
-  "label": $(json_escape "$LAUNCH_LABEL"),
   "worktree_path": $(json_escape "$WORKTREE_PATH"),
   "worktree_branch": $(json_escape "$WORKTREE_BRANCH"),
   "base_branch": $(json_escape "$BASE_BRANCH"),
@@ -96,7 +93,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
 fi
 
 if ! command -v osascript >/dev/null 2>&1; then
-  echo "osascript is required to bootstrap the dedicated Claude session" >&2
+  echo "osascript is required to bootstrap the nightly improvement session" >&2
   exit 1
 fi
 
@@ -105,4 +102,4 @@ ESCAPED_COMMAND="${ESCAPED_COMMAND//\"/\\\"}"
 
 osascript -e "tell application \"Terminal\" to do script \"$ESCAPED_COMMAND\"" >/dev/null
 record_state
-echo "Started NanoClaw platform loop session via Terminal"
+echo "Started nightly improvement session via Terminal"

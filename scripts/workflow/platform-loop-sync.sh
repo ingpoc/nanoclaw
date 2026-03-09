@@ -11,13 +11,17 @@ DRY_RUN=0
 
 OVERLAY_FILES=(
   ".claude/commands/platform-pickup.md"
+  ".claude/commands/nightly-improvement-eval.md"
+  "scripts/workflow/nightly-improvement.js"
   "scripts/workflow/platform-loop.js"
   "scripts/workflow/platform-loop-sync.sh"
 )
 
 EXCLUDE_PATTERNS=(
   ".claude/commands/platform-pickup.md"
+  ".claude/commands/nightly-improvement-eval.md"
   ".claude/scheduled_tasks.lock"
+  "scripts/workflow/nightly-improvement.js"
   "scripts/workflow/platform-loop.js"
   "scripts/workflow/platform-loop-sync.sh"
 )

@@ -61,6 +61,7 @@ Workflow docs are physically grouped by operational concern.
 ### `docs/workflow/strategy/`
 
 - `docs/workflow/strategy/workflow-optimization-loop.md`: research-to-pilot workflow optimization process and decision gates
+- `docs/workflow/strategy/nightly-evaluation-loop.md`: token-efficient overnight upstream/tooling evaluation lane and morning Codex triage contract
 - `docs/workflow/strategy/weekly-slop-optimization-loop.md`: weekly deterministic slop-pruning workflow for docs/scripts/config/code surfaces
 
 ## `docs/operations/`

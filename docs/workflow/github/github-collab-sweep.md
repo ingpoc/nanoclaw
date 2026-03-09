@@ -16,6 +16,7 @@ Day-to-day collaboration rules remain in `docs/workflow/github/github-agent-coll
 ## Use When
 
 At the start of every Claude or Codex session, before any task work begins.
+Also use it immediately when `scripts/workflow/session-start.sh` exits blocked on required GitHub collaboration actions so the blocked follow-up uses the same review/handoff rules.
 
 ## Do Not Use When
 
@@ -26,20 +27,26 @@ At the start of every Claude or Codex session, before any task work begins.
 ## Verification
 
 ```bash
-bash scripts/workflow/gh-collab-sweep.sh --agent claude
-bash scripts/workflow/gh-collab-sweep.sh --agent codex
+bash scripts/workflow/session-start.sh --agent claude
+bash scripts/workflow/session-start.sh --agent codex
 ```
 
-Both should run without error. Stale discussions and open handoffs in the output require action before proceeding.
+Both should run without error. Review-lane items, stale discussions, and handoffs shown by the sweep require action before proceeding.
 
 ## Command
 
-```bash
-# Claude
-bash scripts/workflow/gh-collab-sweep.sh --agent claude
+Canonical entrypoint:
 
-# Codex
-bash scripts/workflow/gh-collab-sweep.sh --agent codex
+```bash
+bash scripts/workflow/session-start.sh --agent claude
+bash scripts/workflow/session-start.sh --agent codex
+```
+
+Sweep-only fallback:
+
+```bash
+bash scripts/workflow/gh-collab-sweep.sh --agent claude --fail-on-action-items
+bash scripts/workflow/gh-collab-sweep.sh --agent codex --fail-on-action-items
 ```
 
 ## What the Sweep Checks
@@ -49,8 +56,11 @@ bash scripts/workflow/gh-collab-sweep.sh --agent codex
 | My Issues | Open Project items where Agent=me, status != Done | Resume owned work |
 | Needs My Review | Items where Review Lane=me and status=Review | Unblock the other agent |
 | Stale Discussions | 0-comment discussions in my affinity categories | Prevent permanent drift |
+| Nightly Improvement Findings | Open nightly upstream/tooling discussions awaiting Codex triage | Turn overnight research into selective morning action |
 | Handoffs from other agent | Issue comments with `<!-- agent-handoff -->` marker | Async message-passing |
 | Blocked items | Any Project item with status=Blocked | Surface dependencies |
+
+The session-start wrapper runs local recall first, then this sweep, then workflow preflight checks.
 
 ## Agent-Category Affinity
 
@@ -89,12 +99,14 @@ The sweep reads `<!-- agent-handoff -->` markers in recent Issue comments and su
 | My Issues (Blocked) | Unblock or comment with blocker reason |
 | Needs My Review | Complete review or leave handoff comment with timeline |
 | Stale Discussions | Post response or declare output (accepted/deferred/rejected/reference-only) |
+| Nightly Improvement Findings | Codex reviews, comments a decision, and promotes only if the next action is concrete |
 | Handoffs from other agent | Acknowledge and act or comment with status |
 | Blocked items | Assess if you can unblock; if not, leave comment |
 
 ### Review Lane Resolution Rule
 
 If `Needs My Review` contains an item, resolve that review lane before starting unrelated task work.
+This same flow applies when session start stops with `ACTION REQUIRED` because of review-lane items.
 
 Required review flow:
 
@@ -114,6 +126,16 @@ The review lane is only considered handled once one of these is true:
 - an equivalent PR comment is posted when formal review is not possible
 - a concrete handoff comment with timeline/blocker is posted
 
+### Startup Enforcement
+
+When invoked with `--fail-on-action-items`, the sweep exits with status `3` if any of these remain:
+
+- `Needs My Review` items
+- zero-comment affinity discussions needing a first response
+- recent handoff comments from the other agent
+
+This is the mode used by `scripts/workflow/session-start.sh`.
+
 ## Stale Discussion Rule
 
 A discussion is stale if:
@@ -128,6 +150,19 @@ Required action: post a comment before starting task work. Minimum output is one
 - `Rejected — reason: <reason>`
 - `Reference only — no action needed`
 
+## Nightly Improvement Rule
+
+The nightly findings section is read-only sweep output.
+
+Codex should:
+
+1. review the surfaced nightly upstream/tooling discussions
+2. add a Codex decision comment when needed
+3. promote only when the next action is concrete enough for an execution Issue
+4. leave a promotion summary comment when promoted
+
+The sweep itself must not auto-promote or auto-close nightly findings.
+
 ## Session End Contract
 
 When ending a session with in-progress or blocked work that the other agent should pick up:
@@ -139,5 +174,5 @@ When ending a session with in-progress or blocked work that the other agent shou
 ## Related Docs
 
 - `docs/workflow/github/github-agent-collaboration-loop.md` — day-to-day collaboration rules
-- `docs/workflow/runtime/session-recall.md` — local session recall (run before sweep)
+- `docs/workflow/runtime/session-recall.md` — local session recall (run before sweep, or via `scripts/workflow/session-start.sh`)
 - `docs/workflow/github/nanoclaw-github-control-plane.md` — governance and automation policy

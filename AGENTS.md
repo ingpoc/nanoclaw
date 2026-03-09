@@ -5,9 +5,10 @@
 - Read and follow `CLAUDE.md` as the single source of truth for repository instructions, including upstream sync policy.
 - At the start of every task, load `CLAUDE.md` first, then follow its `Docs Index` trigger lines for progressive disclosure.
 - `docs/README.md` is the curated docs landing page; `DOCS.md` is the full inventory.
-- At session start, run `bash scripts/workflow/gh-collab-sweep.sh --agent codex` and act on its output (stale discussions, handoffs, review requests) before starting task work.
+- At session start, run `bash scripts/workflow/session-start.sh --agent codex` so recall bootstrap, GitHub sweep, and workflow preflight happen in one enforced sequence before task work.
 - At session start or when resuming interrupted work, follow `docs/workflow/runtime/session-recall.md` to reconstruct personal session context before loading project docs.
 - Before changing the sweep protocol or agent-category affinity, follow `docs/workflow/github/github-collab-sweep.md`.
+- When session start is blocked by required GitHub collaboration actions or when handling `Needs My Review` items from the sweep, follow `docs/workflow/github/github-collab-sweep.md`.
 - Use `scripts/qmd-context-recall.sh` for recall-only workflows and `scripts/qmd-session-sync.sh` for session export sync + qmd update + git add/commit.
 - Before ending a session with in-progress work or blockers, follow `docs/workflow/runtime/session-recall.md` handoff flow (`qctx --close`).
 - Before changing session recall/sync/export behavior, follow `docs/workflow/runtime/session-recall.md`.
@@ -16,6 +17,8 @@
 - Run the task-start skill/MCP routing preflight defined by `CLAUDE.md` before ad-hoc implementation/debugging.
 - Before starting feature/bug/reliability implementation (default single-lane), follow `docs/workflow/delivery/nanoclaw-development-loop.md`.
 - Before changing workflow strategy/cadence based on external research, follow `docs/workflow/strategy/workflow-optimization-loop.md`.
+- After task completion or before ending a session, if a workflow caused avoidable friction, retries, or mid-task correction, follow `docs/workflow/strategy/session-introspection-loop.md`.
+- Before changing nighttime improvement evaluation, overnight research cadence, or token-budgeted upstream/tooling scanning, follow `docs/workflow/strategy/nightly-evaluation-loop.md`.
 - Before running weekly docs/scripts/config/code slop cleanup during optimization cycles, follow `docs/workflow/strategy/weekly-slop-optimization-loop.md`.
 - Before reviewing hooks/subagents or built-in tool routing governance, follow `docs/workflow/strategy/weekly-slop-optimization-loop.md` and `docs/operations/tooling-governance-budget.json`.
 - Before running parallel Claude/Codex worktrees or splitting execution/review ownership across tools (supersedes single-lane loop), follow `docs/workflow/delivery/unified-codex-claude-loop.md`.

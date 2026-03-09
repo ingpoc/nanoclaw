@@ -37,6 +37,7 @@ docs/
 - Worker contract and runtime: `docs/workflow/runtime/nanoclaw-jarvis-dispatch-contract.md` + `docs/workflow/runtime/nanoclaw-jarvis-worker-runtime.md`
 - GitHub and workflow governance: `docs/workflow/github/nanoclaw-github-control-plane.md` + `docs/workflow/github/github-offload-boundary-loop.md`
 - Day-to-day GitHub agent collaboration: `docs/workflow/github/github-agent-collaboration-loop.md`
+- Nightly upstream/tooling improvement lane: `docs/workflow/strategy/nightly-evaluation-loop.md`
 - Cross-tool Claude/Codex execution: `docs/workflow/delivery/unified-codex-claude-loop.md`
 - Ownership and update surfaces: `docs/operations/workflow-setup-responsibility-map.md` + `docs/operations/update-requirements-matrix.md`
 - Research artifacts and optimization evidence: `docs/research/README.md`
@@ -44,6 +45,7 @@ docs/
 ## Common Entrypoints
 
 ```bash
+bash scripts/workflow/session-start.sh --agent codex
 bash scripts/qmd-context-recall.sh --bootstrap
 bash scripts/workflow/preflight.sh
 bash scripts/jarvis-ops.sh acceptance-gate

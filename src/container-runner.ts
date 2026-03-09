@@ -13,6 +13,7 @@ import {
   CONTAINER_NO_OUTPUT_TIMEOUT,
   CONTAINER_PARSE_BUFFER_LIMIT,
   CONTAINER_TIMEOUT,
+  CREDENTIAL_PROXY_PORT,
   DATA_DIR,
   GROUPS_DIR,
   IDLE_TIMEOUT,
@@ -20,15 +21,17 @@ import {
   TIMEZONE,
   WORKER_CONTAINER_IMAGE,
 } from './config.js';
-import { readEnvFile } from './env.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
 import {
+  CONTAINER_HOST_GATEWAY,
   CONTAINER_RUNTIME_BIN,
+  hostGatewayArgs,
   readonlyMountArgs,
   stopContainer,
   stopRunningContainersByPrefix,
 } from './container-runtime.js';
+import { detectAuthMode } from './credential-proxy.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { isJarvisWorkerFolder, RegisteredGroup } from './types.js';
 
@@ -52,7 +55,6 @@ export interface ContainerInput {
   schedulerEnabled?: boolean;
   workerSteeringEnabled?: boolean;
   dynamicGroupRegistrationEnabled?: boolean;
-  secrets?: Record<string, string>;
 }
 
 export interface ContainerOutput {
@@ -345,6 +347,17 @@ function buildVolumeMounts(
       readonly: true,
     });
 
+    // Shadow .env so the agent cannot read secrets from the mounted project root.
+    // Credentials are injected by the credential proxy, never exposed to containers.
+    const envFile = path.join(projectRoot, '.env');
+    if (fs.existsSync(envFile)) {
+      mounts.push({
+        hostPath: '/dev/null',
+        containerPath: '/workspace/project/.env',
+        readonly: true,
+      });
+    }
+
     // Main also gets its group folder as the working directory
     mounts.push({
       hostPath: groupDir,
@@ -509,29 +522,6 @@ function buildVolumeMounts(
   return mounts;
 }
 
-const DEFAULT_SECRETS = [
-  'CLAUDE_CODE_OAUTH_TOKEN',
-  'ANTHROPIC_API_KEY',
-  'ANTHROPIC_BASE_URL',
-  'OAUTH_API_FALLBACK_ENABLED',
-  'ANTHROPIC_DEFAULT_SONNET_MODEL',
-  'GITHUB_TOKEN',
-  'GH_TOKEN',
-];
-
-/**
- * Read allowed secrets from .env for passing to the container via stdin.
- * Secrets are never written to disk or mounted as files.
- * @param allowedSecrets - Optional list of env var names to read (defaults to all)
- */
-function readSecrets(allowedSecrets?: string[]): Record<string, string> {
-  const vars =
-    allowedSecrets && allowedSecrets.length > 0
-      ? allowedSecrets
-      : DEFAULT_SECRETS;
-  return readEnvFile(vars);
-}
-
 function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
@@ -541,6 +531,26 @@ function buildContainerArgs(
 
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
+
+  // Route API traffic through the credential proxy (containers never see real secrets)
+  args.push(
+    '-e',
+    `ANTHROPIC_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}`,
+  );
+
+  // Mirror the host's auth method with a placeholder value.
+  // API key mode: SDK sends x-api-key, proxy replaces with real key.
+  // OAuth mode:   SDK exchanges placeholder token for temp API key,
+  //               proxy injects real OAuth token on that exchange request.
+  const authMode = detectAuthMode();
+  if (authMode === 'api-key') {
+    args.push('-e', 'ANTHROPIC_API_KEY=placeholder');
+  } else {
+    args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
+  }
+
+  // Runtime-specific args for host gateway resolution
+  args.push(...hostGatewayArgs());
 
   // Apple Container runtime crashes with XPC "Connection interrupted"
   // when using --user. Let the image's default non-root user run instead.
@@ -653,13 +663,8 @@ export async function runContainerAgent(
     let stdoutTruncated = false;
     let stderrTruncated = false;
 
-    // Pass secrets via stdin (never written to disk or mounted as files)
-    // Use per-group secrets config if specified, otherwise use defaults
-    input.secrets = readSecrets(group.containerConfig?.secrets);
     container.stdin.write(JSON.stringify(input));
     container.stdin.end();
-    // Remove secrets from input so they don't appear in logs
-    delete input.secrets;
 
     // Streaming output: parse OUTPUT_START/END marker pairs as they arrive
     let parseBuffer = '';

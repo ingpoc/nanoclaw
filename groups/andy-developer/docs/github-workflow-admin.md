@@ -1,6 +1,6 @@
 # Andy-Developer GitHub Workflow Admin
 
-Control-plane playbook for GitHub Actions, review automation, and branch governance.
+Control-plane playbook for GitHub Actions, review automation, branch governance, the sparse daytime platform pickup lane, and the nightly improvement lane.
 
 ## Scope
 
@@ -9,7 +9,8 @@ Andy-developer may directly change:
 - `.github/workflows/*.yml`
 - CI/review policy docs
 - Branch governance docs and operational checklists
-- Pre-seeded worker branches (`jarvis-*`) created from an approved `base_branch`
+- control-plane automation scripts for platform pickup and nightly evaluation
+- pre-seeded worker branches (`jarvis-*`) created from an approved `base_branch`
 
 Andy-developer must not directly implement product source code.
 
@@ -37,21 +38,21 @@ Rules:
 
 1. Define objective and required checks.
 2. Create a dedicated branch (`jarvis-admin-<topic>`).
-3. Implement workflow/policy changes (for example on-demand `.github/workflows/claude-review.yml`).
+3. Implement workflow/policy changes.
 4. Open PR with clear risk and rollback notes.
-5. Decide review mode: request Claude review (`@claude`) only when required by project policy/risk.
+5. Decide review mode: request Claude review only when required by project policy/risk.
 6. Merge only after required checks pass.
 
-## NanoClaw Platform Claude Loop
+## Sparse Daytime Platform Pickup Lane
 
-Use the dedicated Claude `/loop` lane only for `NanoClaw Platform` issues that are already decision-complete.
+Use the daytime Claude pickup lane only for `NanoClaw Platform` issues that are already decision-complete.
 
 Required runtime surfaces:
 
 - `.claude/commands/platform-pickup.md`
 - `scripts/workflow/run-platform-claude-session.sh`
 - `scripts/workflow/platform-loop.js`
-<<<<<<< HEAD
+- `scripts/workflow/platform-loop-sync.sh`
 - `scripts/workflow/start-platform-loop.sh`
 - `scripts/workflow/trigger-platform-pickup-now.sh`
 - `scripts/workflow/check-platform-loop.sh`
@@ -59,58 +60,49 @@ Required runtime surfaces:
 
 Operating rules:
 
-1. the loop confirms local GitHub auth is `ingpoc` before reading or mutating the NanoClaw platform board
+1. the pickup lane confirms local GitHub auth is `ingpoc` before reading or mutating the NanoClaw platform board
 2. unanimous discussion promotion creates the platform Issue, but does not make it `Ready`
 3. before an issue can be marked `Ready`, Codex must write or normalize the scope, acceptance, checks, evidence, blocked conditions, and checked `Ready Checklist` on the Issue body
-4. the loop claims only one `Ready` platform issue at a time
-5. if any Claude-owned platform item is already `Review`, the loop must no-op
-6. the loop must move active implementation to `In Progress` and set `Agent=claude`
-7. the loop must move review-ready PRs to `Review`
-8. on ambiguity or failed required checks, the loop must move the item to `Blocked` with a concrete `Next Decision`
-9. the loop must leave issue comments when it claims work, blocks, and hands off to review so monitoring never depends on the Claude terminal alone
-10. Codex is the default review lane after the loop finishes implementation
+4. the lane claims only one `Ready` platform issue at a time
+5. if any Claude-owned platform item is already `Review`, the lane must no-op
+6. the lane must move active implementation to `In Progress` and set `Agent=claude`
+7. the lane must move review-ready PRs to `Review`
+8. on ambiguity or failed required checks, the lane must move the item to `Blocked` with a concrete `Next Decision`
+9. the lane must leave issue comments when it claims work, blocks, and hands off to review
+10. Codex is the default review lane after the lane finishes implementation
 11. merge remains human-only
 
-CLI mode rule:
+Scheduler rules:
 
-1. use an interactive Claude Code session for `/loop`
-2. run the unattended platform loop in a dedicated git worktree so Claude changes stay isolated from the maintainer working tree
-3. launch that dedicated loop session with `--permission-mode bypassPermissions` so the unattended run cannot stall on interactive tool prompts
-4. load the repo `CLAUDE_CODE_OAUTH_TOKEN` into that session when present so the platform loop uses the subscription auth lane deterministically
-5. do not use `claude -p` to invoke `/platform-pickup`, because headless mode is for non-interactive prompts and interactive slash commands are unavailable there
+1. the launchd job is sparse, not hourly
+2. scheduled pickups run at `10:00` and `15:00` Asia/Kolkata
+3. `scripts/workflow/check-platform-loop.sh` starts a pickup only when another pickup is not already running
+4. `scripts/workflow/trigger-platform-pickup-now.sh` is the manual one-shot trigger
 
-||||||| 7476e8b
-=======
-- `scripts/workflow/platform-loop-worktree.sh`
-- `scripts/workflow/start-platform-loop.sh`
-- `scripts/workflow/trigger-platform-pickup-now.sh`
-- `scripts/workflow/check-platform-loop.sh`
-- `launchd/com.nanoclaw-platform-loop.plist`
+## Nightly Improvement Lane
 
-Operating rules:
+Use the nightly Claude lane for upstream/tooling evaluation only.
 
-1. the loop confirms local GitHub auth is `ingpoc` before reading or mutating the NanoClaw platform board
-2. unanimous discussion promotion creates the platform Issue, but does not make it `Ready`
-3. before an issue can be marked `Ready`, Codex must write or normalize the scope, acceptance, checks, evidence, blocked conditions, and checked `Ready Checklist` on the Issue body
-4. the loop claims only one `Ready` platform issue at a time
-5. if any Claude-owned platform item is already `Review`, the loop must no-op
-6. every pickup begins with a cleanup sweep for merged/closed Claude-owned platform items; clean per-issue execution worktrees are removed locally before new work is claimed
-7. the loop must prepare the issue execution worktree from the issue `Base Branch` and fetch `origin/<Base Branch>` before claim
-8. the loop must move active implementation to `In Progress` and set `Agent=claude`
-9. the loop must move review-ready PRs to `Review`
-10. on ambiguity, base/worktree preparation failure, or failed required checks, the loop must move the item to `Blocked` with a concrete `Next Decision`
-11. the loop must leave issue comments when it claims work, blocks, and hands off to review so monitoring never depends on the Claude terminal alone
-12. Codex is the default review lane after the loop finishes implementation
-13. merge remains human-only
+Required runtime surfaces:
 
-CLI mode rule:
+- `.claude/agents/nightly-improvement-researcher.md`
+- `.claude/commands/nightly-improvement-eval.md`
+- `scripts/workflow/nightly-improvement.js`
+- `scripts/workflow/start-nightly-improvement.sh`
+- `launchd/com.nanoclaw-nightly-improvement.plist`
+- `.nanoclaw/nightly-improvement/state.json`
 
-1. use an interactive Claude Code session for `/loop`
-2. run the unattended platform loop in a dedicated git worktree so Claude changes stay isolated from the maintainer working tree
-3. launch that dedicated loop session with `--permission-mode bypassPermissions` so the unattended run cannot stall on interactive tool prompts
-4. load the repo `CLAUDE_CODE_OAUTH_TOKEN` into that session when present so the platform loop uses the subscription auth lane deterministically
-5. do not use `claude -p` to invoke `/platform-pickup`, because headless mode is for non-interactive prompts and interactive slash commands are unavailable there
->>>>>>> origin/main
+Nightly rules:
+
+1. nightly work is research-only and never creates execution Issues or PRs directly
+2. scheduled execution is headless via `claude -p`, not an interactive Terminal session
+3. the scheduled lane uses the `nightly-improvement-researcher` project subagent with model `sonnet`
+4. nightly research starts from deterministic scan output, not open-ended browsing
+5. previously evaluated upstream heads and tool versions are skipped unless explicitly forced
+6. nightly output updates one upstream discussion and one tooling discussion at most
+7. every nightly decision comment uses `Agent Label: Claude Code` with `pilot`, `defer`, or `reject`
+8. Codex performs the morning triage and selective promotion
+
 ## Requirement-Based Review Decision
 
 | Profile | `@claude` Review |

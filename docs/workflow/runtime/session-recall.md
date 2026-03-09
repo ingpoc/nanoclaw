@@ -10,10 +10,16 @@ This workflow now uses two separate scripts:
 ## Quick Commands
 
 ```bash
-# Session start (recommended)
-qctx --bootstrap
+# Session start (recommended, full startup flow)
+bash scripts/workflow/session-start.sh --agent codex
 
 # Session start with explicit issue
+bash scripts/workflow/session-start.sh --agent codex --issue INC-123
+
+# Recall only
+qctx --bootstrap
+
+# Recall only with explicit issue
 qctx --bootstrap --issue INC-123
 
 # While working: targeted context lookup
@@ -45,16 +51,19 @@ bash scripts/qmd-context-recall.sh --bootstrap
 
 ## Recommended Workflow
 
-1. Session start: run `qctx --bootstrap`.
-2. During work: run `qctx "<topic>"` before major debug/fix loops.
-3. If query precision matters, rerun with `qctx --search-mode hybrid "<topic>"`.
-4. If recall seems stale, run `bash scripts/qmd-session-sync.sh` and rerun recall.
-5. Session end: run `qctx --close ...` with concrete `--next`.
+1. Session start: run `bash scripts/workflow/session-start.sh --agent <claude|codex>`.
+2. If `qmd status` warns that embeddings are pending, the main agent may spawn one background `monitor` lane dedicated to `bash scripts/qmd-session-sync.sh`.
+3. The main lane continues with GitHub sweep handling and workflow preflight without waiting on session sync.
+4. During work: run `qctx "<topic>"` before major debug/fix loops.
+5. If query precision matters, rerun with `qctx --search-mode hybrid "<topic>"`.
+6. If recall quality is still degraded or stale after background sync completes, rerun recall.
+7. Session end: run `qctx --close ...` with concrete `--next`.
 
 ## When To Run What
 
 1. Start of day or resume interrupted work:
-   - `qctx --bootstrap`
+   - `bash scripts/workflow/session-start.sh --agent <claude|codex>`
+   - fallback recall-only: `qctx --bootstrap`
 2. Fast keyword recall (lowest latency):
    - `qctx --search-mode bm25 "<topic>"`
 3. Best ranking / fuzzy recall (highest quality):
@@ -77,6 +86,28 @@ bash scripts/qmd-context-recall.sh --bootstrap
 - Searches QMD sessions and prints a `Next Action` hint.
 - If the primary query has no hits, retries with latest open-incident context from `.claude/progress/incident.json`.
 - Defaults in this mode: `--top 10`, `--fetch 3`.
+
+### Session-Start Wrapper
+
+`scripts/workflow/session-start.sh` is the canonical startup entrypoint. It runs:
+
+1. `qctx --bootstrap`
+2. `gh-collab-sweep.sh --agent <runtime> --fail-on-action-items`
+3. `scripts/workflow/preflight.sh --skip-recall`
+
+If `qmd status` reports pending embeddings, the wrapper prints a recall-quality warning and recommends `bash scripts/qmd-session-sync.sh` before deeper resume/debug work.
+
+### Interactive Agent Flow
+
+For interactive Codex/Claude runtime sessions, keep bootstrap recall in the main lane, then use this split:
+
+1. Main lane runs `qctx --bootstrap`.
+2. Main lane checks `qmd status`.
+3. If `Pending > 0`, main lane may spawn one background `monitor` lane for `bash scripts/qmd-session-sync.sh`.
+4. Main lane continues with `gh-collab-sweep.sh` and workflow preflight immediately.
+5. Background lane reports success/failure when session sync finishes.
+
+This keeps session start independent of session sync while still repairing degraded recall in parallel.
 
 ### Standard Search (default)
 

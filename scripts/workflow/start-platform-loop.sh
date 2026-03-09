@@ -2,17 +2,16 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-STATE_DIR="$ROOT_DIR/.claude/progress"
-STATE_FILE="$STATE_DIR/platform-loop-state.json"
+STATE_DIR="$ROOT_DIR/.nanoclaw/platform-loop"
+STATE_FILE="$STATE_DIR/launch-state.json"
 WORKTREE_PATH="${NANOCLAW_PLATFORM_LOOP_WORKTREE:-$ROOT_DIR/.worktrees/platform-loop}"
 WORKTREE_BRANCH="${NANOCLAW_PLATFORM_LOOP_BRANCH:-claude-platform-loop}"
 BASE_BRANCH="${NANOCLAW_PLATFORM_LOOP_BASE_BRANCH:-main}"
 REMOTE_NAME="${NANOCLAW_PLATFORM_LOOP_REMOTE:-origin}"
-LOOP_INTERVAL="${NANOCLAW_PLATFORM_LOOP_INTERVAL:-1h}"
-LOOP_COMMAND="${NANOCLAW_PLATFORM_LOOP_COMMAND:-/platform-pickup}"
 LAUNCH_LABEL="${NANOCLAW_PLATFORM_LOOP_LABEL:-com.nanoclaw.platform-loop}"
 GH_ACCOUNT="${NANOCLAW_PLATFORM_GH_ACCOUNT:-ingpoc}"
 CLAUDE_PERMISSION_MODE="${NANOCLAW_PLATFORM_CLAUDE_PERMISSION_MODE:-bypassPermissions}"
+CLAUDE_PROMPT="${NANOCLAW_PLATFORM_CLAUDE_PROMPT:-/platform-pickup}"
 SESSION_RUNNER="$ROOT_DIR/scripts/workflow/run-platform-claude-session.sh"
 SYNC_HELPER="$ROOT_DIR/scripts/workflow/platform-loop-sync.sh"
 LOG_DIR="$ROOT_DIR/logs"
@@ -44,7 +43,7 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 if command -v gh >/dev/null 2>&1; then
-  gh auth switch --user "$GH_ACCOUNT" >/dev/null
+  gh auth switch --user "$GH_ACCOUNT" >/dev/null 2>&1 || true
 fi
 
 if [[ ! -x "$SYNC_HELPER" ]]; then
@@ -63,8 +62,7 @@ NANOCLAW_PLATFORM_LOOP_BASE_BRANCH="$BASE_BRANCH" \
 NANOCLAW_PLATFORM_LOOP_REMOTE="$REMOTE_NAME" \
 bash "$SYNC_HELPER" "${sync_args[@]}"
 
-LOOP_PROMPT="/loop ${LOOP_INTERVAL} ${LOOP_COMMAND}"
-SHELL_COMMAND="NANOCLAW_PLATFORM_LOOP_SOURCE_ROOT=\"$ROOT_DIR\" NANOCLAW_PLATFORM_LOOP_WORKTREE=\"$WORKTREE_PATH\" NANOCLAW_PLATFORM_LOOP_BRANCH=\"$WORKTREE_BRANCH\" NANOCLAW_PLATFORM_LOOP_BASE_BRANCH=\"$BASE_BRANCH\" NANOCLAW_PLATFORM_LOOP_REMOTE=\"$REMOTE_NAME\" bash \"$SESSION_RUNNER\" --worktree \"$WORKTREE_PATH\" --gh-account \"$GH_ACCOUNT\" --permission-mode \"$CLAUDE_PERMISSION_MODE\" --prompt \"$LOOP_PROMPT\""
+SHELL_COMMAND="NANOCLAW_PLATFORM_LOOP_SOURCE_ROOT=\"$ROOT_DIR\" NANOCLAW_PLATFORM_LOOP_WORKTREE=\"$WORKTREE_PATH\" NANOCLAW_PLATFORM_LOOP_BRANCH=\"$WORKTREE_BRANCH\" NANOCLAW_PLATFORM_LOOP_BASE_BRANCH=\"$BASE_BRANCH\" NANOCLAW_PLATFORM_LOOP_REMOTE=\"$REMOTE_NAME\" bash \"$SESSION_RUNNER\" --worktree \"$WORKTREE_PATH\" --gh-account \"$GH_ACCOUNT\" --permission-mode \"$CLAUDE_PERMISSION_MODE\" --prompt \"$CLAUDE_PROMPT\""
 
 json_escape() {
   python3 - <<'PY' "$1"
@@ -82,8 +80,7 @@ record_state() {
   "base_branch": $(json_escape "$BASE_BRANCH"),
   "remote_name": $(json_escape "$REMOTE_NAME"),
   "source_root": $(json_escape "$ROOT_DIR"),
-  "loop_interval": $(json_escape "$LOOP_INTERVAL"),
-  "loop_command": $(json_escape "$LOOP_COMMAND"),
+  "prompt": $(json_escape "$CLAUDE_PROMPT"),
   "github_account": $(json_escape "$GH_ACCOUNT"),
   "permission_mode": $(json_escape "$CLAUDE_PERMISSION_MODE"),
   "launched_at": $(json_escape "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"),

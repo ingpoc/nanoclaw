@@ -11,7 +11,7 @@ Codex-local reasoning and subagent paths remain the default; Claude is consulted
 
 Primary operational use in this repository:
 
-1. At session start, Codex runs the required GitHub collaboration sweep.
+1. At session start, Codex runs `bash scripts/workflow/session-start.sh --agent codex`.
 2. If `Needs My Review` surfaces a Claude-authored PR and Codex finds a review issue that is best resolved with Claude's prior implementation context, use this lane immediately from the review flow.
 3. In that case, prefer the exact Claude implementation session tied to the PR over a fresh Claude session.
 

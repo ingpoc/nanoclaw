@@ -14,6 +14,7 @@ vi.mock('./config.js', () => ({
   CONTAINER_NO_OUTPUT_TIMEOUT: 720000, // 12min
   CONTAINER_PARSE_BUFFER_LIMIT: 1048576,
   CONTAINER_TIMEOUT: 1800000, // 30min
+  CREDENTIAL_PROXY_PORT: 3001,
   DATA_DIR: '/tmp/nanoclaw-test-data',
   GROUPS_DIR: '/tmp/nanoclaw-test-groups',
   IDLE_TIMEOUT: 1800000, // 30min

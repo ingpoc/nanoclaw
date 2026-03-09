@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-STATE_DIR="$ROOT_DIR/.claude/progress"
-STATE_FILE="$STATE_DIR/platform-pickup-manual-state.json"
+STATE_DIR="$ROOT_DIR/.nanoclaw/platform-loop"
+STATE_FILE="$STATE_DIR/manual-pickup-state.json"
 WORKTREE_PATH="${NANOCLAW_PLATFORM_LOOP_WORKTREE:-$ROOT_DIR/.worktrees/platform-loop}"
 WORKTREE_BRANCH="${NANOCLAW_PLATFORM_LOOP_BRANCH:-claude-platform-loop}"
 BASE_BRANCH="${NANOCLAW_PLATFORM_LOOP_BASE_BRANCH:-main}"
@@ -46,7 +46,7 @@ if ! command -v osascript >/dev/null 2>&1; then
 fi
 
 if command -v gh >/dev/null 2>&1; then
-  gh auth switch --user "$GH_ACCOUNT" >/dev/null
+  gh auth switch --user "$GH_ACCOUNT" >/dev/null 2>&1 || true
 fi
 
 if [[ ! -x "$SYNC_HELPER" ]]; then

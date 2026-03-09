@@ -202,7 +202,9 @@ exit 1
     ).toBe('latest sync helper\n');
 
     const exclude = fs.readFileSync(excludePath, 'utf8');
-    expect(exclude).toContain('.claude/agents/nightly-improvement-researcher.md');
+    expect(exclude).toContain(
+      '.claude/agents/nightly-improvement-researcher.md',
+    );
     expect(exclude).toContain('.claude/commands/platform-pickup.md');
     expect(exclude).toContain('.claude/commands/nightly-improvement-eval.md');
     expect(exclude).toContain('.claude/scheduled_tasks.lock');

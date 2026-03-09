@@ -5,7 +5,9 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-const SCRIPT_PATH = path.resolve('scripts/workflow/start-nightly-improvement.sh');
+const SCRIPT_PATH = path.resolve(
+  'scripts/workflow/start-nightly-improvement.sh',
+);
 
 function writeExecutable(filePath: string, content: string) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -21,7 +23,9 @@ describe('start-nightly-improvement launcher', () => {
   let gitLogPath: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'start-nightly-improvement-'));
+    tempDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'start-nightly-improvement-'),
+    );
     binDir = path.join(tempDir, 'bin');
     sourceRoot = path.join(tempDir, 'source-root');
     worktreePath = path.join(tempDir, 'worktree');
@@ -29,20 +33,36 @@ describe('start-nightly-improvement launcher', () => {
     gitLogPath = path.join(tempDir, 'git.log');
 
     fs.mkdirSync(binDir, { recursive: true });
-    fs.mkdirSync(path.join(sourceRoot, '.claude', 'commands'), { recursive: true });
-    fs.mkdirSync(path.join(sourceRoot, '.claude', 'agents'), { recursive: true });
-    fs.mkdirSync(path.join(sourceRoot, 'scripts', 'workflow'), { recursive: true });
+    fs.mkdirSync(path.join(sourceRoot, '.claude', 'commands'), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(sourceRoot, '.claude', 'agents'), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(sourceRoot, 'scripts', 'workflow'), {
+      recursive: true,
+    });
 
     fs.writeFileSync(
       path.join(sourceRoot, '.claude', 'commands', 'platform-pickup.md'),
       'platform pickup\n',
     );
     fs.writeFileSync(
-      path.join(sourceRoot, '.claude', 'commands', 'nightly-improvement-eval.md'),
+      path.join(
+        sourceRoot,
+        '.claude',
+        'commands',
+        'nightly-improvement-eval.md',
+      ),
       'nightly command\n',
     );
     fs.writeFileSync(
-      path.join(sourceRoot, '.claude', 'agents', 'nightly-improvement-researcher.md'),
+      path.join(
+        sourceRoot,
+        '.claude',
+        'agents',
+        'nightly-improvement-researcher.md',
+      ),
       'nightly agent\n',
     );
     fs.writeFileSync(
@@ -153,7 +173,10 @@ exit ${exitCode}
     );
   }
 
-  function runLauncher(args: string[] = [], extraEnv: Record<string, string> = {}) {
+  function runLauncher(
+    args: string[] = [],
+    extraEnv: Record<string, string> = {},
+  ) {
     return execFileSync('bash', [SCRIPT_PATH, ...args], {
       encoding: 'utf8',
       env: {
@@ -171,27 +194,34 @@ exit ${exitCode}
     });
   }
 
-  it('prints a headless claude invocation in dry-run mode', { timeout: 15000 }, () => {
-    writeFakeGit();
-    writeFakeGh();
-    writeFakeClaude();
+  it(
+    'prints a headless claude invocation in dry-run mode',
+    { timeout: 15000 },
+    () => {
+      writeFakeGit();
+      writeFakeGh();
+      writeFakeClaude();
 
-    const output = runLauncher(['--dry-run']);
+      const output = runLauncher(['--dry-run']);
 
-    expect(output).toContain('claude -p');
-    expect(output).toContain('--agent "nightly-improvement-researcher"');
-    expect(output).toContain('--model "sonnet"');
-    expect(output).toContain(`--add-dir "${sourceRoot}"`);
-    expect(fs.existsSync(path.join(tempDir, 'claude-args.txt'))).toBe(false);
-  });
+      expect(output).toContain('claude -p');
+      expect(output).toContain('--agent "nightly-improvement-researcher"');
+      expect(output).toContain('--model "sonnet"');
+      expect(output).toContain(`--add-dir "${sourceRoot}"`);
+      expect(fs.existsSync(path.join(tempDir, 'claude-args.txt'))).toBe(false);
+    },
+  );
 
-  it('short-circuits on noop without invoking claude', { timeout: 15000 }, () => {
-    writeFakeGit();
-    writeFakeGh();
-    writeFakeClaude(99);
-    fs.writeFileSync(
-      path.join(sourceRoot, 'scripts', 'workflow', 'nightly-improvement.js'),
-      `#!/usr/bin/env node
+  it(
+    'short-circuits on noop without invoking claude',
+    { timeout: 15000 },
+    () => {
+      writeFakeGit();
+      writeFakeGh();
+      writeFakeClaude(99);
+      fs.writeFileSync(
+        path.join(sourceRoot, 'scripts', 'workflow', 'nightly-improvement.js'),
+        `#!/usr/bin/env node
 const fs = require('fs');
 
 const args = process.argv.slice(2);
@@ -225,15 +255,23 @@ if (command === 'record') {
 
 process.exit(1);
 `,
-      { mode: 0o755 },
-    );
+        { mode: 0o755 },
+      );
 
-    const output = runLauncher();
+      const output = runLauncher();
 
-    expect(output).toContain('Nightly improvement: noop');
-    expect(fs.existsSync(path.join(tempDir, 'claude-args.txt'))).toBe(false);
-    expect(
-      fs.existsSync(path.join(sourceRoot, '.nanoclaw', 'nightly-improvement', 'state.json')),
-    ).toBe(true);
-  });
+      expect(output).toContain('Nightly improvement: noop');
+      expect(fs.existsSync(path.join(tempDir, 'claude-args.txt'))).toBe(false);
+      expect(
+        fs.existsSync(
+          path.join(
+            sourceRoot,
+            '.nanoclaw',
+            'nightly-improvement',
+            'state.json',
+          ),
+        ),
+      ).toBe(true);
+    },
+  );
 });

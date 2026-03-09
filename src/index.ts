@@ -1863,11 +1863,17 @@ async function runAgent(
           setSession(group.folder, output.newSessionId);
           setSessionContextVersion(group.folder, sessionContextVersion);
         }
-        if (output.agentId && output.agentType && workerRunId) {
+        if ((output.agentId || output.agentType) && workerRunId) {
           try {
-            updateWorkerRunAttribution(workerRunId, output.agentId, output.agentType);
+            // updateWorkerRunAttribution validates both fields and throws for
+            // partial/malformed payloads, making the failure explicit rather
+            // than silently dropped.
+            updateWorkerRunAttribution(workerRunId, output.agentId!, output.agentType!);
           } catch (err) {
-            logger.warn({ runId: workerRunId, err }, 'Failed to record agent attribution');
+            logger.warn(
+              { runId: workerRunId, agentId: output.agentId, agentType: output.agentType, err },
+              'Failed to record agent attribution',
+            );
           }
         }
         await onOutput(output);

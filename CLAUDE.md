@@ -70,6 +70,7 @@ BEFORE finalizing any Andy/Jarvis operating agreement change → read docs/opera
 BEFORE deciding runtime-local vs prebaked container placement → read docs/operations/runtime-vs-prebaked-boundary.md
 BEFORE editing Andy's groups/main/CLAUDE.md → read docs/workflow/docs-discipline/andy-compression-loop.md
 BEFORE debugging Andy/Jarvis worker flow issues → read docs/workflow/runtime/nanoclaw-jarvis-debug-loop.md
+BEFORE starting, restarting, or registering the nanoclaw service → read docs/workflow/runtime/nanoclaw-start-runbook.md
 BEFORE debugging Apple Container build/runtime issues → read docs/troubleshooting/DEBUG_CHECKLIST.md and docs/troubleshooting/APPLE-CONTAINER-NETWORKING.md
 BEFORE debugging container/auth/session/mount issues → read docs/workflow/runtime/nanoclaw-container-debugging.md
 AFTER task completion or BEFORE ending session, if a workflow caused avoidable friction, retries, or mid-task correction → read docs/workflow/strategy/session-introspection-loop.md

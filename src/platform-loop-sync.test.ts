@@ -52,7 +52,12 @@ describe('platform-loop-sync launcher helper', () => {
       'latest pickup command\n',
     );
     fs.writeFileSync(
-      path.join(sourceRoot, '.claude', 'commands', 'nightly-improvement-eval.md'),
+      path.join(
+        sourceRoot,
+        '.claude',
+        'commands',
+        'nightly-improvement-eval.md',
+      ),
       'latest nightly command\n',
     );
     fs.writeFileSync(

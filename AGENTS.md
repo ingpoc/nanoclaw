@@ -8,6 +8,7 @@
 - At session start, run `bash scripts/workflow/session-start.sh --agent codex` so recall bootstrap, GitHub sweep, and workflow preflight happen in one enforced sequence before task work.
 - At session start or when resuming interrupted work, follow `docs/workflow/runtime/session-recall.md` to reconstruct personal session context before loading project docs.
 - Before changing the sweep protocol or agent-category affinity, follow `docs/workflow/github/github-collab-sweep.md`.
+- When session start is blocked by required GitHub collaboration actions or when handling `Needs My Review` items from the sweep, follow `docs/workflow/github/github-collab-sweep.md`.
 - Use `scripts/qmd-context-recall.sh` for recall-only workflows and `scripts/qmd-session-sync.sh` for session export sync + qmd update + git add/commit.
 - Before ending a session with in-progress work or blockers, follow `docs/workflow/runtime/session-recall.md` handoff flow (`qctx --close`).
 - Before changing session recall/sync/export behavior, follow `docs/workflow/runtime/session-recall.md`.

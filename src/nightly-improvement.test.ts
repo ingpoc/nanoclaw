@@ -112,7 +112,9 @@ describe('nightly-improvement helpers', () => {
     const evaluatedKeys = Object.fromEntries(
       Array.from({ length: 105 }, (_, index) => [
         `tool:test@${index}`,
-        { evaluatedAt: `2026-03-10T00:${String(index).padStart(2, '0')}:00.000Z` },
+        {
+          evaluatedAt: `2026-03-10T00:${String(index).padStart(2, '0')}:00.000Z`,
+        },
       ]),
     );
 

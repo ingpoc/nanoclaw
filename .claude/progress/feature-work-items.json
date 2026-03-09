@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-08T07:54:29.320Z",
+  "updated_at": "2026-03-07T20:57:46.404Z",
   "items": [
     {
       "id": "work-architecture-boundary-governance-1772821500000",
@@ -359,23 +359,6 @@
       ],
       "created_at": "2026-03-07T20:54:49.257Z",
       "updated_at": "2026-03-07T20:57:46.404Z"
-    },
-    {
-      "id": "work-github-collaboration-control-plane-1772954363658",
-      "title": "Implement host-managed Andy/Jarvis delivery board sync",
-      "feature_id": "github-collaboration-control-plane",
-      "status": "done",
-      "request": "Implement the Andy/Jarvis delivery board workflow so Andy auto-creates or reuses tracked Issues, runtime state from andy_requests/worker_runs drives Project fields on openclaw-gurusharan, and Jarvis execution updates are reflected through milestone comments plus board fields without manual worker PM behavior.",
-      "notes": [
-        "2026-03-08T07:54:22.703Z: Verification complete: npm run build, focused vitest (delivery sync + project sync + dispatch/frontdesk), workflow-contract-check PASS, delivery board schema updated live on openclaw-gurusharan, and a live smoke check wrote issue #47 plus project item PVTI_lAHOD2hLn84BRG0Yzgm6kj0 from runtime state.",
-        "2026-03-08T07:54:29.319Z: Completed host-managed Andy/Jarvis delivery board sync with runtime-driven GitHub issue/project updates and live board schema alignment."
-      ],
-      "evidence": [
-        "src/extensions/jarvis/github-delivery-sync.ts",
-        "https://github.com/ingpoc/nanoclaw/issues/47"
-      ],
-      "created_at": "2026-03-08T07:19:23.658Z",
-      "updated_at": "2026-03-08T07:54:29.319Z"
     }
   ]
 }

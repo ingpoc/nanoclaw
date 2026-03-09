@@ -13,26 +13,6 @@ Andy-developer may directly change:
 
 Andy-developer must not directly implement product source code.
 
-## Project Board Split
-
-Use separate boards only when they represent different domains:
-
-- `NanoClaw Platform`:
-  - NanoClaw functionality and features
-  - runtime/worker contracts
-  - SDK/tooling adoption
-  - GitHub governance/control-plane changes
-- `Andy/Jarvis Delivery`:
-  - user-provided project work
-  - project delivery tasks and follow-ups
-
-Rules:
-
-1. one execution item belongs to one board only
-2. if delivery work is blocked by platform work, create a linked platform Issue instead of duplicating the item on both boards
-3. SDK/tooling discussions promote to `NanoClaw Platform` by default unless explicitly scoped to project delivery
-4. `Andy/Jarvis Delivery` board state is host-managed from runtime request/worker transitions, not worker-authored GitHub edits
-
 ## Standard Sequence
 
 1. Define objective and required checks.
@@ -80,7 +60,6 @@ CLI mode rule:
 3. launch that dedicated loop session with `--permission-mode bypassPermissions` so the unattended run cannot stall on interactive tool prompts
 4. load the repo `CLAUDE_CODE_OAUTH_TOKEN` into that session when present so the platform loop uses the subscription auth lane deterministically
 5. do not use `claude -p` to invoke `/platform-pickup`, because headless mode is for non-interactive prompts and interactive slash commands are unavailable there
-
 ## Requirement-Based Review Decision
 
 | Profile | `@claude` Review |

@@ -51,6 +51,7 @@ Required runtime surfaces:
 - `.claude/commands/platform-pickup.md`
 - `scripts/workflow/run-platform-claude-session.sh`
 - `scripts/workflow/platform-loop.js`
+<<<<<<< HEAD
 - `scripts/workflow/start-platform-loop.sh`
 - `scripts/workflow/trigger-platform-pickup-now.sh`
 - `scripts/workflow/check-platform-loop.sh`
@@ -78,6 +79,38 @@ CLI mode rule:
 4. load the repo `CLAUDE_CODE_OAUTH_TOKEN` into that session when present so the platform loop uses the subscription auth lane deterministically
 5. do not use `claude -p` to invoke `/platform-pickup`, because headless mode is for non-interactive prompts and interactive slash commands are unavailable there
 
+||||||| 7476e8b
+=======
+- `scripts/workflow/platform-loop-worktree.sh`
+- `scripts/workflow/start-platform-loop.sh`
+- `scripts/workflow/trigger-platform-pickup-now.sh`
+- `scripts/workflow/check-platform-loop.sh`
+- `launchd/com.nanoclaw-platform-loop.plist`
+
+Operating rules:
+
+1. the loop confirms local GitHub auth is `ingpoc` before reading or mutating the NanoClaw platform board
+2. unanimous discussion promotion creates the platform Issue, but does not make it `Ready`
+3. before an issue can be marked `Ready`, Codex must write or normalize the scope, acceptance, checks, evidence, blocked conditions, and checked `Ready Checklist` on the Issue body
+4. the loop claims only one `Ready` platform issue at a time
+5. if any Claude-owned platform item is already `Review`, the loop must no-op
+6. every pickup begins with a cleanup sweep for merged/closed Claude-owned platform items; clean per-issue execution worktrees are removed locally before new work is claimed
+7. the loop must prepare the issue execution worktree from the issue `Base Branch` and fetch `origin/<Base Branch>` before claim
+8. the loop must move active implementation to `In Progress` and set `Agent=claude`
+9. the loop must move review-ready PRs to `Review`
+10. on ambiguity, base/worktree preparation failure, or failed required checks, the loop must move the item to `Blocked` with a concrete `Next Decision`
+11. the loop must leave issue comments when it claims work, blocks, and hands off to review so monitoring never depends on the Claude terminal alone
+12. Codex is the default review lane after the loop finishes implementation
+13. merge remains human-only
+
+CLI mode rule:
+
+1. use an interactive Claude Code session for `/loop`
+2. run the unattended platform loop in a dedicated git worktree so Claude changes stay isolated from the maintainer working tree
+3. launch that dedicated loop session with `--permission-mode bypassPermissions` so the unattended run cannot stall on interactive tool prompts
+4. load the repo `CLAUDE_CODE_OAUTH_TOKEN` into that session when present so the platform loop uses the subscription auth lane deterministically
+5. do not use `claude -p` to invoke `/platform-pickup`, because headless mode is for non-interactive prompts and interactive slash commands are unavailable there
+>>>>>>> origin/main
 ## Requirement-Based Review Decision
 
 | Profile | `@claude` Review |

@@ -158,10 +158,6 @@ export function extractIssueNumbers(text) {
   );
 }
 
-<<<<<<< HEAD
-||||||| 7476e8b
-export function deriveIssueStatus({ action, currentStatus, issueState, labels, assigneeCount }) {
-=======
 function extractMarkdownSection(text, heading) {
   if (!text) return null;
   const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -186,7 +182,6 @@ export function extractPullRequestLinkedIssueNumbers(body) {
   return extractIssueNumbers(body);
 }
 
->>>>>>> origin/main
 export function deriveIssueStatus({ action, currentStatus, issueState, labels, assigneeCount, boardKey }) {
   if (boardKey === 'delivery') {
     if (issueState === 'CLOSED') return 'Done';
@@ -201,6 +196,8 @@ export function deriveIssueStatus({ action, currentStatus, issueState, labels, a
   if (issueState === 'CLOSED') return 'Done';
   if (labels.includes('status:blocked')) return 'Blocked';
   if (action === 'opened' || action === 'reopened') return 'Backlog';
+  if (action === 'assigned' && assigneeCount > 0) return 'In Progress';
+  if (action === 'unassigned' && assigneeCount === 0) return 'Ready';
   if (action === 'unlabeled' && currentStatus === 'Blocked') {
     return 'Backlog';
   }
@@ -230,49 +227,10 @@ export function derivePullRequestStatus({
   if (labels.includes('status:blocked')) return 'Blocked';
   if (pullRequestState === 'OPEN' && !isDraft) return 'Review';
   if (pullRequestState === 'OPEN' && isDraft) return currentStatus || 'In Progress';
-<<<<<<< HEAD
-  if (pullRequestState === 'CLOSED') return currentStatus || 'Backlog';
-||||||| 7476e8b
-  if (pullRequestState === 'OPEN' && isDraft) return assigneeCount > 0 ? 'In Progress' : 'Ready';
-  if (pullRequestState === 'CLOSED') return assigneeCount > 0 ? 'In Progress' : 'Ready';
-=======
   if (pullRequestState === 'CLOSED') return assigneeCount > 0 ? currentStatus || 'In Progress' : 'Ready';
->>>>>>> origin/main
   return currentStatus || 'Backlog';
 }
 
-<<<<<<< HEAD
-async function getProjects() {
-  const projects = [];
-  for (const config of BOARD_CONFIGS) {
-    const data = await githubGraphql(
-      `
-        query($owner: String!, $number: Int!) {
-          user(login: $owner) {
-            projectV2(number: $number) {
-              id
-              title
-              fields(first: 50) {
-                nodes {
-                  __typename
-                  ... on ProjectV2SingleSelectField {
-||||||| 7476e8b
-async function getProject() {
-  const data = await githubGraphql(
-    `
-      query($owner: String!, $number: Int!) {
-        user(login: $owner) {
-          projectV2(number: $number) {
-            id
-            title
-            fields(first: 50) {
-              nodes {
-                __typename
-                ... on ProjectV2SingleSelectField {
-                  id
-                  name
-                  options {
-=======
 async function getProject(config) {
   const data = await githubGraphql(
     `
@@ -288,70 +246,29 @@ async function getProject(config) {
                   id
                   name
                   options {
->>>>>>> origin/main
                     id
                     name
-                    options {
-                      id
-                      name
-                    }
                   }
                 }
               }
             }
           }
         }
-<<<<<<< HEAD
-      `,
-      { owner: config.owner, number: config.number },
-    );
-||||||| 7476e8b
-      }
-    `,
-    { owner: PROJECT_OWNER, number: PROJECT_NUMBER },
-  );
-=======
       }
     `,
     { owner: config.owner, number: config.number },
   );
->>>>>>> origin/main
 
-<<<<<<< HEAD
-    const project = data.user?.projectV2;
-    if (!project) {
-      throw new Error(`Project not found: ${config.url}`);
-    }
-||||||| 7476e8b
-  const project = data.user?.projectV2;
-  if (!project) {
-    throw new Error(`Project not found: ${PROJECT_URL}`);
-  }
-=======
   const project = data.user?.projectV2;
   if (!project) {
     throw new Error(`Project not found: ${config.url}`);
   }
->>>>>>> origin/main
 
-    const fields = new Map();
-    for (const field of project.fields.nodes || []) {
-      if (!field?.name) continue;
-      fields.set(field.name, field);
-    }
-
-    projects.push({
-      ...config,
-      id: project.id,
-      title: project.title,
-      fields,
-    });
+  const fields = new Map();
+  for (const field of project.fields.nodes || []) {
+    if (!field?.name) continue;
+    fields.set(field.name, field);
   }
-<<<<<<< HEAD
-  return projects;
-||||||| 7476e8b
-  return { id: project.id, title: project.title, fields };
-=======
 
   return {
     ...config,
@@ -359,21 +276,14 @@ async function getProject(config) {
     title: project.title,
     fields,
   };
->>>>>>> origin/main
 }
 
-<<<<<<< HEAD
-async function getIssue(owner, repo, number, projectIds) {
-||||||| 7476e8b
-async function getIssue(owner, repo, number, projectId) {
-=======
 async function getProjectForBoard(boardKey) {
   const config = BOARD_CONFIGS.find((entry) => entry.key === boardKey) || BOARD_CONFIGS[0];
   return getProject(config);
 }
 
 async function getIssue(owner, repo, number) {
->>>>>>> origin/main
   const data = await githubGraphql(
     `
       query($owner: String!, $repo: String!, $number: Int!) {
@@ -423,21 +333,10 @@ async function getIssue(owner, repo, number) {
   const issue = data.repository?.issue;
   if (!issue) return null;
 
-<<<<<<< HEAD
-  const projectItems = (issue.projectItems.nodes || [])
-    .filter((item) => projectIds.has(item.project?.id))
-    .map((item) => ({
-      ...item,
-      fieldValues: itemFieldValueByName(item),
-    }));
-||||||| 7476e8b
-  const projectItem = (issue.projectItems.nodes || []).find((item) => item.project?.id === projectId) || null;
-=======
   const projectItems = (issue.projectItems.nodes || []).map((item) => ({
     ...item,
     fieldValues: itemFieldValueByName(item),
   }));
->>>>>>> origin/main
 
   return {
     ...issue,
@@ -445,22 +344,6 @@ async function getIssue(owner, repo, number) {
   };
 }
 
-<<<<<<< HEAD
-function resolveProjectForIssue(projects, issue) {
-  const existingItem = issue.projectItems[0];
-  if (existingItem) {
-    const existingProject = projects.find((project) => project.id === existingItem.project?.id);
-    if (existingProject) return existingProject;
-  }
-
-  const boardKey = resolveBoardKey(extractExecutionBoard(issue.body));
-  const matchedProject = projects.find((project) => project.key === boardKey);
-  return matchedProject || projects[0];
-}
-
-||||||| 7476e8b
-=======
->>>>>>> origin/main
 function projectItemForProject(issue, projectId) {
   return issue.projectItems.find((item) => item.project?.id === projectId) || null;
 }
@@ -594,37 +477,17 @@ async function setStatus(project, issue, itemId, statusName) {
   await setSingleSelectField(project.id, itemId, field.id, optionId);
 }
 
-<<<<<<< HEAD
-async function syncIssue(projects, owner, repo, issueNumber, action) {
-  const issue = await getIssue(owner, repo, issueNumber, new Set(projects.map((project) => project.id)));
-||||||| 7476e8b
-async function syncIssue(project, owner, repo, issueNumber, action) {
-  const issue = await getIssue(owner, repo, issueNumber, project.id);
-=======
 async function syncIssue(owner, repo, issueNumber, action) {
   const issue = await getIssue(owner, repo, issueNumber);
->>>>>>> origin/main
   if (!issue) {
     console.log(`No issue found for #${issueNumber}; skipping.`);
     return;
   }
 
-<<<<<<< HEAD
-  const project = resolveProjectForIssue(projects, issue);
-||||||| 7476e8b
-  const itemId = await ensureProjectItem(project.id, issue);
-=======
   const boardKey = resolveBoardKey(extractExecutionBoard(issue.body));
   const project = await getProjectForBoard(boardKey);
->>>>>>> origin/main
   const itemId = await ensureProjectItem(project, issue);
   const labels = labelNames(issue.labels);
-<<<<<<< HEAD
-  const boardKey = project.key;
-||||||| 7476e8b
-  const currentStatus = issue.fieldValues.get('Status')?.value || null;
-=======
->>>>>>> origin/main
   const statusFieldName = getStatusFieldName(project);
   const currentStatus =
     (statusFieldName
@@ -652,13 +515,7 @@ async function syncIssue(owner, repo, issueNumber, action) {
   console.log(`Synced issue #${issue.number} on ${project.title} -> ${nextStatus}`);
 }
 
-<<<<<<< HEAD
-async function syncPullRequest(projects, payload) {
-||||||| 7476e8b
-async function syncPullRequest(project, payload) {
-=======
 async function syncPullRequest(payload) {
->>>>>>> origin/main
   const owner = payload.repository.owner.login;
   const repo = payload.repository.name;
   const body = payload.pull_request.body || '';
@@ -669,34 +526,14 @@ async function syncPullRequest(payload) {
     return;
   }
 
-  const projectIds = new Set(projects.map((project) => project.id));
-
   for (const issueNumber of issueNumbers) {
-<<<<<<< HEAD
-    const issue = await getIssue(owner, repo, issueNumber, projectIds);
-||||||| 7476e8b
-    const issue = await getIssue(owner, repo, issueNumber, project.id);
-=======
     const issue = await getIssue(owner, repo, issueNumber);
->>>>>>> origin/main
     if (!issue) continue;
 
-<<<<<<< HEAD
-    const project = resolveProjectForIssue(projects, issue);
-||||||| 7476e8b
-    const itemId = await ensureProjectItem(project.id, issue);
-=======
     const boardKey = resolveBoardKey(extractExecutionBoard(issue.body));
     const project = await getProjectForBoard(boardKey);
->>>>>>> origin/main
     const itemId = await ensureProjectItem(project, issue);
     const labels = labelNames(issue.labels);
-<<<<<<< HEAD
-    const boardKey = project.key;
-||||||| 7476e8b
-    const currentStatus = issue.fieldValues.get('Status')?.value || null;
-=======
->>>>>>> origin/main
     const statusFieldName = getStatusFieldName(project);
     const currentStatus =
       (statusFieldName
@@ -733,12 +570,6 @@ async function main() {
   }
 
   const payload = loadEventPayload();
-<<<<<<< HEAD
-  const projects = await getProjects();
-||||||| 7476e8b
-  const project = await getProject();
-=======
->>>>>>> origin/main
 
   if (mode === 'intake') {
     if (!payload.issue) {
@@ -747,37 +578,19 @@ async function main() {
     }
     const owner = payload.repository.owner.login;
     const repo = payload.repository.name;
-<<<<<<< HEAD
-    await syncIssue(projects, owner, repo, payload.issue.number, payload.action);
-||||||| 7476e8b
-    await syncIssue(project, owner, repo, payload.issue.number, payload.action);
-=======
     await syncIssue(owner, repo, payload.issue.number, payload.action);
->>>>>>> origin/main
     return;
   }
 
   if (payload.issue) {
     const owner = payload.repository.owner.login;
     const repo = payload.repository.name;
-<<<<<<< HEAD
-    await syncIssue(projects, owner, repo, payload.issue.number, payload.action);
-||||||| 7476e8b
-    await syncIssue(project, owner, repo, payload.issue.number, payload.action);
-=======
     await syncIssue(owner, repo, payload.issue.number, payload.action);
->>>>>>> origin/main
     return;
   }
 
   if (payload.pull_request) {
-<<<<<<< HEAD
-    await syncPullRequest(projects, payload);
-||||||| 7476e8b
-    await syncPullRequest(project, payload);
-=======
     await syncPullRequest(payload);
->>>>>>> origin/main
     return;
   }
 

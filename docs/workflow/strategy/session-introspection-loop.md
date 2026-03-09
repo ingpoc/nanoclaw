@@ -1,41 +1,67 @@
 # Session Introspection & Workflow Improvement Loop
 
-When an agent (Claude Code or Codex) discovers that documented workflows are stale, misleading, or incomplete during task execution, use this loop to update them.
+When an agent (Claude Code or Codex) discovers that documented workflows are stale, misleading, incomplete, or unnecessarily rough during task execution, use this loop to update them.
 
 ## Trigger Conditions
 
 Use this workflow when **all** are true:
 
 1. Task is complete (or session ending)
-2. Agent had to deviate from documented workflow midway
-3. Agent corrected course and found a better/clearer approach
-4. Agent believes the mistake was preventable with better documentation
-5. The mistake could recur for other agents using the same workflow
+2. Agent encountered avoidable friction while following a documented workflow
+3. The agent had to improvise, retry, clarify, or correct course to finish smoothly
+4. The friction was preventable with better workflow guidance
+5. The same friction could recur for other agents using the same workflow
 
 ## Key Principle
 
-**Workflows guide future work.** If a documented workflow caused you to make preventable mistakes, update it so the next agent (or you in future sessions) follows the correct path.
+**Workflows should make execution smooth, not merely possible.** If a documented workflow caused preventable mistakes, confusion, retries, or avoidable debugging, update it so the next agent can follow the workflow cleanly on the first pass.
+
+## What Counts As Session Introspection Signal
+
+The trigger is broader than outright failure.
+
+Count any of these as workflow debt when they were avoidable:
+
+1. unclear next step while following the documented workflow
+2. missing prerequisite or auth/setup expectation
+3. misleading verification step that looked canonical but was not reliable
+4. discovery timing that was too late to prevent wasted effort
+5. repeated retries or workaround commands needed to continue
+6. missing degraded-mode or recovery guidance for a known failure mode
+7. ambiguity between two plausible workflow paths
+
+Do not wait for the workflow to fully fail before treating this as introspection input.
 
 ## Process
 
-### Phase 1: Identify the Stale Instruction
+### Phase 1: Capture the Friction
 
-1. **Mistake capture**: What was the mistake?
-   - Example: "Created PR on upstream instead of origin because push skill didn't validate remote"
+1. **Friction capture**: What made execution rough?
+   - Example: "Session-start failed with a GitHub project query error and the workflow did not say whether to retry, degrade locally, or stop."
+   - Example: "Project subagent listing looked like the canonical verification step, but direct invocation was the actual reliable check."
 
-2. **Root cause**: Why did the documented workflow not prevent this?
+2. **Operational impact**: How did this slow or distort execution?
+   - Did it cause rework?
+   - Did it send the agent down the wrong path?
+   - Did it create uncertainty about whether the workflow or environment was broken?
+
+3. **Root cause**: Why did the documented workflow not prevent this?
    - Was the instruction missing?
    - Was it unclear or ambiguous?
    - Was it referenced too late (after the mistake)?
+   - Did it describe the happy path only?
    - Was it in the wrong workflow doc?
+   - Did it imply the wrong verification mechanism?
 
-3. **Prevention mechanism**: How could documentation prevent this?
+4. **Prevention mechanism**: How could documentation prevent this?
    - Add a new phase/gate to existing workflow
    - Add a trigger to CLAUDE.md for earlier discovery
    - Clarify ambiguous instructions
    - Move instruction to a more visible location
+   - Add a degraded-path or recovery branch
+   - Replace a misleading verification step with a reliable one
 
-### Phase 2: Locating the Right Workflow Doc
+### Phase 2: Locate the Right Workflow Doc
 
 Determine which workflow to update:
 
@@ -43,10 +69,12 @@ Determine which workflow to update:
 |---|---|---|
 | Task execution mistake | `docs/workflow/delivery/nanoclaw-development-loop.md` | Single-lane delivery workflow |
 | Git/push/PR mistake | `docs/workflow/delivery/nanoclaw-development-loop.md` | Phase gates before push |
+| Startup / recall / collaboration sweep friction | `docs/workflow/runtime/session-recall.md` or `docs/workflow/github/github-collab-sweep.md` | Startup path and GitHub collaboration flow |
 | Documentation confusion | `docs/workflow/docs-discipline/` | How to organize/discover docs |
 | Merge/sync issue | `docs/workflow/delivery/nanoclaw-development-loop.md` | Phase 7 covers merge validation |
 | Governance/compliance | `docs/workflow/strategy/weekly-slop-optimization-loop.md` | Tooling and config checks |
 | Architecture decision | `docs/architecture/` | Design patterns and invariants |
+| Nightly automation / agent-runtime ambiguity | `docs/workflow/strategy/nightly-evaluation-loop.md` | Scheduled lane, verification path, runtime contract |
 
 ### Phase 3: Update the Workflow
 
@@ -55,6 +83,8 @@ Determine which workflow to update:
    - Add a new phase/gate if needed
    - Update existing phase if instruction already exists but is unclear
    - Reorder phases if discovery timing is wrong
+   - Add degraded-path instructions if failure recovery was missing
+   - Replace misleading verification guidance with the reliable check
 3. **Add examples** if the instruction is commonly misunderstood
 4. **Cross-reference** from CLAUDE.md if this is a new discovery trigger
 
@@ -78,8 +108,9 @@ WHEN merging main into feature branch → read docs/workflow/delivery/nanoclaw-d
 ### Phase 5: Verify & Commit
 
 1. **Self-test**: Re-read the updated workflow as if you didn't know it
-   - Would this prevent the mistake?
+   - Would this prevent the original friction before it starts?
    - Is it discoverable at the right time?
+   - Does it make the path smoother, not just technically correct?
    - Is it clear to both Claude Code and Codex?
 
 2. **Commit with clear message**:
@@ -111,6 +142,13 @@ WHEN merging main into feature branch → read docs/workflow/delivery/nanoclaw-d
 **Fix**: Added "Merge conflict cleanup" to Phase 7 (git diff --check)
 **Trigger**: Same trigger; Phase 7 now explicitly covers merge validation
 
+### Example 3: Workflow Followed, But Still Rough
+
+**Friction**: Session-start failed on a GitHub Project query and the workflow did not explain whether to retry, degrade locally, or stop
+**Root cause**: The startup workflow documented the happy path but not the failure mode
+**Fix**: Add explicit recovery/degraded-mode instructions to the session-start and collab-sweep docs
+**Trigger**: Existing session-start trigger remains valid, but the referenced docs now make the path smooth
+
 ## Anti-Patterns (Do Not)
 
 - ❌ Store improvements in context graph; document in workflow instead
@@ -123,8 +161,10 @@ WHEN merging main into feature branch → read docs/workflow/delivery/nanoclaw-d
 
 Workflow improvement is complete when:
 
-1. ✅ Root cause identified (stale/missing/unclear instruction)
-2. ✅ Workflow doc updated with clearer instruction
-3. ✅ CLAUDE.md trigger added/verified (if needed)
-4. ✅ Commit message explains mistake and fix
-5. ✅ Self-test passes (re-reading workflow prevents the original mistake)
+1. ✅ Friction or mistake identified concretely
+2. ✅ Root cause identified (stale/missing/unclear/misleading instruction)
+3. ✅ Workflow doc updated with clearer and smoother guidance
+4. ✅ Recovery/degraded path added when needed
+5. ✅ CLAUDE.md trigger added/verified (if needed)
+6. ✅ Commit message explains the friction and fix
+7. ✅ Self-test passes (re-reading workflow would have made the original path smoother)

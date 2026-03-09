@@ -16,6 +16,7 @@
 - Run the task-start skill/MCP routing preflight defined by `CLAUDE.md` before ad-hoc implementation/debugging.
 - Before starting feature/bug/reliability implementation (default single-lane), follow `docs/workflow/delivery/nanoclaw-development-loop.md`.
 - Before changing workflow strategy/cadence based on external research, follow `docs/workflow/strategy/workflow-optimization-loop.md`.
+- After task completion or before ending a session, if a workflow caused avoidable friction, retries, or mid-task correction, follow `docs/workflow/strategy/session-introspection-loop.md`.
 - Before changing nighttime improvement evaluation, overnight research cadence, or token-budgeted upstream/tooling scanning, follow `docs/workflow/strategy/nightly-evaluation-loop.md`.
 - Before running weekly docs/scripts/config/code slop cleanup during optimization cycles, follow `docs/workflow/strategy/weekly-slop-optimization-loop.md`.
 - Before reviewing hooks/subagents or built-in tool routing governance, follow `docs/workflow/strategy/weekly-slop-optimization-loop.md` and `docs/operations/tooling-governance-budget.json`.

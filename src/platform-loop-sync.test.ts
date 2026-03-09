@@ -32,9 +32,21 @@ describe('platform-loop-sync launcher helper', () => {
     fs.mkdirSync(path.join(sourceRoot, '.claude', 'commands'), {
       recursive: true,
     });
+    fs.mkdirSync(path.join(sourceRoot, '.claude', 'agents'), {
+      recursive: true,
+    });
     fs.mkdirSync(path.join(sourceRoot, 'scripts', 'workflow'), {
       recursive: true,
     });
+    fs.writeFileSync(
+      path.join(
+        sourceRoot,
+        '.claude',
+        'agents',
+        'nightly-improvement-researcher.md',
+      ),
+      'nightly agent\n',
+    );
     fs.writeFileSync(
       path.join(sourceRoot, '.claude', 'commands', 'platform-pickup.md'),
       'latest pickup command\n',
@@ -162,6 +174,17 @@ exit 1
     ).toBe('latest pickup command\n');
     expect(
       fs.readFileSync(
+        path.join(
+          worktreePath,
+          '.claude',
+          'agents',
+          'nightly-improvement-researcher.md',
+        ),
+        'utf8',
+      ),
+    ).toBe('nightly agent\n');
+    expect(
+      fs.readFileSync(
         path.join(worktreePath, 'scripts', 'workflow', 'platform-loop.js'),
         'utf8',
       ),
@@ -174,6 +197,7 @@ exit 1
     ).toBe('latest sync helper\n');
 
     const exclude = fs.readFileSync(excludePath, 'utf8');
+    expect(exclude).toContain('.claude/agents/nightly-improvement-researcher.md');
     expect(exclude).toContain('.claude/commands/platform-pickup.md');
     expect(exclude).toContain('.claude/commands/nightly-improvement-eval.md');
     expect(exclude).toContain('.claude/scheduled_tasks.lock');

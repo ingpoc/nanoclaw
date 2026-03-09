@@ -85,6 +85,7 @@ Use the nightly Claude lane for upstream/tooling evaluation only.
 
 Required runtime surfaces:
 
+- `.claude/agents/nightly-improvement-researcher.md`
 - `.claude/commands/nightly-improvement-eval.md`
 - `scripts/workflow/nightly-improvement.js`
 - `scripts/workflow/start-nightly-improvement.sh`
@@ -94,11 +95,13 @@ Required runtime surfaces:
 Nightly rules:
 
 1. nightly work is research-only and never creates execution Issues or PRs directly
-2. nightly research starts from deterministic scan output, not open-ended browsing
-3. previously evaluated upstream heads and tool versions are skipped unless explicitly forced
-4. nightly output updates one upstream discussion and one tooling discussion at most
-5. every nightly decision comment uses `Agent Label: Claude Code` with `pilot`, `defer`, or `reject`
-6. Codex performs the morning triage and selective promotion
+2. scheduled execution is headless via `claude -p`, not an interactive Terminal session
+3. the scheduled lane uses the `nightly-improvement-researcher` project subagent with model `sonnet`
+4. nightly research starts from deterministic scan output, not open-ended browsing
+5. previously evaluated upstream heads and tool versions are skipped unless explicitly forced
+6. nightly output updates one upstream discussion and one tooling discussion at most
+7. every nightly decision comment uses `Agent Label: Claude Code` with `pilot`, `defer`, or `reject`
+8. Codex performs the morning triage and selective promotion
 
 ## Requirement-Based Review Decision
 

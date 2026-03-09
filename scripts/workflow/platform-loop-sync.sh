@@ -10,6 +10,7 @@ SOURCE_ROOT="${NANOCLAW_PLATFORM_LOOP_SOURCE_ROOT:-$ROOT_DIR}"
 DRY_RUN=0
 
 OVERLAY_FILES=(
+  ".claude/agents/nightly-improvement-researcher.md"
   ".claude/commands/platform-pickup.md"
   ".claude/commands/nightly-improvement-eval.md"
   "scripts/workflow/nightly-improvement.js"
@@ -18,6 +19,7 @@ OVERLAY_FILES=(
 )
 
 EXCLUDE_PATTERNS=(
+  ".claude/agents/nightly-improvement-researcher.md"
   ".claude/commands/platform-pickup.md"
   ".claude/commands/nightly-improvement-eval.md"
   ".claude/scheduled_tasks.lock"

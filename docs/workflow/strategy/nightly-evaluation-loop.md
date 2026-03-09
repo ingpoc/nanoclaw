@@ -67,11 +67,13 @@ The nightly lane runs once at `00:30` Asia/Kolkata and only:
 
 ## Runtime Surfaces
 
+- `.claude/agents/nightly-improvement-researcher.md`
 - `.claude/commands/nightly-improvement-eval.md`
 - `scripts/workflow/nightly-improvement.js`
 - `scripts/workflow/start-nightly-improvement.sh`
 - `launchd/com.nanoclaw-nightly-improvement.plist`
 - `.nanoclaw/nightly-improvement/state.json` (runtime-local, gitignored)
+- `.nanoclaw/nightly-improvement/runs/` (runtime-local logs)
 
 ## Token-Efficiency Contract
 
@@ -103,18 +105,23 @@ Do not treat this file as execution truth. GitHub Discussions remain the durable
 
 ## Nightly Flow
 
-1. Start the dedicated nightly worktree session from `scripts/workflow/start-nightly-improvement.sh`.
-2. Run `node scripts/workflow/nightly-improvement.js scan`.
-3. If the result is `noop`, record the run and stop.
-4. If upstream changed and the head SHA is new:
+1. `launchd` invokes `scripts/workflow/start-nightly-improvement.sh`.
+2. The launcher syncs the dedicated nightly worktree.
+3. The launcher runs `node scripts/workflow/nightly-improvement.js scan --state-path <source-root-state>`.
+4. If the result is `noop`, the launcher records the run and stops without invoking Claude.
+5. If evaluation is required, the launcher runs `claude -p --agent nightly-improvement-researcher --model sonnet`.
+6. The agent reads the scan file and updates discussions only for the pending source families.
+7. After successful discussion updates, the agent records the processed cursor keys with `record`.
+8. The launcher writes a runtime-local run log under `.nanoclaw/nightly-improvement/runs/`.
+
+If upstream changed and the head SHA is new:
    - evaluate the changed range
    - update `Upstream NanoClaw Sync`
    - leave one Claude decision comment
-5. If tool versions changed and the versions are new:
+If tool versions changed and the versions are new:
    - evaluate only the listed changed tools
    - update `SDK / Tooling Opportunities`
    - leave one Claude decision comment
-6. Record the processed cursor keys with `record`.
 
 ## Discussion Contract
 
@@ -162,6 +169,7 @@ The sweep itself remains read-only.
 
 - `node scripts/workflow/nightly-improvement.js scan --output /tmp/nightly-scan.json`
 - `node scripts/workflow/nightly-improvement.js record --scan-file /tmp/nightly-scan.json`
+- `claude agents --setting-sources project`
 - `bash scripts/workflow/start-nightly-improvement.sh --dry-run`
 - `bash scripts/workflow/gh-collab-sweep.sh --agent codex`
 - `npm test -- src/nightly-improvement.test.ts src/platform-loop-sync.test.ts src/platform-loop.test.ts src/github-project-sync.test.ts`

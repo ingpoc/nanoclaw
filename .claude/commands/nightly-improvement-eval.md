@@ -1,9 +1,15 @@
 ---
-description: Evaluate only net-new upstream and tooling changes, update the nightly discussions, and stop.
+description: Manual debugging wrapper for the nightly improvement lane; scheduled execution uses the headless nightly-improvement-researcher agent.
 allowed-tools: Read,Grep,Glob,Bash(node scripts/workflow/nightly-improvement.js:*),Bash(git fetch:*),Bash(git log:*),Bash(git rev-list:*),Bash(git rev-parse:*),Bash(git diff-tree:*),Bash(gh auth:*),Bash(gh api:*),Bash(git status)
 ---
 
 Run the nightly improvement evaluation flow.
+
+Manual-use note:
+
+- Scheduled nightly execution does not call this slash command.
+- The scheduled lane uses `scripts/workflow/start-nightly-improvement.sh`, which runs `claude -p --agent nightly-improvement-researcher`.
+- Keep this command as a manual debugging wrapper only.
 
 Requirements:
 

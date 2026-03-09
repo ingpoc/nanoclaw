@@ -88,12 +88,15 @@ Use instead:
 
 ## Nightly Improvement Lane Baseline
 
-- The overnight improvement lane is local Claude Code automation, not GitHub Actions.
-- The repo-tracked command surface is `.claude/commands/nightly-improvement-eval.md`.
+- The overnight improvement lane is local headless Claude Code automation, not GitHub Actions.
+- The repo-tracked agent surface is `.claude/agents/nightly-improvement-researcher.md`.
+- The slash-command surface `.claude/commands/nightly-improvement-eval.md` is manual debugging only.
 - The local bootstrap surfaces are:
+  - `.claude/agents/nightly-improvement-researcher.md`
   - `scripts/workflow/nightly-improvement.js`
   - `scripts/workflow/start-nightly-improvement.sh`
   - `launchd/com.nanoclaw-nightly-improvement.plist`
+- The launcher runs `claude -p --agent nightly-improvement-researcher --model sonnet`.
 - The nightly lane is research-only:
   - it may create or update Discussions
   - it may record runtime-local cursor state

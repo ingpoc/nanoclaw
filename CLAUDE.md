@@ -25,6 +25,7 @@ NanoClaw baseline is the default. Jarvis docs apply only when working on the `ja
 - Use the most relevant internal skills/tools first and verify outcomes with concrete evidence.
 - If a better mission-aligned approach exists, surface it proactively and reason with the user before execution.
 - Do not rely on assumptions when facts are retrievable; gather repo facts from code/docs and use DeepWiki for repository documentation when more context is required.
+- When creating or modifying scripts, default to the minimum model-facing output needed for the task; verbose logs, large JSON payloads, and full artifacts must be opt-in or file-backed.
 - Any issue discovered during work must be logged/updated in `.claude/progress/incident.json` via the incident workflow before closure.
 - Any new feature request not already mapped must be feature-tracked and work-item tracked before implementation.
 - For GitHub CLI or remote git operations that depend on auth, branch mutation, or networked GitHub state (`gh auth`, `gh pr *`, `gh repo *`, `gh api`, `git fetch`, `git pull`, `git push`, `git merge` against remotes), request escalated execution directly instead of spending a first attempt inside the sandbox.
@@ -41,6 +42,7 @@ BEFORE editing root CLAUDE.md → read docs/workflow/docs-discipline/nanoclaw-ro
 BEFORE creating a new docs file or adding a new CLAUDE trigger → read docs/workflow/docs-discipline/doc-creation-contract.md
 BEFORE adding/removing/renaming docs → read docs/workflow/docs-discipline/docs-pruning-loop.md
 BEFORE task-start routing for implementation/debug/setup/update work → read docs/workflow/docs-discipline/skill-routing-preflight.md
+BEFORE handling logs, CSV data, or potentially verbose script output → read docs/tools/token-efficient-mcp-usage.md
 BEFORE single-lane feature, bug-fix, or reliability delivery → read docs/workflow/delivery/nanoclaw-development-loop.md
 BEFORE workflow optimization from external research → read docs/workflow/strategy/workflow-optimization-loop.md
 BEFORE changing nighttime improvement evaluation, overnight research cadence, or token-budgeted upstream/tooling scanning → read docs/workflow/strategy/nightly-evaluation-loop.md
@@ -73,7 +75,7 @@ BEFORE debugging Andy/Jarvis worker flow issues → read docs/workflow/runtime/n
 BEFORE starting, restarting, or registering the nanoclaw service → read docs/workflow/runtime/nanoclaw-start-runbook.md
 BEFORE debugging Apple Container build/runtime issues → read docs/troubleshooting/DEBUG_CHECKLIST.md and docs/troubleshooting/APPLE-CONTAINER-NETWORKING.md
 BEFORE debugging container/auth/session/mount issues → read docs/workflow/runtime/nanoclaw-container-debugging.md
-AFTER task completion or BEFORE ending session, if a workflow caused avoidable friction, retries, or mid-task correction → read docs/workflow/strategy/session-introspection-loop.md
+AFTER task completion or BEFORE ending session, if a workflow caused avoidable friction, retries, or mid-task correction → must follow docs/workflow/strategy/session-introspection-loop.md as required closure work unless unsafe or blocked
 ```
 
 ## Key Files

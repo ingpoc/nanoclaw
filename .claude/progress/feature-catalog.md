@@ -1,6 +1,6 @@
 # NanoClaw Feature Catalog
 
-Generated: 2026-03-09T06:02:12.152Z
+Generated: 2026-03-09T19:55:27.031Z
 Project: nanoclaw
 
 ## Features
@@ -429,7 +429,27 @@ Project: nanoclaw
   - docs/workflow/runtime/nanoclaw-container-debugging.md
   - docs/workflow/runtime/nanoclaw-jarvis-debug-loop.md
   - docs/workflow/runtime/nanoclaw-jarvis-dispatch-contract.md
+  - docs/workflow/runtime/session-recall.md
   - scripts/check-workflow-contracts.sh
+- Suggested Verify:
+  - npm run typecheck
+
+### session-recall-tooling - Session Recall Tooling
+- Risk: medium
+- Summary: QMD recall, session export sync, startup bootstrap, and context audit utilities for local session memory hygiene.
+- Keywords: session recall, qmd, session sync, context audit, token audit, session start, stdout waste
+- Files (6):
+  - .claude/progress/feature-catalog.seed.json
+  - docs/workflow/runtime/session-recall.md
+  - scripts/qmd-context-recall.sh
+  - scripts/qmd-session-sync.sh
+  - scripts/workflow/session-context-audit.js
+  - scripts/workflow/session-start.sh
+- Tests (0):
+  - none
+- Shared Files:
+  - .claude/progress/feature-catalog.seed.json
+  - docs/workflow/runtime/session-recall.md
 - Suggested Verify:
   - npm run typecheck
 

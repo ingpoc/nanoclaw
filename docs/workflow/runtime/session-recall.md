@@ -22,6 +22,9 @@ qctx --bootstrap
 # Recall only with explicit issue
 qctx --bootstrap --issue INC-123
 
+# Audit exported sessions for context waste
+node scripts/workflow/session-context-audit.js --top 10
+
 # While working: targeted context lookup
 qctx "worker connectivity dispatch"
 
@@ -52,7 +55,7 @@ bash scripts/qmd-context-recall.sh --bootstrap
 ## Recommended Workflow
 
 1. Session start: run `bash scripts/workflow/session-start.sh --agent <claude|codex>`.
-2. If `qmd status` warns that embeddings are pending, the main agent may spawn one background `monitor` lane dedicated to `bash scripts/qmd-session-sync.sh`.
+2. If `qmd status` warns that embeddings are pending, the main agent may spawn one background `monitor` lane dedicated to `bash scripts/qmd-session-sync.sh`. `scripts/workflow/session-start.sh` now auto-starts this background sync by default immediately after recall (disable with `--no-background-sync` or set `SESSION_SYNC_BACKGROUND=0`).
 3. The main lane continues with GitHub sweep handling and workflow preflight without waiting on session sync.
 4. During work: run `qctx "<topic>"` before major debug/fix loops.
 5. If query precision matters, rerun with `qctx --search-mode hybrid "<topic>"`.
@@ -76,6 +79,8 @@ bash scripts/qmd-context-recall.sh --bootstrap
    - `qctx --close --next "<next step>" ...`
 7. Concept query with different wording (semantic fallback):
    - `qmd vsearch "<concept in natural language>" -c sessions -n 10 --files`
+8. Audit exported sessions to find large stdout payloads and likely compressible context:
+   - `node scripts/workflow/session-context-audit.js --top 10`
 
 ## `qctx` Modes
 
@@ -85,7 +90,11 @@ bash scripts/qmd-context-recall.sh --bootstrap
 - Builds a query from current branch + issue + prior next step/blocker if query is omitted.
 - Searches QMD sessions and prints a `Next Action` hint.
 - If the primary query has no hits, retries with latest open-incident context from `.claude/progress/incident.json`.
-- Defaults in this mode: `--top 10`, `--fetch 3`.
+- Defaults in this mode: `--top 5`, `--fetch 1`, `--lines 80`.
+- Env overrides are available when a deeper bootstrap is explicitly needed:
+  - `QCTX_BOOTSTRAP_TOP`
+  - `QCTX_BOOTSTRAP_FETCH`
+  - `QCTX_BOOTSTRAP_LINES`
 
 ### Session-Start Wrapper
 
@@ -95,7 +104,7 @@ bash scripts/qmd-context-recall.sh --bootstrap
 2. `gh-collab-sweep.sh --agent <runtime> --fail-on-action-items`
 3. `scripts/workflow/preflight.sh --skip-recall`
 
-If `qmd status` reports pending embeddings, the wrapper prints a recall-quality warning and recommends `bash scripts/qmd-session-sync.sh` before deeper resume/debug work.
+If `qmd status` reports pending embeddings, `session-start.sh` prints a recall-quality warning and starts background session sync by default. It also prints the log and status file paths so the main lane can keep moving while sync finishes.
 
 ### Interactive Agent Flow
 
@@ -103,9 +112,9 @@ For interactive Codex/Claude runtime sessions, keep bootstrap recall in the main
 
 1. Main lane runs `qctx --bootstrap`.
 2. Main lane checks `qmd status`.
-3. If `Pending > 0`, main lane may spawn one background `monitor` lane for `bash scripts/qmd-session-sync.sh`.
+3. If `Pending > 0`, `session-start.sh` starts one background session-sync process by default.
 4. Main lane continues with `gh-collab-sweep.sh` and workflow preflight immediately.
-5. Background lane reports success/failure when session sync finishes.
+5. Background sync reports success/failure through its log/status files when it finishes.
 
 This keeps session start independent of session sync while still repairing degraded recall in parallel.
 
@@ -164,6 +173,23 @@ python3 ~/.claude/skills/recall/scripts/recall-day.py expand <session_id>
 ```
 
 For active branch/issue execution, prefer `qctx` as the primary workflow.
+
+## Session Context Audit
+
+Use `node scripts/workflow/session-context-audit.js` when you need to understand which exported sessions recorded the highest `/context` usage, or which transcripts were dominated by pasted command output that could likely have been summarized instead.
+
+The audit script:
+
+1. scans the exported session markdown files in the Obsidian session vault
+2. ranks sessions with recorded `/context` snapshots by total tokens at capture time
+3. measures raw `<local-command-stdout>` payload size per session
+4. estimates how many stdout tokens were probably compressible if a tool had returned a short summary instead of the full payload
+
+Helpful options:
+
+- `--top N` to change how many sessions are shown
+- `--show-blocks N` to inspect the largest stdout blocks per session
+- `--json` for downstream automation or spreadsheet-style analysis
 
 ## Notes
 

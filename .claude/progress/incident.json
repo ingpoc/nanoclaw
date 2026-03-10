@@ -1,7 +1,39 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-09T06:03:47.487033+00:00",
+  "updated_at": "2026-03-10T07:02:33Z",
   "incidents": [
+    {
+      "id": "incident-20260309T203718Z",
+      "title": "Tooling-governance wildcard budget drift still blocks clean verification",
+      "status": "resolved",
+      "severity": "low",
+      "created_at": "2026-03-09T20:37:18Z",
+      "updated_at": "2026-03-10T07:02:33Z",
+      "summary": {
+        "symptom": "Running `bash scripts/check-tooling-governance.sh` during docs verification fails with `wildcard permissions exceeded budget (47 > 46)`.",
+        "suspected_cause": "The current worktree includes pre-existing changes in `.claude/settings.local.json` and related governance surfaces that exceed the ratcheted wildcard budget.",
+        "impact": "Otherwise-valid docs or code changes cannot finish with a fully clean verification pass until the allowlist is pruned or the budget is intentionally updated.",
+        "next_action": "None; wildcard budget is back within limits."
+      },
+      "evidence": {
+        "bundle_count": 0
+      },
+      "context": {
+        "lane": "codex-docs"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-09T20:37:18Z",
+          "author": "codex",
+          "text": "While validating the new token-efficient MCP usage doc, workflow-contract, mirror, and docs-hygiene checks passed, but tooling-governance failed on a pre-existing wildcard budget overage (`47 > 46`). The scoped docs change did not touch `.claude/settings.local.json`, yet the repo cannot claim a clean verification slate until this drift is corrected."
+        },
+        {
+          "ts": "2026-03-10T07:02:33Z",
+          "author": "codex",
+          "text": "Removed `Bash(true:*)` from `.claude/settings.local.json` to drop wildcard allow entries to 46 and reran `bash scripts/check-tooling-governance.sh` successfully."
+        }
+      ]
+    },
     {
       "id": "incident-20260309T060321Z",
       "title": "Platform loop can pick stale code and health rearm is brittle",

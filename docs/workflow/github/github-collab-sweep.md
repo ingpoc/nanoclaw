@@ -157,11 +157,13 @@ The nightly findings section is read-only sweep output.
 Codex should:
 
 1. review the surfaced nightly upstream/tooling discussions
-2. add a Codex decision comment when needed
-3. promote only when the next action is concrete enough for an execution Issue
-4. leave a promotion summary comment when promoted
+2. follow the morning triage contract in `docs/workflow/strategy/nightly-evaluation-loop.md`
+3. add an explicit Codex decision comment for promoted and non-promoted findings
+4. promote only when the next action is concrete enough for an execution Issue
+5. leave a promotion summary comment when promoted
 
 The sweep itself must not auto-promote or auto-close nightly findings.
+The nightly discussion should remain open as the rolling research thread unless the nightly workflow explicitly retires or replaces it.
 
 ## Session End Contract
 

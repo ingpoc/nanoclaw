@@ -11,6 +11,7 @@ Mission anchor: `docs/MISSION.md`.
 1. Keep quality debt non-increasing week over week.
 2. Remove stale/duplicate assets deliberately, not ad hoc.
 3. Preserve deterministic evidence for every cleanup decision.
+4. Reduce context and token waste caused by duplicated workflow guidance.
 
 ## Scope
 
@@ -20,6 +21,19 @@ This loop evaluates and prunes slop in four areas:
 2. `scripts/` (duplicate or orphaned scripts).
 3. configuration surfaces (`.claude/`, `.codex/`, `.github/workflows/`, `config-examples/`).
 4. implementation surfaces (`src/`, `container/`) for unresolved debt markers.
+
+Workflow duplication and context-budget waste are part of `docs/` slop and must be audited explicitly.
+
+## Separation Of Concern
+
+Use this loop for scheduled deduplication and pruning only.
+
+1. `docs/workflow/strategy/session-introspection-loop.md` owns reactive workflow repair after real execution friction.
+2. This loop owns recurring cleanup of duplicated guidance, stale references, dead scripts, and context-budget drift.
+3. `CLAUDE.md` and `AGENTS.md` should route to workflow owners, not restate workflow bodies.
+4. Delivery/runtime workflow docs should define execution steps, not duplicate governance or cleanup policy.
+
+One concern gets one owner. When overlap is found, remove the duplicate text and leave a reference to the canonical owner.
 
 ## Cadence
 
@@ -127,13 +141,22 @@ Review hooks/subagents/built-in routing governance:
 bash scripts/check-tooling-governance.sh
 ```
 
+Audit workflow duplication and progressive-disclosure drift:
+
+1. find workflow docs that restate another workflow's execution steps instead of referencing it
+2. find `CLAUDE.md` or `AGENTS.md` lines that paraphrase a workflow body instead of routing to it
+3. find triggers that cause agents to read multiple near-overlapping docs for one small task
+4. find auto-loaded rules that should be trigger-loaded because they are not needed in most sessions
+
+Treat repeated operational guidance as slop even when the wording differs.
+
 ## Phase 3: Prune Queue
 
 Build a bounded weekly queue with severity:
 
 1. `P0`: broken contracts or mirror drift (must fix now).
-2. `P1`: unreferenced/duplicate files with clear owner replacement.
-3. `P2`: debt markers and non-blocking cleanup candidates.
+2. `P1`: unreferenced/duplicate files or overlapping workflow instructions with clear owner replacement.
+3. `P2`: debt markers, trigger tuning, and non-blocking cleanup candidates.
 
 Queue sizing rule per weekly cycle:
 
@@ -143,6 +166,13 @@ Queue sizing rule per weekly cycle:
 
 Do not mix cleanup with unrelated feature delivery.
 
+Queue workflow cleanup using these rules:
+
+1. prefer deleting duplicated workflow text over adding another explanatory doc
+2. prefer narrowing a trigger over adding a second partially overlapping trigger
+3. prefer moving detail from auto-loaded rules into trigger-loaded docs when silent-failure risk stays covered
+4. do not split a workflow unless the split reduces retrieval cost and preserves one clear owner per concern
+
 ## Phase 4: Execute Cleanup
 
 For each queued item:
@@ -150,6 +180,8 @@ For each queued item:
 1. remove or consolidate one item at a time
 2. update `CLAUDE.md`/`AGENTS.md`/`DOCS.md`/`docs/README.md` when paths change
 3. run `rg` proof that old path references are gone
+4. if pruning workflow overlap, keep one canonical owner and replace other copies with references
+5. if changing triggers, verify the new path loads the minimum sufficient context for the task
 
 ## Phase 5: Verification Gate
 
@@ -176,12 +208,12 @@ Write a weekly artifact in `docs/research/`:
 Naming pattern:
 
 - `docs/research/WEEKLY-SLOP-OPTIMIZATION-<YYYY-MM-DD>.md`
-- `docs/research/WEEKLY-SLOP-OPTIMIZATION-<YYYY-MM-DD>.md`
 
 Ratchet rule:
 
 1. no metric may get worse week-over-week without explicit rationale
 2. unresolved `P1` items must carry forward with an owner and due week
+3. workflow duplication count and unnecessary-doc-load count should trend downward over time
 
 ## Exit Criteria
 
@@ -236,13 +268,20 @@ Record context budget changes in weekly artifact:
 - Duplicates removed: [list]
 - Tokens freed: [number]
 - Remaining auto-loaded rules: [list with token counts]
+
+## Workflow Deduplication
+- Canonical owners clarified: [list]
+- Duplicate workflow sections removed: [list]
+- Triggers narrowed or removed: [list]
+- Docs no longer required for common small tasks: [list]
 ```
 
 ## Agent Routing
 
 | Step | Agent | Mode | Notes |
 |------|-------|------|-------|
-| Prioritization | opus | — | Requires cost/impact judgment |
-| Inventory scripts | scout | fg | Scan for slop candidates, stale refs |
-| Verification gates | verifier | bg | Run governance/mirror/contract checks |
-| Mechanical fixes | implementer | fg | Apply approved slop removals |
+| Prioritization | `main` | fg | Cost/impact judgment and ownership decisions stay in the main lane |
+| Inventory scripts/docs | `explorer` | fg | Scan for slop candidates, stale refs, workflow overlap |
+| Verification gates | `monitor` | bg | Run governance/mirror/contract checks |
+| Workflow overlap audit | `reviewer` | fg | Identify duplicate guidance and wrong-owner text with file evidence |
+| Mechanical fixes | `worker` | fg | Apply approved slop removals in bounded scope |

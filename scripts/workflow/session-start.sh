@@ -7,6 +7,7 @@ cd "$ROOT_DIR"
 AGENT=""
 ISSUE_ID=""
 QUERY=""
+BACKGROUND_SYNC=1
 
 usage() {
   cat <<'EOF'
@@ -20,6 +21,7 @@ Runs the canonical session-start flow:
 Options:
   --agent AGENT    Runtime agent: claude or codex
   --issue ID       Optional issue/ticket identifier passed to recall bootstrap
+  --no-background-sync  Disable background qmd session sync when embeddings are pending
   -h, --help       Show help
 EOF
 }
@@ -55,6 +57,10 @@ while [[ $# -gt 0 ]]; do
     --issue)
       ISSUE_ID="${2:-}"
       shift 2
+      ;;
+    --no-background-sync)
+      BACKGROUND_SYNC=0
+      shift
       ;;
     -h|--help)
       usage
@@ -104,8 +110,28 @@ echo ""
 PENDING_EMBEDDINGS="$(get_pending_embeddings)"
 if [[ "$PENDING_EMBEDDINGS" -gt 0 ]]; then
   echo "RECALL QUALITY WARNING: ${PENDING_EMBEDDINGS} QMD document(s) still need embeddings."
-  echo "Recommended refresh before deep resume/debug work:"
-  echo "  bash scripts/qmd-session-sync.sh"
+  BACKGROUND_SYNC_FLAG="${SESSION_SYNC_BACKGROUND:-$BACKGROUND_SYNC}"
+  if [[ "$BACKGROUND_SYNC_FLAG" == "1" ]]; then
+    TS="$(date -u +%Y%m%dT%H%M%SZ)"
+    SYNC_LOG="logs/qmd-session-sync-${TS}.log"
+    SYNC_STATUS="logs/qmd-session-sync-${TS}.status"
+    mkdir -p logs
+    echo "Starting background session sync (monitor lane) for embeddings refresh."
+    echo "running" >"$SYNC_STATUS"
+    (
+      if bash scripts/qmd-session-sync.sh >"$SYNC_LOG" 2>&1; then
+        echo "ok" >"$SYNC_STATUS"
+      else
+        echo "fail" >"$SYNC_STATUS"
+      fi
+    ) &
+    echo "Background session sync running (pid $!)."
+    echo "Log: $SYNC_LOG"
+    echo "Status: $SYNC_STATUS"
+  else
+    echo "Recommended refresh before deep resume/debug work:"
+    echo "  bash scripts/qmd-session-sync.sh"
+  fi
   echo ""
 fi
 

@@ -77,6 +77,10 @@ Workflow docs are physically grouped by operational concern.
 - `docs/operations/runtime-vs-prebaked-boundary.md`: runtime-local vs prebaked placement policy
 - `docs/operations/workflow-setup-responsibility-map.md`: ownership map for setup and workflow governance
 
+## `docs/tools/`
+
+- `docs/tools/token-efficient-mcp-usage.md`: canonical usage map for when to default to token-efficient MCP and how to keep results small
+
 ## `docs/reference/`
 
 - `docs/reference/REQUIREMENTS.md`: core constraints and product philosophy

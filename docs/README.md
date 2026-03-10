@@ -17,6 +17,7 @@ docs/
     docs-discipline/ # docs authoring, pruning, and trigger hygiene
     strategy/       # optimization cadence and slop reduction workflows
   operations/       # role authority and change-management matrix
+  tools/            # tool-specific usage maps and best-practice routing
   reference/        # baseline requirements/spec/security documents
   troubleshooting/  # debug playbooks and platform-specific fixes
   archives/         # historical RCA and archived doc snapshots
@@ -32,6 +33,7 @@ docs/
 - Jarvis architecture and delegation model: `docs/architecture/nanoclaw-jarvis.md`
 - Doc creation and pruning discipline: `docs/workflow/docs-discipline/doc-creation-contract.md` + `docs/workflow/docs-discipline/docs-pruning-loop.md`
 - Task-start routing: `docs/workflow/docs-discipline/skill-routing-preflight.md` + `docs/operations/skills-vs-docs-map.md`
+- Token-efficient MCP usage routing: `docs/tools/token-efficient-mcp-usage.md`
 - Default delivery workflow: `docs/workflow/delivery/nanoclaw-development-loop.md`
 - Runtime and incident debugging: `docs/workflow/runtime/nanoclaw-jarvis-debug-loop.md`
 - Worker contract and runtime: `docs/workflow/runtime/nanoclaw-jarvis-dispatch-contract.md` + `docs/workflow/runtime/nanoclaw-jarvis-worker-runtime.md`

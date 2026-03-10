@@ -21,7 +21,6 @@
       "WebFetch(domain:opencode.ai)",
       "WebFetch(domain:deepwiki.com)",
       "Bash(./.claude/skills/update/scripts/fetch-upstream.sh:*)",
-      "Bash(true:*)",
       "Bash(ls:*)",
       "Bash(container start:*)",
       "Bash(container run:*)",
@@ -56,7 +55,9 @@
       "Bash(gh issue:*)",
       "mcp__exa__get_code_context_exa",
       "Bash(gh pr:*)",
-      "Bash(gh run:*)"
+      "Bash(gh run:*)",
+      "Bash(bash:*)",
+      "Bash(xxd:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

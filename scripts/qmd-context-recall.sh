@@ -12,13 +12,17 @@ set -euo pipefail
 #   scripts/qmd-context-recall.sh --close --next "run verify-worker-connectivity"
 #
 # Env overrides:
-#   QMD_BIN, HANDOFF_FILE, QCTX_SEARCH_MODE, QMD_MODELS_DIR, QCTX_INCIDENT_FALLBACK
+#   QMD_BIN, HANDOFF_FILE, QCTX_SEARCH_MODE, QMD_MODELS_DIR, QCTX_INCIDENT_FALLBACK,
+#   QCTX_BOOTSTRAP_TOP, QCTX_BOOTSTRAP_FETCH, QCTX_BOOTSTRAP_LINES
 
 QMD_BIN="${QMD_BIN:-qmd}"
 HANDOFF_FILE="${HANDOFF_FILE:-$(pwd)/.claude/progress/session-handoff.jsonl}"
 SEARCH_MODE="${QCTX_SEARCH_MODE:-auto}"
 QMD_MODELS_DIR="${QMD_MODELS_DIR:-$HOME/.cache/qmd/models}"
 QCTX_INCIDENT_FALLBACK="${QCTX_INCIDENT_FALLBACK:-1}"
+QCTX_BOOTSTRAP_TOP="${QCTX_BOOTSTRAP_TOP:-5}"
+QCTX_BOOTSTRAP_FETCH="${QCTX_BOOTSTRAP_FETCH:-1}"
+QCTX_BOOTSTRAP_LINES="${QCTX_BOOTSTRAP_LINES:-80}"
 
 TOP=8
 FETCH=2
@@ -435,10 +439,13 @@ fi
 
 if [[ "$MODE" == "bootstrap" ]]; then
   if (( USER_SET_TOP == 0 )); then
-    TOP=10
+    TOP="$QCTX_BOOTSTRAP_TOP"
   fi
   if (( USER_SET_FETCH == 0 )); then
-    FETCH=3
+    FETCH="$QCTX_BOOTSTRAP_FETCH"
+  fi
+  if [[ "${LINES:-}" == "140" ]]; then
+    LINES="$QCTX_BOOTSTRAP_LINES"
   fi
 fi
 

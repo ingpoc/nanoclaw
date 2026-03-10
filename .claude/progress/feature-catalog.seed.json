@@ -441,6 +441,30 @@
       "tests": []
     },
     {
+      "id": "session-recall-tooling",
+      "name": "Session Recall Tooling",
+      "summary": "QMD recall, session export sync, startup bootstrap, and context audit utilities for local session memory hygiene.",
+      "risk": "medium",
+      "keywords": [
+        "session recall",
+        "qmd",
+        "session sync",
+        "context audit",
+        "token audit",
+        "session start",
+        "stdout waste"
+      ],
+      "files": [
+        "scripts/qmd-context-recall.sh",
+        "scripts/qmd-session-sync.sh",
+        "scripts/workflow/session-start.sh",
+        "scripts/workflow/session-context-audit.js",
+        "docs/workflow/runtime/session-recall.md",
+        ".claude/progress/feature-catalog.seed.json"
+      ],
+      "tests": []
+    },
+    {
       "id": "reliability-e2e",
       "name": "Reliability E2E Harness",
       "summary": "End-to-end reliability scripts for Andy and worker lanes.",

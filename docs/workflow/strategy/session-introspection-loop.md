@@ -2,6 +2,8 @@
 
 When an agent (Claude Code or Codex) discovers that documented workflows are stale, misleading, incomplete, or unnecessarily rough during task execution, use this loop to update them.
 
+This is the default self-repair path for workflow debt in this repository. Agents should not wait for a user reminder once the trigger conditions are met.
+
 ## Trigger Conditions
 
 Use this workflow when **all** are true:
@@ -12,9 +14,23 @@ Use this workflow when **all** are true:
 4. The friction was preventable with better workflow guidance
 5. The same friction could recur for other agents using the same workflow
 
+When these conditions are met, session introspection becomes required closure work for the current task unless a higher-priority blocker makes the workflow update unsafe.
+
 ## Key Principle
 
 **Workflows should make execution smooth, not merely possible.** If a documented workflow caused preventable mistakes, confusion, retries, or avoidable debugging, update it so the next agent can follow the workflow cleanly on the first pass.
+
+## Separation Of Concern
+
+Keep the fix in the layer that owns the problem:
+
+1. Workflow docs own execution order, prerequisites, degraded paths, and verification steps.
+2. Scripts own the executable contract for the workflow.
+3. `CLAUDE.md` and `AGENTS.md` own discovery timing and trigger routing.
+4. Incident docs own product/runtime failures, not workflow discoverability debt.
+5. Strategy docs own higher-level process design, not per-command rescue notes.
+
+Session introspection should update the smallest owner that would have prevented the friction on first pass.
 
 ## What Counts As Session Introspection Signal
 
@@ -31,6 +47,19 @@ Count any of these as workflow debt when they were avoidable:
 7. ambiguity between two plausible workflow paths
 
 Do not wait for the workflow to fully fail before treating this as introspection input.
+
+Do not treat one-off environmental noise as workflow debt unless the workflow should explicitly mention that degraded path.
+
+## Autonomous Maintenance Rule
+
+Once workflow debt is detected:
+
+1. Finish the user task first unless the stale workflow blocks safe execution.
+2. Before final closure, capture the friction and update the owning workflow doc or trigger.
+3. Re-run the canonical path or a minimal self-test to prove the workflow is smoother.
+4. Report the workflow improvement as part of the task outcome, not as optional extra credit.
+
+This keeps workflow maintenance autonomous without turning every session into open-ended process editing.
 
 ## Process
 

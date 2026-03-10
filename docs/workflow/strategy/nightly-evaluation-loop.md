@@ -151,12 +151,56 @@ Decision comments must include:
 
 Codex should:
 
-1. review surfaced nightly discussions
-2. add a Codex decision comment when needed
+1. review surfaced nightly discussions during morning session-start triage
+2. make an explicit decision for each surviving candidate before moving on
 3. promote only when the next action is concrete enough for an execution Issue
-4. leave a promotion summary comment when promoted
+4. leave a clear non-promotion reason for anything not promoted
+5. keep the rolling nightly discussion open unless the source family is intentionally retired or replaced
 
 The sweep itself remains read-only.
+
+### Morning Triage Routine
+
+When `NIGHTLY IMPROVEMENT FINDINGS` is non-empty, Codex should process the surfaced discussions in this order:
+
+1. read the latest nightly discussion update
+2. verify whether the candidate already exists locally or is already tracked
+3. decide one of:
+   - `accept -> opened Issue #N`
+   - `defer -> reason`
+   - `reject -> reason`
+   - `reference only -> reason`
+4. if accepted, create one execution Issue with concrete next action, set `Source=discussion`, and leave a promotion summary comment
+5. if not accepted, leave the decision comment in the discussion so the morning triage outcome is explicit
+
+Morning triage should convert research into a clear GitHub state:
+
+1. Discussions remain the research and decision log
+2. Issues represent committed execution only
+3. The Project reflects execution state only after an Issue exists
+
+### Promotion Boundary
+
+Promote a nightly finding only when all are true:
+
+1. the proposed improvement has a concrete next action
+2. the work is not already tracked by an open Issue
+3. the expected benefit is specific to NanoClaw or its operator workflow
+4. Codex can state a bounded acceptance target for the first execution step
+
+Do not promote when the finding is only interesting, speculative, already covered locally, or not yet scoped enough to test.
+
+### Discussion Closure Rule
+
+Nightly discussions are rolling source-family threads, not disposable tickets.
+
+Do not close the nightly discussion after each morning triage.
+
+Close or replace a nightly discussion only when:
+
+1. the source family is retired
+2. the thread is obsolete and a fresh canonical thread is intentionally created
+3. governance explicitly changes the nightly discussion structure
 
 ## Related Docs
 

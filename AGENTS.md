@@ -13,11 +13,12 @@
 - Before ending a session with in-progress work or blockers, follow `docs/workflow/runtime/session-recall.md` handoff flow (`qctx --close`).
 - Before changing session recall/sync/export behavior, follow `docs/workflow/runtime/session-recall.md`.
 - Before creating a new docs file or adding a new `CLAUDE.md` trigger, follow `docs/workflow/docs-discipline/doc-creation-contract.md`.
+- Before handling logs, CSV data, or potentially verbose script output, follow `docs/tools/token-efficient-mcp-usage.md`.
 - Before changing core-vs-extension ownership or adding Jarvis-specific logic to shared runtime files, follow `docs/ARCHITECTURE.md`.
 - Run the task-start skill/MCP routing preflight defined by `CLAUDE.md` before ad-hoc implementation/debugging.
 - Before starting feature/bug/reliability implementation (default single-lane), follow `docs/workflow/delivery/nanoclaw-development-loop.md`.
 - Before changing workflow strategy/cadence based on external research, follow `docs/workflow/strategy/workflow-optimization-loop.md`.
-- After task completion or before ending a session, if a workflow caused avoidable friction, retries, or mid-task correction, follow `docs/workflow/strategy/session-introspection-loop.md`.
+- After task completion or before ending a session, if a workflow caused avoidable friction, retries, or mid-task correction, you must follow `docs/workflow/strategy/session-introspection-loop.md` as required closure work unless unsafe or blocked.
 - Before changing nighttime improvement evaluation, overnight research cadence, or token-budgeted upstream/tooling scanning, follow `docs/workflow/strategy/nightly-evaluation-loop.md`.
 - Before running weekly docs/scripts/config/code slop cleanup during optimization cycles, follow `docs/workflow/strategy/weekly-slop-optimization-loop.md`.
 - Before reviewing hooks/subagents or built-in tool routing governance, follow `docs/workflow/strategy/weekly-slop-optimization-loop.md` and `docs/operations/tooling-governance-budget.json`.
@@ -39,6 +40,7 @@
 - Use the most relevant internal skills/tools first and verify outcomes with concrete evidence.
 - If a better mission-aligned approach exists, surface it proactively and reason with the user before execution.
 - Do not rely on assumptions when facts are retrievable; gather repo facts from code/docs and use DeepWiki for repository documentation when more context is required.
+- When creating or modifying scripts, default to the minimum model-facing output needed for the task; verbose logs, large JSON payloads, and full artifacts must be opt-in or file-backed.
 - Any issue discovered during work must be logged/updated in `.claude/progress/incident.json` via the incident workflow before closure.
 - Any new feature request not already mapped must be feature-tracked and work-item tracked before implementation.
 - For GitHub CLI or remote git operations that depend on auth, branch mutation, or networked GitHub state (`gh auth`, `gh pr *`, `gh repo *`, `gh api`, `git fetch`, `git pull`, `git push`, `git merge` against remotes), request escalated execution directly instead of spending a first attempt inside the sandbox.

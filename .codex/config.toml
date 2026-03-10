@@ -38,9 +38,21 @@ config_file = "agents/reviewer.toml"
 description = "Long-running monitor for deterministic checks, polling, and background verification."
 config_file = "agents/monitor.toml"
 
+[agents.morning_prep]
+description = "Headless morning prep lane for session start, GitHub collaboration triage, and nightly finding promotion without repo-tracked edits."
+config_file = "agents/morning-prep.toml"
+
 [agents.worker]
 description = "Scoped implementation worker for approved touch-set changes."
 config_file = "agents/worker.toml"
+
+[profiles.morning_prep]
+model = "gpt-5.4"
+model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+sandbox_workspace_write.network_access = true
+web_search = "disabled"
 
 [profiles.gpt54_escalation]
 model = "gpt-5.4"

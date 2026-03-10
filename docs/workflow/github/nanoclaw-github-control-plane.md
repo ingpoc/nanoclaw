@@ -106,6 +106,22 @@ Use instead:
 - The nightly lane must skip already evaluated upstream heads and tool versions unless explicitly forced.
 - Codex remains the morning triage lane for selective promotion from nightly findings into execution work.
 
+## Morning Codex Prep Lane Baseline
+
+- The morning prep lane is local headless Codex automation, not GitHub Actions.
+- The repo-tracked Codex surfaces are `.codex/config.toml` and `.codex/agents/morning-prep.toml`.
+- The local bootstrap surfaces are:
+  - `scripts/workflow/start-morning-codex-prep.sh`
+  - `scripts/workflow/morning-codex-prep-output-schema.json`
+  - `launchd/com.nanoclaw-morning-codex-prep.plist`
+- The launcher runs `codex exec -p morning_prep` in non-interactive mode with structured output.
+- The morning lane must:
+  - run `bash scripts/workflow/session-start.sh --agent codex --no-background-sync`
+  - resolve only GitHub collaboration items surfaced by that session-start sweep
+  - promote nightly findings only when the next action is concrete enough for an execution Issue
+  - stop after writing its structured summary
+- The morning lane must not edit repo-tracked files.
+
 ## CI Failure Feedback Loop
 
 - Keep deterministic `CI` as the required merge gate.

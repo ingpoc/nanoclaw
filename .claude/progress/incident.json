@@ -1,7 +1,48 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-10T07:02:33Z",
+  "updated_at": "2026-03-10T09:09:45Z",
   "incidents": [
+    {
+      "id": "incident-20260310T090730Z",
+      "title": "Global Codex skill symlink `~/.codex/skills/introspect` is broken",
+      "status": "resolved",
+      "severity": "low",
+      "created_at": "2026-03-10T09:07:30Z",
+      "updated_at": "2026-03-10T09:09:45Z",
+      "summary": {
+        "symptom": "A live `codex exec -p morning_prep` smoke test logs `failed to stat skills entry /Users/gurusharan/.codex/skills/introspect (symlink): No such file or directory` before continuing.",
+        "suspected_cause": "A global Codex skills symlink points to a missing target outside the repository.",
+        "impact": "Morning Codex prep still runs, but the global Codex environment has hidden drift that could become a blocker if that skill is required later.",
+        "next_action": "Repair or remove the broken `~/.codex/skills/introspect` symlink in the global Codex installation."
+      },
+      "evidence": {
+        "bundle_count": 0
+      },
+      "context": {
+        "lane": "codex-runtime"
+      },
+      "notes": [
+        {
+          "ts": "2026-03-10T09:07:30Z",
+          "author": "codex",
+          "text": "During a live smoke test of `codex exec -p morning_prep`, Codex reported a broken global skill symlink for `~/.codex/skills/introspect` and then continued normally to a successful `ready` response. The scheduled morning lane is not blocked, but the global Codex environment should be repaired to avoid future surprises."
+        },
+        {
+          "ts": "2026-03-10T09:09:45Z",
+          "author": "codex",
+          "text": "Removed `~/.codex/skills/introspect` and reran `codex exec -p morning_prep` successfully. The broken-symlink warning no longer appears."
+        }
+      ],
+      "resolution": {
+        "summary": "Removed the broken global Codex skill symlink and verified `codex exec` starts cleanly.",
+        "confirmed_by_user": "remove the introspect skill symlink",
+        "confirmed_at": "2026-03-10T09:09:45Z",
+        "verification": "Live `codex exec -p morning_prep` smoke test returned `ready` with no broken-symlink warning.",
+        "fix_reference": "/Users/gurusharan/.codex/skills/introspect",
+        "resolved_by": "codex"
+      },
+      "resolved_at": "2026-03-10T09:09:45Z"
+    },
     {
       "id": "incident-20260309T203718Z",
       "title": "Tooling-governance wildcard budget drift still blocks clean verification",

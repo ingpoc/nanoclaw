@@ -1,14 +1,14 @@
 # Nightly Evaluation Loop
 
-Token-efficient overnight research lane for upstream NanoClaw changes and tool changelog changes.
+Token-efficient overnight research lane for upstream NanoClaw changes and tool changelog changes, plus the bounded morning Codex pickup that turns those findings into explicit GitHub state.
 
-Use this when changing the overnight improvement lane, its scheduler, its research budget, or the morning Codex pickup contract.
+Use this when changing the overnight improvement lane, its scheduler, its research budget, or the morning Codex prep contract.
 
 Mission anchor: `docs/MISSION.md`.
 
 ## Purpose
 
-Provide a low-noise overnight research lane that continuously evaluates only net-new upstream/tooling changes and hands the surviving findings to Codex for morning triage.
+Provide a low-noise overnight research lane that continuously evaluates only net-new upstream/tooling changes and hands the surviving findings to Codex for morning triage without leaking implementation work into the scheduled automation lanes.
 
 ## Doc Type
 
@@ -65,15 +65,32 @@ The nightly lane runs once at `00:30` Asia/Kolkata and only:
 3. updates at most one upstream discussion and one tooling discussion
 4. records local cursor state for dedupe
 
+### Morning Codex prep lane
+
+The morning Codex prep lane runs once at `08:30` Asia/Kolkata and only:
+
+1. runs `bash scripts/workflow/session-start.sh --agent codex --no-background-sync`
+2. handles only GitHub collaboration items surfaced by that session-start sweep
+3. applies the nightly promotion boundary only to pending nightly handoffs
+4. reruns `session-start.sh` once after GitHub follow-up
+5. writes a structured summary and stops
+
+The morning lane must not edit repo-tracked files. It may update GitHub state and runtime-local artifacts only.
+
 ## Runtime Surfaces
 
 - `.claude/agents/nightly-improvement-researcher.md`
 - `.claude/commands/nightly-improvement-eval.md`
+- `.codex/agents/morning-prep.toml`
 - `scripts/workflow/nightly-improvement.js`
 - `scripts/workflow/start-nightly-improvement.sh`
+- `scripts/workflow/start-morning-codex-prep.sh`
+- `scripts/workflow/morning-codex-prep-output-schema.json`
 - `launchd/com.nanoclaw-nightly-improvement.plist`
+- `launchd/com.nanoclaw-morning-codex-prep.plist`
 - `.nanoclaw/nightly-improvement/state.json` (runtime-local, gitignored)
 - `.nanoclaw/nightly-improvement/runs/` (runtime-local logs)
+- `.nanoclaw/morning-codex-prep/` (runtime-local logs and summaries)
 
 ## Token-Efficiency Contract
 
@@ -178,6 +195,13 @@ When `NIGHTLY IMPROVEMENT FINDINGS` is non-empty, Codex should process the surfa
 4. if accepted, create one execution Issue with concrete next action, set `Source=discussion`, and leave a promotion summary comment
 5. if not accepted, leave the decision comment in the discussion so the morning triage outcome is explicit
 
+When this routine is executed by the scheduled morning Codex prep lane, it should remain bounded to the surfaced morning queue:
+
+1. do not start implementation work
+2. do not kick off `qmd-session-sync.sh`
+3. do not edit repo-tracked workflow/docs/code files
+4. rerun `session-start.sh --agent codex --no-background-sync` once after triage to confirm the queue is clean
+
 Morning triage should convert research into a clear GitHub state:
 
 1. Discussions remain the research and decision log
@@ -218,6 +242,7 @@ Close or replace a nightly discussion only when:
 
 - `node scripts/workflow/nightly-improvement.js scan --output /tmp/nightly-scan.json`
 - `node scripts/workflow/nightly-improvement.js record --scan-file /tmp/nightly-scan.json`
+- `bash scripts/workflow/start-morning-codex-prep.sh --dry-run`
 - `claude agents --setting-sources project`
 - `bash scripts/workflow/start-nightly-improvement.sh --dry-run`
 - `bash scripts/workflow/gh-collab-sweep.sh --agent codex`

@@ -92,7 +92,7 @@ It is a sparse one-shot pickup lane:
 
 1. The scheduled or manual lane runs `/platform-pickup` in an interactive Claude session.
 2. `/platform-pickup` confirms the active GitHub account is `ingpoc`.
-3. It refreshes the dedicated worktree from `origin/main` via `bash scripts/workflow/platform-loop-sync.sh`.
+3. It provisions a fresh ephemeral worktree from `origin/main` via `bash scripts/workflow/platform-loop-sync.sh`.
 4. If the sync fails, Claude stops immediately instead of using stale code.
 5. It runs `node scripts/workflow/platform-loop.js next`.
 6. If the helper returns `noop`, the lane stops with no work picked.
@@ -102,7 +102,7 @@ It is a sparse one-shot pickup lane:
 
 ## Bounded Implementation
 
-1. Claude creates or reuses the dedicated issue branch from the freshly synced base.
+1. Claude creates the issue branch from the freshly synced ephemeral base worktree.
 2. Claude works only within the scoped touch set.
 3. Claude runs the required checks from the Issue.
 4. On ambiguity, missing scope, or failed required checks, Claude sets `Status=Blocked`, writes the next decision, comments the blocker, and stops.
@@ -114,6 +114,8 @@ It is a sparse one-shot pickup lane:
 3. Claude moves the item to `Review`.
 4. Claude leaves an issue comment with PR URL, branch, request/run ids, checks run, and known risks.
 5. `Next Decision` must be a Codex review action, not a vague note.
+6. After Claude exits, `scripts/workflow/run-platform-claude-session.sh` removes the ephemeral worktree automatically when it is clean.
+7. If the worktree is dirty because the run stopped mid-change, the runner preserves it and the handoff must name the retained path explicitly.
 
 ## Runtime Surfaces
 

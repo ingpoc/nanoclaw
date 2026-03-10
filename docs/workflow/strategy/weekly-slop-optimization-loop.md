@@ -173,6 +173,35 @@ Queue workflow cleanup using these rules:
 3. prefer moving detail from auto-loaded rules into trigger-loaded docs when silent-failure risk stays covered
 4. do not split a workflow unless the split reduces retrieval cost and preserves one clear owner per concern
 
+## Customization-Only Simplify / Refactor Path
+
+Use this path when the goal is to simplify your fork-owned customization layer without refactoring upstream NanoClaw baseline code.
+
+This is intentionally narrow. It is not a license for broad cleanup.
+
+Requirements before any simplify/refactor pass:
+
+1. run the work on a dedicated branch or worktree, not mixed with unrelated delivery
+2. read `docs/ARCHITECTURE.md` first and map the target files to fork-owned customization surfaces versus upstream-aligned core
+3. define a touch-set up front and exclude upstream baseline files unless a seam exception is justified
+4. treat `src/extensions/jarvis/*`, `scripts/jarvis-*`, `scripts/test-andy-*`, `groups/*`, and other fork-owned surfaces as the default simplify targets
+5. do not use a simplify pass to redesign architecture, merge unrelated refactors, or reopen upstream-vs-extension boundary decisions
+
+Required pre-pass checklist:
+
+1. **Worktree isolation**: use a separate worktree when the simplify pass may touch multiple files or requires comparison against mainline behavior
+2. **Boundary map**: classify each planned file as `fork-owned`, `shared seam`, or `frozen core`
+3. **Touch-set filter**: write down the exact files or globs that the simplify pass may edit
+4. **Upstream exclusion**: explicitly note which upstream-aligned files are out of scope
+5. **Verification target**: name the deterministic checks that will prove the simplify pass did not regress behavior
+
+Escalate out of this path and back to normal delivery planning if:
+
+1. the proposal needs shared-seam or frozen-core edits beyond a thin exception
+2. the proposal is really a behavior change, not simplification
+3. the touch-set cannot be stated precisely before execution
+4. the pass mixes upstream sync with customization cleanup
+
 ## Phase 4: Execute Cleanup
 
 For each queued item:

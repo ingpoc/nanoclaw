@@ -85,6 +85,7 @@ This doc owns token-efficient MCP usage guidance for Codex work in this repo. It
 - Asking for `full` output by default.
 - Enabling `include_metrics` on every call.
 - Using token-efficient MCP for tiny one-line commands where direct shell output is already smaller than the MCP envelope.
+- Pasting raw `/context` command output into the transcript when a short audit summary or saved artifact path would answer the question.
 
 ## Best-Practice Call Shapes
 

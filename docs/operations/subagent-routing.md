@@ -14,6 +14,17 @@ Central routing reference for Codex role delegation and Claude consult escalatio
 | `gpt54_escalation` | `gpt-5.4` `xhigh` | profile only | foreground | cross-system ambiguity, large-context synthesis, repeated-failure escalation |
 | `claude consult` | Claude Code CLI | read-only or scoped ops | foreground | prior-context consult or independent review escalation |
 
+## Entry Point Rule
+
+Top-level orchestration utilities should be modeled as wrapper scripts or top-level profiles, not as helper-agent roles.
+
+Use this split:
+
+1. wrappers/profiles define how a top-level `codex exec` run starts
+2. helper agents such as `explorer`, `reviewer`, `worker`, and `monitor` are spawned by that top-level run
+
+Do not create a pseudo-parent helper agent when the real need is a top-level orchestration entrypoint. For example, session-pattern analysis should start from its wrapper utility and fan out to `explorer` and `reviewer`, rather than pretending a child agent is the parent.
+
 ## Main-Agent Boundary
 
 Never delegate these away from the main Codex agent:

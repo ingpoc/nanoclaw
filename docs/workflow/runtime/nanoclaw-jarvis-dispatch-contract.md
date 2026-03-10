@@ -176,9 +176,13 @@ When Andy changes review state, it emits hidden `<review_state_update>` blocks s
 
 ## Agent Routing
 
-| Step | Agent | Mode | Notes |
-|------|-------|------|-------|
-| Field change decisions | opus | — | Requires contract design judgment |
-| Build + test | verifier | fg | `npm run build && npm test` |
-| Contract lint | verifier | fg | `bash scripts/check-workflow-contracts.sh` |
-| Schema validation | verifier | fg | Dispatch/completion field checks |
+Use the canonical routing owners in:
+
+- `docs/operations/subagent-catalog.md`
+- `docs/operations/subagent-routing.md`
+
+Workflow-specific default:
+
+1. use `reviewer` for contract-risk and invariant checks
+2. use `monitor` for deterministic build, test, and contract-lint execution when parallelism helps
+3. keep field design and contract-boundary decisions in the main lane

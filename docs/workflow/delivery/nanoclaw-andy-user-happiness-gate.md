@@ -118,8 +118,13 @@ Treat any failure as blocking for release:
 
 ## Agent Routing
 
-| Step | Agent | Mode | Notes |
-|------|-------|------|-------|
-| User satisfaction judgment | opus | — | Subjective quality assessment |
-| Probe scripts | verifier | bg | `bash scripts/jarvis-ops.sh happiness-gate` |
-| Evidence collection | scout | fg | Gather UX latency/quality data |
+Use the canonical routing owners in:
+
+- `docs/operations/subagent-catalog.md`
+- `docs/operations/subagent-routing.md`
+
+Workflow-specific default:
+
+1. use `monitor` for deterministic probe-script execution
+2. use `explorer` for evidence gathering and log/context collection
+3. keep subjective user-satisfaction judgment in the main lane

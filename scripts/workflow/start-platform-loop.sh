@@ -47,7 +47,7 @@ if command -v gh >/dev/null 2>&1; then
 fi
 
 if [[ ! -x "$SYNC_HELPER" ]]; then
-  echo "platform loop sync helper is missing or not executable: $SYNC_HELPER" >&2
+  echo "platform pickup sync helper is missing or not executable: $SYNC_HELPER" >&2
   exit 1
 fi
 

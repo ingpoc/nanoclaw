@@ -153,7 +153,7 @@
       "status": "open",
       "severity": "medium",
       "created_at": "2026-03-09T06:03:33.956262+00:00",
-      "updated_at": "2026-03-09T06:03:47.486735+00:00",
+      "updated_at": "2026-03-10T13:05:00+00:00",
       "summary": {
         "symptom": "The autonomous platform loop reused stale worktree state and launchd health checks logged Operation not permitted instead of reliably rearming the session.",
         "suspected_cause": "The dedicated loop worktree was never refreshed from origin/main before pickup, and the launchd job shelled through zsh with a repo worki...",
@@ -176,6 +176,11 @@
           "ts": "2026-03-09T06:03:47.486730+00:00",
           "author": "codex",
           "text": "2026-03-09 implementation landed: added scripts/workflow/platform-loop-sync.sh, wired start/trigger/pickup to refresh the dedicated worktree from origin/main and re-overlay command/helper files, switched the platform loop launchd job to invoke /bin/bash directly, and added focused platform-loop sync tests. Targeted tests/build/workflow-contract/mirror passed; full acceptance-gate still fails on pre-existing unrelated tests (setup/github-project-sync.test.ts, src/jarvis-reconcile-stale-andy-requests.test.ts) and the existing tooling-governance budget overage."
+        },
+        {
+          "ts": "2026-03-10T13:05:00+00:00",
+          "author": "codex",
+          "text": "2026-03-10 follow-up tightened the platform pickup lane to use an ephemeral worktree per Claude run instead of preserving a long-lived checkout. The runner now removes clean worktrees automatically on exit and preserves only dirty interrupted runs for explicit handoff. Focused platform-loop tests still pass."
         }
       ]
     },

@@ -17,6 +17,7 @@ Maps the same workflow intent to each tool's internal controls so implementation
 | Bounded implementation | `feature-worker` in impl lane | `worker` role in impl lane | mapped touch-set + tests |
 | Deterministic verification | `verify-app` + runtime scripts | `monitor`/`reviewer` + same scripts | `bash scripts/workflow/verify.sh` |
 | Security/reliability review | `contract-auditor`, `incident-regression` | `reviewer` role + `/review` | findings with file/line refs |
+| Workflow/session pattern analysis | n/a | `start-session-pattern-analysis.sh` wrapper + `explorer`/`reviewer` helpers | exported session evidence + skeptic verdict + owner mapping |
 | PR finalization | hook-assisted checks + ops scripts | `/diff`, `/review`, ops scripts | `bash scripts/workflow/finalize-pr.sh` |
 | Governance/mirror sync | `.claude` hooks + docs routing | `.codex` role config + mirror checks | `bash scripts/workflow/sync-mirror.sh` + tooling governance lint |
 

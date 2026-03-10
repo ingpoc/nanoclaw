@@ -51,6 +51,8 @@ require_file ".codex/agents/explorer.toml"
 require_file ".codex/agents/reviewer.toml"
 require_file ".codex/agents/monitor.toml"
 require_file ".codex/agents/worker.toml"
+require_file "scripts/workflow/start-session-pattern-analysis.sh"
+require_file "scripts/workflow/session-pattern-analysis-output-schema.json"
 require_file ".claude/settings.local.json"
 require_file ".claude/hooks/risk-tier-pretool-guard.sh"
 require_file ".claude/hooks/posttool-workflow-sync-check.sh"
@@ -86,6 +88,7 @@ require_pattern ".claude/settings.local.json" 'posttool-workflow-sync-check\.sh'
 
 require_exec ".claude/hooks/risk-tier-pretool-guard.sh"
 require_exec ".claude/hooks/posttool-workflow-sync-check.sh"
+require_exec "scripts/workflow/start-session-pattern-analysis.sh"
 require_exec "scripts/check-tooling-governance.sh"
 
 if [ "${#errors[@]}" -gt 0 ]; then

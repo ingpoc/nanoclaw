@@ -84,7 +84,7 @@ Use instead:
   - `launchd/com.nanoclaw-platform-loop.plist`
 - The launchd schedule is sparse: `10:00` and `15:00` Asia/Kolkata, with manual one-shot pickup still allowed between slots.
 - The pickup lane may claim only one platform item at a time and must stop if any Claude-owned item is already in `Review`.
-- The pickup lane must reseed its dedicated worktree from `origin/main` before pickup and fail closed if that sync cannot be proven.
+- The pickup lane must provision a fresh ephemeral worktree from `origin/main` before pickup and fail closed if that sync cannot be proven.
 - The pickup lane may implement, test, branch, and open/update PRs, but it must not merge and it must not bypass deterministic required checks.
 - Codex remains the default review lane for these platform PRs.
 

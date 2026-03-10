@@ -145,6 +145,21 @@ When Codex is the primary orchestrator for this repo:
 5. `gpt-5.4` at `xhigh` is an escalation-only profile for cross-system ambiguity, giant-context synthesis, or repeated failed loops.
 6. Claude consult remains an escalation lane, not a routine second-review default.
 
+### Codex Headless Analysis Utility
+
+For recurring workflow/session-pattern analysis, use the headless wrapper utility:
+
+```bash
+bash scripts/workflow/start-session-pattern-analysis.sh --topic "<workflow/topic>"
+```
+
+Utility rules:
+
+1. main lane synthesizes the result
+2. reuse `explorer` for evidence and `reviewer` for skeptic pass
+3. do not use `worker`
+4. utility stays read-only at the behavior level even though the execution sandbox bypasses approval stalls
+
 ### Delegation Payoff Rule
 
 Codex should not use subagents for their own sake.

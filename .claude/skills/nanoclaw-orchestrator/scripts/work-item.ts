@@ -40,21 +40,27 @@ function getStorePath(repoRoot: string): string {
   return path.join(repoRoot, '.claude', 'progress', 'feature-work-items.json');
 }
 
+function defaultStore(): WorkStore {
+  return {
+    schema_version: SCHEMA_VERSION,
+    updated_at: nowIso(),
+    items: [],
+  };
+}
+
 function loadStore(repoRoot: string): WorkStore {
   const storePath = getStorePath(repoRoot);
-  // Try to read directly - avoids TOCTOU race condition
-  let raw: WorkStore;
+  let contents: string;
   try {
-    raw = JSON.parse(fs.readFileSync(storePath, 'utf8')) as WorkStore;
-  } catch {
-    // File doesn't exist or is invalid - return defaults
-    return {
-      schema_version: SCHEMA_VERSION,
-      updated_at: nowIso(),
-      items: [],
-    };
+    contents = fs.readFileSync(storePath, 'utf8');
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') {
+      return defaultStore();
+    }
+    throw error;
   }
 
+  const raw = JSON.parse(contents) as WorkStore;
   raw.schema_version = Math.max(raw.schema_version || 1, SCHEMA_VERSION);
   raw.items = raw.items.map((item) => ({
     ...item,

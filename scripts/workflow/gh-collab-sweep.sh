@@ -109,7 +109,7 @@ STALE_CUTOFF=$(date -u -v-"${STALE_HOURS}"H '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
 DISCUSSIONS="$(gh api graphql -f query='
 query($owner: String!, $repo: String!) {
   repository(owner: $owner, name: $repo) {
-    discussions(first: 30, orderBy: {field: UPDATED_AT, direction: DESC}) {
+    discussions(first: 30, orderBy: {field: UPDATED_AT, direction: DESC}, states: [OPEN]) {
       nodes {
         number
         title

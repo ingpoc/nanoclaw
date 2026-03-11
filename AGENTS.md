@@ -29,6 +29,9 @@
 - Before adapting behavior between Claude and Codex runtimes, follow `docs/operations/claude-codex-adapter-matrix.md`.
 - Before deciding what to offload to GitHub Actions/rulesets vs keep in local lanes, follow `docs/workflow/github/github-offload-boundary-loop.md`.
 - Before changing the Linear/Notion/GitHub control-plane split, follow `docs/workflow/control-plane/collaboration-surface-contract.md`.
+- Before changing execution-lane routing or Symphony scope, follow `docs/workflow/control-plane/execution-lane-routing-contract.md`.
+- Before changing custom Symphony backend routing or project registry, follow `docs/workflow/control-plane/custom-symphony-orchestration-contract.md`.
+- Before onboarding a new project into Linear/Notion/Symphony or changing the universal secret model, follow `docs/workflow/control-plane/project-bootstrap-and-secret-contract.md`.
 - Before consulting Claude Code CLI via resumed/forked sessions for parallel reasoning/review, follow `docs/workflow/delivery/claude-cli-resume-consult-lane.md`.
 - If `AGENTS.md` and `CLAUDE.md` ever conflict, `CLAUDE.md` wins.
 

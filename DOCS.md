@@ -28,6 +28,9 @@ Workflow docs are physically grouped by operational concern.
 ### `docs/workflow/control-plane/`
 
 - `docs/workflow/control-plane/collaboration-surface-contract.md`: canonical Linear/Notion/GitHub/repo separation-of-concern contract
+- `docs/workflow/control-plane/custom-symphony-orchestration-contract.md`: custom Symphony registry, backend routing, and project enablement contract
+- `docs/workflow/control-plane/execution-lane-routing-contract.md`: canonical NanoClaw-vs-downstream lane routing and Symphony scope contract
+- `docs/workflow/control-plane/project-bootstrap-and-secret-contract.md`: canonical project onboarding and universal secret-scope contract
 - `docs/workflow/control-plane/session-work-sweep.md`: session-start Linear sweep protocol and morning handoff contract
 
 ### `docs/workflow/delivery/`
@@ -69,7 +72,7 @@ Workflow docs are physically grouped by operational concern.
 
 ## `docs/operations/`
 
-- `docs/operations/roles-classification.md`: role authority and handoff model (`andy-bot`, `andy-developer`, workers)
+- `docs/operations/roles-classification.md`: role authority and handoff model for user shaping, Andy coordination, NanoClaw execution lanes, and downstream workers
 - `docs/operations/update-requirements-matrix.md`: required doc/code update surfaces by change type
 - `docs/operations/agreement-sync-protocol.md`: agreement-driven sync protocol for docs/code
 - `docs/operations/skills-vs-docs-map.md`: decision boundary for skill-first vs docs-first execution

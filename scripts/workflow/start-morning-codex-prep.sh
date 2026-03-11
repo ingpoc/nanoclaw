@@ -91,9 +91,9 @@ Requirements:
    - \`DeepWiki\` for repository documentation and architecture questions
    - \`Context7\` for primary library/API docs
    - \`token-efficient\` for verbose logs, JSON, CSV, or command output
-8. For every candidate from the queue or roadmap, decide exactly one of: \`promote\`, \`ready\`, \`defer\`, or \`reject\`.
+8. For every candidate from the queue or roadmap, decide exactly one of: \`promote\`, \`ready-recommendation\`, \`defer\`, or \`reject\`.
 9. Write rationale for all \`defer\` and \`reject\` decisions on the relevant Notion page or Linear issue.
-10. Only Codex may move an item to \`Ready\`, and only after the issue contains a concrete execution contract: problem statement, scope, acceptance criteria, required checks, required evidence, and blocked conditions.
+10. Codex may normalize issue content and record a \`ready-recommendation\`, but \`andy-developer\` remains the only readiness authority.
 11. Promote only concrete next actions into Issues. Do not broaden scope beyond the surfaced morning queue and roadmap.
 12. After handling the surfaced morning work, rerun \`bash scripts/workflow/session-start.sh --agent codex --no-background-sync\` once.
 13. Do not edit repo-tracked files, docs, or code. This lane may update Linear/Notion/GitHub state and runtime-local artifacts only.

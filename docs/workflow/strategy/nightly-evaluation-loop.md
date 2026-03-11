@@ -1,6 +1,6 @@
 # Nightly Evaluation Loop
 
-Token-efficient overnight research lane for upstream NanoClaw changes and tool changelog changes, plus the bounded morning Codex pickup that turns those findings into explicit Notion shared context and then selective Linear work.
+Token-efficient overnight research lane for upstream NanoClaw changes and tool changelog changes, plus the bounded morning Codex support lane that turns those findings into explicit Notion shared context and then selective Linear shaping work.
 
 Use this when changing the overnight improvement lane, its scheduler, its research budget, or the morning Codex prep contract.
 
@@ -31,7 +31,7 @@ Nightly v1 covers only:
 3. Claude Agent SDK release/tag changes
 4. OpenCode release/tag changes
 
-This lane does not implement code, create Linear issues, move execution state, or open PRs.
+This lane does not implement code, approve `Ready`, move execution state, or open PRs.
 
 ## Use When
 
@@ -73,11 +73,21 @@ The morning Codex prep lane runs once at `08:30` Asia/Kolkata and only:
 1. runs `bash scripts/workflow/session-start.sh --agent codex --no-background-sync`
 2. handles only surfaced morning collaboration items from that session-start sweep
 3. applies the nightly promotion boundary only to pending nightly handoffs and explicit roadmap-plan candidates
-4. reruns `session-start.sh` once after GitHub follow-up
+4. reruns `session-start.sh` once after delivery follow-up
 5. writes a structured summary and stops
 
 The morning lane must not edit repo-tracked files. It may update Linear, Notion, GitHub delivery state, and runtime-local artifacts only.
-It is the only autonomous lane allowed to move an implementation issue to `Ready`.
+It supports `andy-developer` coordination and may normalize issue content, but it is not the `Ready` authority.
+
+## Symphony Boundary
+
+This workflow is not a Symphony workload.
+
+Reasons:
+
+1. it spans Notion context, Linear triage, and cross-session recall
+2. it is a shaping and research lane, not an implementation lane
+3. it exists to recommend or defer work, not to execute a single scoped issue
 
 ## Runtime Surfaces
 
@@ -161,7 +171,7 @@ Nightly research is valid only when it proves all of the following for each sour
    - `deepwiki` for repository architecture/Q&A
    - `context7` for library/framework usage docs
    - token-efficient MCP for large changelog, log, or structured-data reduction
-5. **NanoClaw fit**: explain the subsystem fit and whether the change is relevant to `main`, `andy-developer`, `jarvis-worker-*`, or shared runtime
+5. **NanoClaw fit**: explain the subsystem fit and whether the change is relevant to `codex`, `claude-code`, `andy-developer`, `jarvis-worker-*`, or shared runtime
 
 Reject or defer the finding if any of those are missing. Surface-level summaries are not valid nightly research.
 
@@ -214,7 +224,7 @@ Why This Run Happened: <cursor change that triggered evaluation>
 - Local implementation/docs overlap: <none|summary>
 
 ### NanoClaw Fit
-- Subsystem: <main|andy-developer|jarvis-worker-*|shared runtime>
+- Subsystem: <codex|claude-code|andy-developer|jarvis-worker-*|shared runtime>
 - Candidate: <adopt|pilot|defer|reject|no-fit>
 - Why: <short reasoning>
 - Operator Load / Risk: <short reasoning>
@@ -236,7 +246,7 @@ Codex should:
 2. make an explicit decision for each surviving candidate before moving on
 3. decide one of `promote`, `ready`, `defer`, or `reject`
 4. promote only when the next action is concrete enough for an execution Issue
-5. move an issue to `Ready` only when the execution contract is complete
+5. recommend readiness only when the execution contract is complete; final `Ready` approval remains with `andy-developer`
 6. leave a clear non-promotion reason for anything not promoted
 7. keep the rolling nightly context page open unless the source family is intentionally retired or replaced
 
@@ -250,13 +260,13 @@ When `NIGHTLY CONTEXT HANDOFFS` is non-empty, Codex should process the surfaced 
 2. verify whether the candidate already exists locally or is already tracked
 3. decide one of:
    - `promote -> opened Issue #N`
-   - `ready -> Issue #N moved to Ready`
+   - `ready-recommendation -> Issue #N ready recommendation recorded`
    - `defer -> reason`
    - `reject -> reason`
    - `reference only -> reason`
 4. if promoted, create one execution issue with concrete next action, set `Source=notion-research`, and leave a promotion summary update
-5. if moved to `Ready`, ensure the issue includes problem statement, scope, acceptance criteria, required checks, required evidence, blocked-if, and rollback notes
-6. if not promoted or readied, leave the decision update in the Notion page so the morning triage outcome is explicit
+5. if recommending `Ready`, ensure the issue includes problem statement, scope, acceptance criteria, required checks, required evidence, blocked-if, and rollback notes
+6. if not promoted or recommended for readiness, leave the decision update in the Notion page so the morning triage outcome is explicit
 
 When this routine is executed by the scheduled morning Codex prep lane, it should remain bounded to the surfaced morning queue:
 

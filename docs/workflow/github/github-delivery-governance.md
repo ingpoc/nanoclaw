@@ -29,15 +29,19 @@ Use instead:
 
 ## Responsibility Split
 
-- `Andy-developer` (Claude Code lane):
+- `andy-developer`:
   - manages `.github/workflows/*`
   - manages PR/review automation policy
   - manages branch governance playbooks
   - creates and pushes pre-seeded `jarvis-*` worker branches from approved base branches
   - decides whether `@claude` review is required, optional, or disabled per project
-- `jarvis-worker-*` (OpenCode lane):
-  - implements product code changes from dispatch contracts
-  - does not own branch protection/workflow governance by default
+- `codex` / `claude-code`:
+  - are the default execution lanes for the `NanoClaw` repo
+  - open and update PRs for scoped NanoClaw work
+  - do not own branch protection or workflow governance by default
+- `jarvis-worker-*`:
+  - implement downstream product code changes from dispatch contracts
+  - do not own branch protection or workflow governance by default
 
 ## Delivery Governance Boundary
 

@@ -62,7 +62,7 @@ build_prompt() {
 Run the NanoClaw autonomous Claude implementation pickup lane.
 
 Rules:
-1. Never reprioritize work. Only implement issues that Codex already marked \`Ready\`.
+1. Never reprioritize work. Only implement issues that `andy-developer` already approved as \`Ready\`.
 2. Never continue if \`bash scripts/workflow/autonomy-lane.sh pause-status\` reports \`"paused": true\`.
 3. Never continue if \`node scripts/workflow/platform-loop.js next\` returns \`noop\`.
 4. Never merge.
@@ -73,7 +73,7 @@ Execution:
    - run \`node scripts/workflow/work-control-plane.js\`
    - if the result is \`github\`, verify \`gh api user -q .login\` and switch if needed with \`gh auth switch --user $GH_ACCOUNT\`
    - if the result is \`linear\`, verify the Linear API env is present before continuing
-2. If \`$PLAN_PATH\` exists, read it for product intent only. Codex remains the sole authority for what is \`Ready\`.
+2. If \`$PLAN_PATH\` exists, read it for product intent only. This lane is an execution lane only and must not decide what is \`Ready\`.
 3. Run \`node scripts/workflow/platform-loop.js next\`.
 4. If the helper returns \`noop\`, summarize the reason and stop.
 5. Read the selected issue completely and obey its scope, required checks, required evidence, and blocked conditions.

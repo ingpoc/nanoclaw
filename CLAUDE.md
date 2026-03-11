@@ -68,6 +68,9 @@ BEFORE deciding workflow setup, responsibility ownership, or where updates belon
 BEFORE deciding whether to run a skill workflow or docs-first workflow → read docs/operations/skills-vs-docs-map.md
 BEFORE deciding what to offload to GitHub Actions/rulesets vs keep in local lanes → read docs/workflow/github/github-offload-boundary-loop.md
 BEFORE changing the Linear/Notion/GitHub control-plane split → read docs/workflow/control-plane/collaboration-surface-contract.md
+BEFORE changing execution-lane routing or Symphony scope → read docs/workflow/control-plane/execution-lane-routing-contract.md
+BEFORE changing custom Symphony backend routing or project registry → read docs/workflow/control-plane/custom-symphony-orchestration-contract.md
+BEFORE onboarding a new project into Linear/Notion/Symphony or changing the universal secret model → read docs/workflow/control-plane/project-bootstrap-and-secret-contract.md
 BEFORE consulting Claude Code CLI via resumed/forked sessions for parallel reasoning/review → read docs/workflow/delivery/claude-cli-resume-consult-lane.md
 BEFORE pulling/fetching upstream main or resolving upstream sync conflicts → read docs/operations/upstream-sync-policy.md
 BEFORE finalizing any Andy/Jarvis operating agreement change → read docs/operations/agreement-sync-protocol.md

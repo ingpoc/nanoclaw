@@ -50,6 +50,18 @@ async function transitionIssueForRun(
   await addIssueComment(issue.id, comment);
 }
 
+function cancellationComment(run: SymphonyRunRecord, reason: string): string {
+  return [
+    '<!-- symphony-stop -->',
+    `Run ID: ${run.runId}`,
+    `Backend: ${run.backend}`,
+    'Status: Blocked',
+    `Reason: ${reason}`,
+    `Workspace: ${run.workspacePath}`,
+    `Log File: ${run.logFile}`,
+  ].join('\n');
+}
+
 async function reconcileRun(run: SymphonyRunRecord): Promise<SymphonyRunRecord> {
   if (
     run.status !== 'planned' &&
@@ -195,6 +207,51 @@ export async function runSymphonyTick(input: {
     readyCounts,
     reconciledRunCount: reconciledRuns.length,
     autoDispatch: Boolean(input.autoDispatch),
+  };
+}
+
+export async function stopSymphonyRun(input: {
+  runId: string;
+  reason?: string;
+}): Promise<{
+  run: SymphonyRunRecord;
+  processWasAlive: boolean;
+}> {
+  const run = readRunRecord(input.runId);
+  if (
+    run.status !== 'planned' &&
+    run.status !== 'dispatching' &&
+    run.status !== 'running'
+  ) {
+    throw new Error(
+      `Run ${run.runId} is not active and cannot be stopped (current status: ${run.status}).`,
+    );
+  }
+
+  const reason = input.reason?.trim() || 'Stopped by operator.';
+  const processWasAlive = pidIsAlive(run.pid);
+
+  if (processWasAlive && run.pid) {
+    process.kill(run.pid, 'SIGTERM');
+  }
+
+  if (fs.existsSync(runPidPath(run.runId))) {
+    fs.rmSync(runPidPath(run.runId), { force: true });
+  }
+
+  const next = updateRunRecord(run.runId, {
+    pid: null,
+    status: 'canceled',
+    endedAt: new Date().toISOString(),
+    error: reason,
+    resultSummary: 'Run canceled by operator.',
+  });
+
+  await transitionIssueForRun(next, 'Blocked', cancellationComment(next, reason));
+
+  return {
+    run: next,
+    processWasAlive,
   };
 }
 

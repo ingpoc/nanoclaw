@@ -69,3 +69,14 @@ web_search = "disabled"
 [profiles.gpt54_escalation]
 model = "gpt-5.4"
 model_reasoning_effort = "xhigh"
+
+[mcp_servers.symphony]
+command = "bash"
+args = [
+  "scripts/workflow/run-with-env.sh",
+  "npx",
+  "tsx",
+  "scripts/workflow/symphony-mcp.ts"
+]
+startup_timeout_sec = 20.0
+tool_timeout_sec = 120.0

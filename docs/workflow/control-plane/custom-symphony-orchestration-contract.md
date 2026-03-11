@@ -34,6 +34,7 @@ It does not own shared-context placement, GitHub governance, or worker runtime i
 - `npm run symphony:status`
 - `npm run symphony:serve`
 - `npm run symphony:daemon -- --once`
+- `npm run symphony:mcp`
 - `npx tsx scripts/workflow/symphony.ts print-example`
 - `npx tsx scripts/workflow/symphony.ts list-ready --project-key nanoclaw`
 - `npx tsx scripts/workflow/symphony.ts plan-run --issue-file <path>`
@@ -68,6 +69,7 @@ It must provide:
 6. structured observability
 7. persistent local run-state
 8. local dashboard and JSON status surface
+9. MCP control surface for agents and browser tooling
 
 ### Supported backends
 
@@ -186,3 +188,4 @@ This contract is operating correctly when all are true:
 4. invalid issue/project combinations fail loudly before dispatch
 5. local runtime state is persisted under `.nanoclaw/symphony/`
 6. the local dashboard shows configured projects and recent runs
+7. agents can inspect projects, queues, runs, and dispatch/reconcile operations through the Symphony MCP server

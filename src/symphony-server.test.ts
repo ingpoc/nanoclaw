@@ -79,6 +79,13 @@ describe('symphony-server', () => {
     const response = await fetch(`http://127.0.0.1:${address.port}/api/v1/state`);
     const payload = (await response.json()) as { registryProjectCount: number };
     expect(payload.registryProjectCount).toBe(1);
+
+    const htmlResponse = await fetch(`http://127.0.0.1:${address.port}/`);
+    const html = await htmlResponse.text();
+    expect(html).toContain('Symphony Control Room');
+    expect(html).toContain('Project Portfolio');
+    expect(html).toContain('NanoClaw');
+
     server.close();
   });
 });

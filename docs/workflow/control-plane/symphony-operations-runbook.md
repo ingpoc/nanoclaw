@@ -20,6 +20,7 @@ This runbook owns only day-to-day operator handling.
 - checking which projects are Symphony-enabled
 - inspecting `Ready` issues before dispatch
 - launching or reconciling a Symphony run
+- exposing Symphony operations through MCP for agent use
 - validating the required Linear issue shape for Symphony-routed work
 
 ## Do Not Use When
@@ -35,6 +36,7 @@ This runbook owns only day-to-day operator handling.
 - `npm run symphony:status`
 - `npm run symphony:serve`
 - `npm run symphony:daemon -- --once`
+- `npm run symphony:mcp`
 - `npx tsx scripts/workflow/symphony.ts list-ready --project-key nanoclaw`
 - `npx tsx scripts/workflow/symphony.ts dispatch-once --project-key nanoclaw --dry-run`
 - `bash scripts/check-workflow-contracts.sh`
@@ -59,6 +61,8 @@ This runbook owns only day-to-day operator handling.
    - open `http://127.0.0.1:4318/`
 5. Check the ready queue for one project:
    - `npx tsx scripts/workflow/symphony.ts list-ready --project-key nanoclaw`
+6. Start the MCP server when an agent/client needs direct Symphony tools:
+   - `npm run symphony:mcp`
 
 Expected runtime files:
 - `.nanoclaw/symphony/project-registry.cache.json`
@@ -123,6 +127,18 @@ Checks:
 - inspect `.nanoclaw/symphony/state.json`
 - inspect the matching run record under `.nanoclaw/symphony/runs/`
 
+### MCP Tooling Problems
+
+Symptoms:
+- client reports no Symphony tools
+- MCP-connected agents cannot inspect queues or dispatch work
+
+Checks:
+- confirm `.mcp.json` contains the `symphony` server entry
+- run `npm run symphony:mcp`
+- confirm the client is pointed at the repo-local MCP config
+- run `npm run symphony:sync-registry` if registry-backed tools appear stale
+
 ## Branch Actions
 
 ### Observe Only
@@ -158,6 +174,7 @@ Use when you want ongoing queue and run-state refresh.
 
 1. `npm run symphony:serve`
 2. in a separate shell: `npm run symphony:daemon`
+3. when agent operability is needed, run `npm run symphony:mcp`
 
 Default daemon behavior is observe-only unless auto-dispatch is explicitly enabled.
 
@@ -168,3 +185,4 @@ Default daemon behavior is observe-only unless auto-dispatch is explicitly enabl
 - Do not treat the dashboard as the source of truth for issue state; Linear remains authoritative for task state.
 - Do not store secrets in Linear, Notion, or repo-tracked files; only references and scopes belong there.
 - If a Symphony-routed issue fails validation, fix the issue body and fields instead of weakening the parser.
+- The MCP server is an agent-control surface and must call the same runtime helpers as the CLI and daemon, not alternate orchestration logic.

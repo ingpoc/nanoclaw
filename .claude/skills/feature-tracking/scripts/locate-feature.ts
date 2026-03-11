@@ -125,12 +125,14 @@ function scoreFeature(feature: CatalogFeature, query: string): number {
 
 function loadCatalog(repoRoot: string): Catalog {
   const catalogPath = path.join(repoRoot, '.claude', 'catalog', 'feature-catalog.json');
-  if (!fs.existsSync(catalogPath)) {
-    console.error('Missing .claude/catalog/feature-catalog.json. Run build-feature-catalog.ts first.');
+  try {
+    return JSON.parse(fs.readFileSync(catalogPath, 'utf8')) as Catalog;
+  } catch {
+    console.error(
+      'Missing .claude/catalog/feature-catalog.json. Run build-feature-catalog.ts first.',
+    );
     process.exit(1);
   }
-
-  return JSON.parse(fs.readFileSync(catalogPath, 'utf8')) as Catalog;
 }
 
 function main(): void {

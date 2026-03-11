@@ -62,6 +62,11 @@ Cleanup rule:
 - The session runner removes the ephemeral worktree automatically after Claude exits if the worktree is clean.
 - If the worktree is left dirty because the run stopped mid-change, leave it in place and report the path in the final blocker/handoff note.
 
+Cleanup rule:
+
+- The session runner removes the ephemeral worktree automatically after Claude exits if the worktree is clean.
+- If the worktree is left dirty because the run stopped mid-change, leave it in place and report the path in the final blocker/handoff note.
+
 Blocked-state rule:
 
 - If any required issue section is missing, or you cannot complete the requested checks, immediately move the item to `Blocked`, comment the issue with the failure context, and stop.

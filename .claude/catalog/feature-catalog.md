@@ -1,6 +1,6 @@
 # NanoClaw Feature Catalog
 
-Generated: 2026-03-11T06:34:38.484Z
+Generated: 2026-03-11T07:38:17.026Z
 Project: nanoclaw
 
 ## Features
@@ -368,6 +368,7 @@ Project: nanoclaw
   - DOCS.md
   - docs/architecture/mission-runtime-profiles.md
   - docs/archives/debug-known-issues-2026-02.md
+  - docs/archives/github-multi-agent-collaboration-loop.md
   - docs/archives/worker-dispatch-root-cause-2026-02-24.md
   - docs/operations/skills-vs-docs-map.md
   - docs/operations/subagent-routing.md
@@ -386,10 +387,9 @@ Project: nanoclaw
   - docs/workflow/docs-discipline/docs-pruning-loop.md
   - docs/workflow/docs-discipline/nanoclaw-root-claude-compression.md
   - docs/workflow/docs-discipline/skill-routing-preflight.md
-  - docs/workflow/github/github-agent-collaboration-loop.md
-  - docs/workflow/github/github-multi-agent-collaboration-loop.md
+  - docs/workflow/control-plane/collaboration-surface-contract.md
   - docs/workflow/github/github-offload-boundary-loop.md
-  - docs/workflow/github/nanoclaw-github-control-plane.md
+  - docs/workflow/github/github-delivery-governance.md
   - docs/workflow/runtime/jarvis-dispatch-contract-discipline.md
   - docs/workflow/runtime/nanoclaw-container-debugging.md
   - docs/workflow/runtime/nanoclaw-jarvis-debug-loop.md
@@ -420,12 +420,12 @@ Project: nanoclaw
   - AGENTS.md
   - CLAUDE.md
   - DOCS.md
+  - docs/archives/github-multi-agent-collaboration-loop.md
   - docs/operations/workflow-setup-responsibility-map.md
   - docs/README.md
   - docs/workflow/delivery/nanoclaw-andy-user-happiness-gate.md
-  - docs/workflow/github/github-agent-collaboration-loop.md
-  - docs/workflow/github/github-multi-agent-collaboration-loop.md
-  - docs/workflow/github/nanoclaw-github-control-plane.md
+  - docs/workflow/control-plane/collaboration-surface-contract.md
+  - docs/workflow/github/github-delivery-governance.md
   - docs/workflow/runtime/nanoclaw-container-debugging.md
   - docs/workflow/runtime/nanoclaw-jarvis-debug-loop.md
   - docs/workflow/runtime/nanoclaw-jarvis-dispatch-contract.md
@@ -647,12 +647,12 @@ Project: nanoclaw
   - AGENTS.md
   - CLAUDE.md
   - DOCS.md
+  - docs/archives/github-multi-agent-collaboration-loop.md
   - docs/operations/workflow-setup-responsibility-map.md
   - docs/README.md
-  - docs/workflow/github/github-agent-collaboration-loop.md
-  - docs/workflow/github/github-multi-agent-collaboration-loop.md
-  - docs/workflow/github/nanoclaw-github-control-plane.md
-  - docs/workflow/github/nanoclaw-platform-loop.md
+  - docs/workflow/control-plane/collaboration-surface-contract.md
+  - docs/workflow/github/github-delivery-governance.md
+  - docs/workflow/delivery/platform-claude-pickup-lane.md
   - launchd/com.nanoclaw-platform-loop.plist
   - scripts/workflow/check-platform-loop.sh
   - scripts/workflow/github-project-sync.js
@@ -674,12 +674,12 @@ Project: nanoclaw
   - AGENTS.md
   - CLAUDE.md
   - DOCS.md
+  - docs/archives/github-multi-agent-collaboration-loop.md
   - docs/operations/workflow-setup-responsibility-map.md
   - docs/README.md
-  - docs/workflow/github/github-agent-collaboration-loop.md
-  - docs/workflow/github/github-multi-agent-collaboration-loop.md
-  - docs/workflow/github/nanoclaw-github-control-plane.md
-  - docs/workflow/github/nanoclaw-platform-loop.md
+  - docs/workflow/control-plane/collaboration-surface-contract.md
+  - docs/workflow/github/github-delivery-governance.md
+  - docs/workflow/delivery/platform-claude-pickup-lane.md
   - launchd/com.nanoclaw-platform-loop.plist
   - scripts/workflow/check-platform-loop.sh
   - scripts/workflow/platform-loop-sync.sh
@@ -703,9 +703,9 @@ Project: nanoclaw
   - .codex/config.toml
   - .github/labels.json
   - docs/operations/workflow-setup-responsibility-map.md
-  - docs/workflow/github/github-agent-collaboration-loop.md
-  - docs/workflow/github/nanoclaw-github-control-plane.md
-  - docs/workflow/github/nanoclaw-platform-loop.md
+  - docs/workflow/control-plane/collaboration-surface-contract.md
+  - docs/workflow/github/github-delivery-governance.md
+  - docs/workflow/delivery/platform-claude-pickup-lane.md
   - docs/workflow/strategy/nightly-evaluation-loop.md
   - launchd/com.nanoclaw-morning-codex-prep.plist
   - launchd/com.nanoclaw-platform-loop.plist
@@ -735,9 +735,9 @@ Project: nanoclaw
   - .claude/catalog/feature-catalog.seed.json
   - .claude/commands/platform-pickup.md
   - docs/operations/workflow-setup-responsibility-map.md
-  - docs/workflow/github/github-agent-collaboration-loop.md
-  - docs/workflow/github/nanoclaw-github-control-plane.md
-  - docs/workflow/github/nanoclaw-platform-loop.md
+  - docs/workflow/control-plane/collaboration-surface-contract.md
+  - docs/workflow/github/github-delivery-governance.md
+  - docs/workflow/delivery/platform-claude-pickup-lane.md
   - launchd/com.nanoclaw-platform-loop.plist
   - scripts/workflow/check-platform-loop.sh
   - scripts/workflow/platform-loop-sync.sh

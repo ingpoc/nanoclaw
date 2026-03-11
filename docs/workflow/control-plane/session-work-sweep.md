@@ -1,8 +1,8 @@
-# GitHub Collaboration Sweep
+# Collaboration Sweep
 
 ## Purpose
 
-Session-start ritual that reads shared GitHub state so both Claude and Codex begin every session aware of what the other agent left behind. Prevents stale discussions, ownerless Issues, and invisible handoffs.
+Session-start ritual that reads the active work control plane so both Claude and Codex begin every session aware of shared execution state. In this repository, Linear is the only supported active work queue.
 
 ## Doc Type
 
@@ -10,19 +10,18 @@ Session-start ritual that reads shared GitHub state so both Claude and Codex beg
 
 ## Canonical Owner
 
-This document owns the session-start GitHub sweep protocol.
-Day-to-day collaboration rules remain in `docs/workflow/github/github-agent-collaboration-loop.md`.
+This document owns the session-start collaboration sweep protocol.
+Day-to-day work-state rules remain in the active control-plane contract.
 
 ## Use When
 
 At the start of every Claude or Codex session, before any task work begins.
-Also use it immediately when `scripts/workflow/session-start.sh` exits blocked on required GitHub collaboration actions so the blocked follow-up uses the same review/handoff rules.
+Also use it immediately when `scripts/workflow/session-start.sh` exits blocked on required Linear review or triage actions so the blocked follow-up uses the same review/handoff rules.
 
 ## Do Not Use When
 
-- You are setting up the GitHub collaboration stack for the first time; use `docs/workflow/github/github-multi-agent-collaboration-loop.md`.
-- You are changing day-to-day collaboration rules (Discussion/Issue/Project contracts); use `docs/workflow/github/github-agent-collaboration-loop.md`.
-- You are changing governance, auth, or review automation policy; use `docs/workflow/github/nanoclaw-github-control-plane.md`.
+- You are changing the Linear/Notion/GitHub separation contract; use `docs/operations/workflow-setup-responsibility-map.md` plus the active collaboration-surface docs.
+- You are changing governance, auth, or review automation policy; use `docs/workflow/github/github-delivery-governance.md`.
 
 ## Verification
 
@@ -31,7 +30,7 @@ bash scripts/workflow/session-start.sh --agent claude
 bash scripts/workflow/session-start.sh --agent codex
 ```
 
-Both should run without error. Review-lane items, stale discussions, and handoffs shown by the sweep require action before proceeding.
+Both should run without error. Review items, triage items, and handoffs shown by the sweep require action before proceeding.
 
 ## Command
 
@@ -45,20 +44,23 @@ bash scripts/workflow/session-start.sh --agent codex
 Sweep-only fallback:
 
 ```bash
-bash scripts/workflow/gh-collab-sweep.sh --agent claude --fail-on-action-items
-bash scripts/workflow/gh-collab-sweep.sh --agent codex --fail-on-action-items
+bash scripts/workflow/work-sweep.sh --agent claude --fail-on-action-items
+bash scripts/workflow/work-sweep.sh --agent codex --fail-on-action-items
 ```
+
+The wrapper resolves the active control plane via `scripts/workflow/work-control-plane.js`.
+Missing Linear configuration is a startup error. There is no GitHub Project fallback.
 
 ## What the Sweep Checks
 
 | Section | What it Shows | Why |
 |---------|--------------|-----|
-| My Issues | Open Project items where Agent=me, status != Done | Resume owned work |
-| Needs My Review | Items where Review Lane=me and status=Review | Unblock the other agent |
-| Stale Discussions | 0-comment discussions in my affinity categories | Prevent permanent drift |
-| Nightly Improvement Findings | Open nightly upstream/tooling discussions awaiting Codex triage | Turn overnight research into selective morning action |
-| Handoffs from other agent | Issue comments with `<!-- agent-handoff -->` marker | Async message-passing |
-| Blocked items | Any Project item with status=Blocked | Surface dependencies |
+| My Issues | Linear issues labeled for the active agent | Resume owned work |
+| Needs My Review | Linear issues in `Review` with a matching review label | Unblock the other agent |
+| Triage Queue | Linear issues in `Triage` routed to the active agent | Clear intake before new execution |
+| Nightly Improvement Findings | Pending shared-context research items awaiting Codex triage | Turn overnight research into selective morning action |
+| Handoffs from other agent | Control-plane comments with `<!-- agent-handoff -->` marker | Async message-passing |
+| Blocked items | Any blocked work item in the active control plane | Surface dependencies |
 
 The session-start wrapper runs local recall first, then this sweep, then workflow preflight checks.
 
@@ -131,24 +133,10 @@ The review lane is only considered handled once one of these is true:
 When invoked with `--fail-on-action-items`, the sweep exits with status `3` if any of these remain:
 
 - `Needs My Review` items
-- zero-comment affinity discussions needing a first response
+- `Triage` items routed to the active agent
 - recent handoff comments from the other agent
 
 This is the mode used by `scripts/workflow/session-start.sh`.
-
-## Stale Discussion Rule
-
-A discussion is stale if:
-
-1. Zero comments AND
-2. In the agent's affinity category
-
-Required action: post a comment before starting task work. Minimum output is one of:
-
-- `Accepted → opening Issue #N`
-- `Deferred — reason: <reason>`
-- `Rejected — reason: <reason>`
-- `Reference only — no action needed`
 
 ## Nightly Improvement Rule
 
@@ -156,14 +144,14 @@ The nightly findings section is read-only sweep output.
 
 Codex should:
 
-1. review the surfaced nightly upstream/tooling discussions
+1. review the surfaced nightly upstream/tooling shared-context entries
 2. follow the morning triage contract in `docs/workflow/strategy/nightly-evaluation-loop.md`
-3. add an explicit Codex decision comment for promoted and non-promoted findings
+3. add an explicit Codex decision update for promoted and non-promoted findings
 4. promote only when the next action is concrete enough for an execution Issue
-5. leave a promotion summary comment when promoted
+5. leave a promotion summary update when promoted
 
 The sweep itself must not auto-promote or auto-close nightly findings.
-The nightly discussion should remain open as the rolling research thread unless the nightly workflow explicitly retires or replaces it.
+The nightly shared-context record should remain the rolling research thread unless the nightly workflow explicitly retires or replaces it.
 Nightly findings should surface only when a newer Claude nightly decision handoff is waiting on Codex triage.
 
 ## Session End Contract
@@ -171,11 +159,11 @@ Nightly findings should surface only when a newer Claude nightly decision handof
 When ending a session with in-progress or blocked work that the other agent should pick up:
 
 1. Post a handoff comment on the relevant Issue using the format above.
-2. Update Project status (`Blocked`, `Review`) to reflect current state.
+2. Update the active control-plane status (`Blocked`, `Review`) to reflect current state.
 3. Run `qctx --close` for local session handoff as usual.
 
 ## Related Docs
 
-- `docs/workflow/github/github-agent-collaboration-loop.md` — day-to-day collaboration rules
+- `docs/workflow/control-plane/collaboration-surface-contract.md` — day-to-day collaboration rules
 - `docs/workflow/runtime/session-recall.md` — local session recall (run before sweep, or via `scripts/workflow/session-start.sh`)
-- `docs/workflow/github/nanoclaw-github-control-plane.md` — governance and automation policy
+- `docs/workflow/github/github-delivery-governance.md` — governance and automation policy

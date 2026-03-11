@@ -1,4 +1,4 @@
-# NanoClaw GitHub Control Plane
+# GitHub Delivery Governance
 
 Defines who changes GitHub governance and how those changes are shipped.
 
@@ -18,15 +18,14 @@ This document owns GitHub-hosted governance for this repository:
 
 This document does not own:
 
-1. day-to-day use of Discussions, Issues, and the Project board
-2. the reusable multi-agent board/category/template rollout shape
+1. active task tracking, ownership, or triage
+2. shared planning, research, or decision context
 3. the decision of whether a concern belongs on GitHub or should stay local
 
 Use instead:
 
-1. `docs/workflow/github/github-agent-collaboration-loop.md` for daily GitHub collaboration behavior
-2. `docs/workflow/github/github-multi-agent-collaboration-loop.md` for setup shape and rollout
-3. `docs/workflow/github/github-offload-boundary-loop.md` for GitHub-vs-local placement
+1. `docs/workflow/control-plane/collaboration-surface-contract.md` for the current collaboration-surface split
+2. `docs/workflow/github/github-offload-boundary-loop.md` for GitHub-vs-local placement
 
 ## Responsibility Split
 
@@ -40,15 +39,12 @@ Use instead:
   - implements product code changes from dispatch contracts
   - does not own branch protection/workflow governance by default
 
-## Collaboration Surface Governance Boundary
+## Delivery Governance Boundary
 
-- This repository ships two project workflows:
-  - `.github/workflows/project-intake-sync.yml` for Issue intake + default field initialization
-  - `.github/workflows/project-status-sync.yml` for status sync from Issue/PR lifecycle
-- Delivery execution state on `Andy/Jarvis Delivery` is additionally host-managed from `andy_requests` + `worker_runs` through `src/extensions/jarvis/github-delivery-sync.ts`.
-- Repo Issues/Discussions stay on `ingpoc/nanoclaw`; `NanoClaw Platform` board checks/mutations use `ingpoc`, while `Andy/Jarvis Delivery` board checks use `openclaw-gurusharan`.
-- Discussion category taxonomy is only partially repo-configurable. The repository ships templates for the default GitHub categories (`General`, `Ideas`, `Q&A`), and any rename to the preferred collaboration taxonomy is a one-time GitHub UI admin action.
-- The operating rules for how agents use those surfaces are intentionally not repeated here; they belong in `docs/workflow/github/github-agent-collaboration-loop.md`.
+- GitHub owns branches, pull requests, reviews, Actions, labels tied to delivery automation, and merge policy.
+- Linear owns active task state and ownership. GitHub labels must not become a parallel task tracker.
+- Notion owns shared research/spec/decision context. GitHub issue or PR threads may hold bounded delivery-specific discussion, but not durable planning state.
+- Legacy board-sync and discussion-first setup artifacts are archived and must not be re-enabled without an explicit workflow redesign.
 
 ## Merge Policy
 

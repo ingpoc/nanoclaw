@@ -117,7 +117,7 @@ Exception:
 
 ## GitHub Governance Routing
 
-Use this for GitHub control-plane work owned by `docs/workflow/github/nanoclaw-github-control-plane.md`.
+Use this for GitHub control-plane work owned by `docs/workflow/github/github-delivery-governance.md`.
 
 | Step | Agent | Mode | Notes |
 |------|-------|------|-------|

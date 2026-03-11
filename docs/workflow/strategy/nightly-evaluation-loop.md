@@ -297,9 +297,9 @@ Close or replace a nightly discussion only when:
 ## Related Docs
 
 - `docs/workflow/strategy/workflow-optimization-loop.md`
-- `docs/workflow/github/github-collab-sweep.md`
-- `docs/workflow/github/github-agent-collaboration-loop.md`
-- `docs/workflow/github/nanoclaw-platform-loop.md`
+- `docs/workflow/control-plane/session-work-sweep.md`
+- `docs/workflow/control-plane/collaboration-surface-contract.md`
+- `docs/workflow/delivery/platform-claude-pickup-lane.md`
 
 ## Verification
 

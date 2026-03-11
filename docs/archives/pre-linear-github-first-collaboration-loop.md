@@ -1,10 +1,10 @@
-# GitHub Multi-Agent Collaboration Loop
+# Legacy GitHub Multi-Agent Collaboration Loop
 
-Reusable operating workflow for projects where multiple agents contribute to the same codebase.
+Reusable legacy operating workflow for projects where multiple agents contribute to the same codebase and GitHub is still the active execution control plane.
 
-Use this to eliminate siloed execution by making GitHub the shared planning, ownership, and governance layer.
+Use this only when a repository still relies on GitHub Projects and Discussions as the shared planning and execution layer.
 
-For ongoing day-to-day agent use of the configured Discussions/Issues/Project surfaces in this repository, use `docs/workflow/github/github-agent-collaboration-loop.md`.
+For the current day-to-day model in this repository, use `docs/workflow/control-plane/collaboration-surface-contract.md`.
 
 Mission anchor: `docs/MISSION.md`.
 
@@ -26,8 +26,8 @@ This document does not own:
 
 Use instead:
 
-1. `docs/workflow/github/github-agent-collaboration-loop.md` for daily operation
-2. `docs/workflow/github/nanoclaw-github-control-plane.md` for governance workflows and auth
+1. `docs/workflow/control-plane/collaboration-surface-contract.md` for daily operation
+2. `docs/workflow/github/github-delivery-governance.md` for governance workflows and auth
 3. `docs/workflow/github/github-offload-boundary-loop.md` for GitHub-vs-local placement decisions
 
 ## Objective
@@ -47,14 +47,14 @@ Use when any of these are true:
 3. PR review quality is inconsistent because ownership is unclear.
 4. Operators spend time manually reconciling status across tools.
 
-Do not use this as the primary day-to-day operating reference once the board and categories already exist; use `docs/workflow/github/github-agent-collaboration-loop.md` for that.
+Do not use this as the primary day-to-day operating reference for this repository now that Linear is the active execution control plane; use `docs/workflow/control-plane/collaboration-surface-contract.md` for the current model.
 
 ## Core Principle
 
-GitHub is the system of record for work coordination.
-Agent memory is transient; Issue/Project state is durable.
+In GitHub-first repositories, GitHub is the system of record for work coordination.
+In this repository, treat this as migration and portability guidance only.
 
-This principle is about setup intent. For operational rules like promotion, ownership, or Project status handling, defer to `docs/workflow/github/github-agent-collaboration-loop.md`.
+This principle is about setup intent. For operational rules like promotion, ownership, or Project status handling, defer to `docs/workflow/control-plane/collaboration-surface-contract.md`.
 
 ## Collaboration Stack Shape
 
@@ -136,7 +136,7 @@ Baseline Project rule:
 
 ### Phase 5: Handoff to Day-to-Day Operation
 
-1. Once the board, fields, templates, and workflows exist, switch day-to-day usage to `docs/workflow/github/github-agent-collaboration-loop.md`.
+1. Once the board, fields, templates, and workflows exist, switch day-to-day usage to `docs/workflow/control-plane/collaboration-surface-contract.md`.
 2. Keep this doc as the setup and portability reference, not the active operator playbook.
 
 ## Discussion Taxonomy

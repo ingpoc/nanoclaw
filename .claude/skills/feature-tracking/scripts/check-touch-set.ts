@@ -209,7 +209,7 @@ function main(): void {
       '.claude/catalog/feature-catalog.seed.json',
       '.claude/catalog/feature-catalog.json',
       '.claude/catalog/feature-catalog.md',
-      '.claude/progress/work-items.json',
+      '.claude/archive/legacy-work-items.json',
     ]),
   ).sort((a, b) => a.localeCompare(b));
 

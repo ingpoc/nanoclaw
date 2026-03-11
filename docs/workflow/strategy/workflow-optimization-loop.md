@@ -91,7 +91,7 @@ For each source, capture:
 3. candidate adoption or explicit `no-fit`
 4. risk / operator-load impact
 
-Do not stop at changelog headlines when a candidate looks promising; read the implementation docs before opening or updating the Discussion so Claude and Codex are debating the real usage model, not guessing from release-note wording.
+Do not stop at changelog headlines when a candidate looks promising; read the implementation docs before opening or updating the shared Notion context so Claude and Codex are debating the real usage model, not guessing from release-note wording.
 
 Record findings in `docs/research/` with:
 
@@ -101,7 +101,7 @@ Record findings in `docs/research/` with:
 4. Failure modes.
 5. Matching local session evidence from Phase 0, or an explicit note that local sessions do not yet show the pain.
 
-Before implementation discussion, open or update a GitHub Discussion in `SDK / Tooling Opportunities` and require both Claude and Codex to leave a decision comment (`accept`, `pilot`, `defer`, `reject`) with explicit agent labels. If both choose `accept` or `pilot`, dedupe against existing promoted Issues first, then move the surviving execution Issue onto the correct board and leave a promotion summary comment in the Discussion. Default changelog/tooling adoption work to the `NanoClaw Platform` board unless it is explicitly scoped to a user-project delivery workflow.
+Before implementation discussion, open or update a Notion research/decision page in `SDK / Tooling Opportunities` and require both Claude and Codex to leave a decision update (`accept`, `pilot`, `defer`, `reject`) with explicit agent labels. If both choose `accept` or `pilot`, dedupe against existing promoted Linear issues first, then move the surviving execution issue into the correct Linear project and leave a promotion summary update in Notion. Default changelog/tooling adoption work to the `NanoClaw Platform` Linear project unless it is explicitly scoped to a user-project delivery workflow.
 
 ## Phase 2: Translation to NanoClaw Context
 

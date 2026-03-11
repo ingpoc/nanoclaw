@@ -69,15 +69,16 @@ Rules:
 5. Work on exactly one issue in this run.
 
 Execution:
-1. Confirm the active GitHub account:
-   - run \`gh api user -q .login\`
-   - if needed run \`gh auth switch --user $GH_ACCOUNT\`
+1. Confirm the active work control plane and credentials:
+   - run \`node scripts/workflow/work-control-plane.js\`
+   - if the result is \`github\`, verify \`gh api user -q .login\` and switch if needed with \`gh auth switch --user $GH_ACCOUNT\`
+   - if the result is \`linear\`, verify the Linear API env is present before continuing
 2. If \`$PLAN_PATH\` exists, read it for product intent only. Codex remains the sole authority for what is \`Ready\`.
 3. Run \`node scripts/workflow/platform-loop.js next\`.
 4. If the helper returns \`noop\`, summarize the reason and stop.
 5. Read the selected issue completely and obey its scope, required checks, required evidence, and blocked conditions.
-6. Generate \`request_id\`, \`run_id\`, and branch with \`node scripts/workflow/platform-loop.js ids --issue <issue-number> --title "<issue-title>"\`.
-7. Move the issue to \`In Progress\` with \`Agent=claude\` and \`Review Lane=codex\`.
+6. Generate \`request_id\`, \`run_id\`, and branch with \`node scripts/workflow/platform-loop.js ids --issue <issue-ref> --title "<issue-title>"\`.
+7. Move the issue to \`In Progress\` using the control-plane contract. When using Linear, preserve agent and review-lane metadata in the issue comment you leave after the transition.
 8. Leave an issue comment proving ownership with request/run ids and branch.
 9. Implement only the scoped change on the generated branch.
 10. Run the issue's required checks. If scope is incomplete or checks fail, set \`Blocked\`, write the blocker and next decision, and stop.

@@ -4,6 +4,8 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { resolveWorkControlPlane } from './work-control-plane.js';
+
 const PROJECT_OWNER =
   process.env.PROJECT_OWNER ||
   process.env.NANOCLAW_PLATFORM_PROJECT_OWNER ||
@@ -19,6 +21,17 @@ const REPO_NAME =
   process.env.GITHUB_REPOSITORY?.split('/')[1] ||
   process.env.NANOCLAW_PLATFORM_REPO_NAME ||
   'nanoclaw';
+const LINEAR_API_URL =
+  process.env.LINEAR_API_URL || 'https://api.linear.app/graphql';
+const LINEAR_TEAM_KEY =
+  process.env.NANOCLAW_LINEAR_TEAM_KEY || process.env.LINEAR_TEAM_KEY || '';
+const LINEAR_PROJECT_NAME =
+  process.env.NANOCLAW_LINEAR_PROJECT_NAME ||
+  process.env.LINEAR_PROJECT_NAME ||
+  '';
+const LINEAR_PROJECT_ID =
+  process.env.NANOCLAW_LINEAR_PROJECT_ID || process.env.LINEAR_PROJECT_ID || '';
+const WORK_CONTROL_PLANE = resolveWorkControlPlane();
 
 const PLATFORM_STATUS_FIELD_NAMES = ['Workflow Status', 'Status'];
 const PLATFORM_STATUS_GROUPS = {
@@ -80,8 +93,17 @@ function slugify(input) {
     .slice(0, 40) || 'work';
 }
 
-export function buildPlatformBranchName(issueNumber, title) {
-  return `claude-platform-${issueNumber}-${slugify(title)}`;
+function normalizeIssueRef(issueRef) {
+  return slugify(String(issueRef || 'issue'));
+}
+
+function issueOrder(issueRef) {
+  const numeric = Number.parseInt(String(issueRef), 10);
+  return Number.isFinite(numeric) ? numeric : Number.MAX_SAFE_INTEGER;
+}
+
+export function buildPlatformBranchName(issueRef, title) {
+  return `claude-platform-${normalizeIssueRef(issueRef)}-${slugify(title)}`;
 }
 
 function formatTimestamp(now) {
@@ -89,12 +111,12 @@ function formatTimestamp(now) {
   return iso.replace(/\.\d{3}Z$/, 'Z');
 }
 
-export function buildPlatformRunContext(issueNumber, title, now = new Date()) {
+export function buildPlatformRunContext(issueRef, title, now = new Date()) {
   const stamp = formatTimestamp(now);
   return {
-    requestId: `platform-issue-${issueNumber}-${stamp.toLowerCase()}`,
-    runId: `claude-platform-${issueNumber}-${stamp.toLowerCase()}`,
-    branch: buildPlatformBranchName(issueNumber, title),
+    requestId: `platform-issue-${normalizeIssueRef(issueRef)}-${stamp.toLowerCase()}`,
+    runId: `claude-platform-${normalizeIssueRef(issueRef)}-${stamp.toLowerCase()}`,
+    branch: buildPlatformBranchName(issueRef, title),
   };
 }
 
@@ -189,6 +211,37 @@ async function githubGraphql(query, variables) {
   return payload.data;
 }
 
+function requireLinearToken() {
+  const token = process.env.LINEAR_API_KEY || '';
+  if (!token) {
+    throw new Error('Missing LINEAR_API_KEY for Linear control plane.');
+  }
+  return token;
+}
+
+async function linearGraphql(query, variables) {
+  const token = requireLinearToken();
+  const response = await fetch(LINEAR_API_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: token,
+      'Content-Type': 'application/json',
+      'User-Agent': 'nanoclaw-platform-loop',
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+
+  const payload = await response.json();
+  if (!response.ok || payload.errors?.length) {
+    throw new Error(
+      `Linear GraphQL request failed: ${response.status} ${
+        response.statusText
+      }\n${JSON.stringify(payload.errors || payload, null, 2)}`,
+    );
+  }
+  return payload.data;
+}
+
 function fieldValueByName(fieldValues) {
   const values = new Map();
   for (const node of fieldValues?.nodes || []) {
@@ -218,6 +271,16 @@ function priorityRank(priorityValue) {
   const normalized = String(priorityValue || '').toLowerCase();
   const index = PRIORITY_ORDER.indexOf(normalized);
   return index === -1 ? PRIORITY_ORDER.length : index;
+}
+
+function normalizeLinearPriority(priorityValue) {
+  const normalized = String(priorityValue || '').trim().toLowerCase();
+  if (PRIORITY_ORDER.includes(normalized)) return normalized;
+  const numeric = Number.parseInt(normalized, 10);
+  if (numeric === 0) return 'p0';
+  if (numeric === 1) return 'p1';
+  if (numeric === 2) return 'p2';
+  return 'p3';
 }
 
 function normalizeStatus(value) {
@@ -253,6 +316,32 @@ function summarizeNoop(reason, details = {}) {
     action: 'noop',
     reason,
     ...details,
+  };
+}
+
+function matchesLinearProject(issue) {
+  if (LINEAR_PROJECT_ID && issue.projectId !== LINEAR_PROJECT_ID) return false;
+  if (LINEAR_PROJECT_NAME && issue.projectName !== LINEAR_PROJECT_NAME) return false;
+  return true;
+}
+
+function linearIssueRecord(node) {
+  return {
+    number: node.identifier,
+    title: node.title,
+    url: node.url,
+    state: node.state?.type === 'completed' ? 'COMPLETED' : 'OPEN',
+    status: node.state?.name || '',
+    agent:
+      labelNames(node.labels).find((label) => label.startsWith('agent:'))?.slice(6) || '',
+    priority: normalizeLinearPriority(node.priorityLabel || node.priority),
+    labels: labelNames(node.labels),
+    missingSections: missingPlatformSections(node.description),
+    requestId: '',
+    runId: '',
+    nextDecision: '',
+    projectId: node.project?.id || '',
+    projectName: node.project?.name || '',
   };
 }
 
@@ -302,7 +391,7 @@ export function selectPlatformCandidate(items) {
       const priorityDelta =
         priorityRank(left.priority) - priorityRank(right.priority);
       if (priorityDelta !== 0) return priorityDelta;
-      return left.number - right.number;
+      return issueOrder(left.number) - issueOrder(right.number);
     });
 
   if (eligible.length === 0) {
@@ -337,6 +426,184 @@ export function selectPlatformCandidate(items) {
       branch: buildPlatformBranchName(selected.number, selected.title),
     },
   };
+}
+
+async function getLinearIssues() {
+  const query = LINEAR_TEAM_KEY
+    ? `
+        query LinearPlatformIssues($teamKey: String!) {
+          issues(
+            first: 100
+            filter: {
+              team: { key: { eq: $teamKey } }
+              state: { type: { nin: ["completed", "canceled"] } }
+            }
+          ) {
+            nodes {
+              id
+              identifier
+              title
+              url
+              description
+              priority
+              priorityLabel
+              state {
+                id
+                name
+                type
+              }
+              project {
+                id
+                name
+              }
+              labels {
+                nodes {
+                  name
+                }
+              }
+            }
+          }
+        }
+      `
+    : `
+        query LinearPlatformIssues {
+          issues(
+            first: 100
+            filter: {
+              state: { type: { nin: ["completed", "canceled"] } }
+            }
+          ) {
+            nodes {
+              id
+              identifier
+              title
+              url
+              description
+              priority
+              priorityLabel
+              state {
+                id
+                name
+                type
+              }
+              project {
+                id
+                name
+              }
+              labels {
+                nodes {
+                  name
+                }
+              }
+            }
+          }
+        }
+      `;
+  const data = await linearGraphql(
+    query,
+    LINEAR_TEAM_KEY ? { teamKey: LINEAR_TEAM_KEY } : {},
+  );
+
+  return (data.issues?.nodes || [])
+    .map(linearIssueRecord)
+    .filter(matchesLinearProject);
+}
+
+async function getLinearIssue(issueRef) {
+  const data = await linearGraphql(
+    `
+      query LinearIssueByRef($id: String!) {
+        issue(id: $id) {
+          id
+          identifier
+          title
+          url
+          description
+          priority
+          priorityLabel
+          state {
+            id
+            name
+            type
+          }
+          project {
+            id
+            name
+          }
+          labels {
+            nodes {
+              id
+              name
+            }
+          }
+          team {
+            id
+            key
+            states {
+              nodes {
+                id
+                name
+                type
+              }
+            }
+          }
+        }
+      }
+    `,
+    { id: String(issueRef) },
+  );
+
+  const issue = data.issue;
+  if (!issue) {
+    throw new Error(`Linear issue not found: ${issueRef}`);
+  }
+  return issue;
+}
+
+function resolveLinearStateId(issue, status) {
+  const target = statusCandidates(status).map((value) => normalizeStatus(value));
+  const match = (issue.team?.states?.nodes || []).find((state) =>
+    target.includes(normalizeStatus(state.name)),
+  );
+  if (!match) {
+    throw new Error(
+      `Linear team ${issue.team?.key || '?'} is missing a state for "${status}"`,
+    );
+  }
+  return match.id;
+}
+
+async function updateLinearIssueState(issueId, stateId) {
+  await linearGraphql(
+    `
+      mutation LinearIssueUpdate($id: String!, $stateId: String!) {
+        issueUpdate(id: $id, input: { stateId: $stateId }) {
+          success
+        }
+      }
+    `,
+    {
+      id: issueId,
+      stateId,
+    },
+  );
+}
+
+async function addLinearComment(issueId, body) {
+  if (!body.trim()) return;
+  await linearGraphql(
+    `
+      mutation LinearCommentCreate($issueId: String!, $body: String!) {
+        commentCreate(input: { issueId: $issueId, body: $body }) {
+          success
+        }
+      }
+    `,
+    {
+      issueId,
+      body,
+    },
+  );
 }
 
 async function getPlatformProject() {
@@ -535,30 +802,71 @@ async function setTextField(projectId, itemId, fieldId, text) {
 }
 
 async function handleNext() {
-  const project = await getPlatformProject();
-  const selection = selectPlatformCandidate(project.items);
+  const items =
+    WORK_CONTROL_PLANE === 'linear'
+      ? await getLinearIssues()
+      : (await getPlatformProject()).items;
+  const selection = selectPlatformCandidate(items);
   process.stdout.write(`${JSON.stringify(selection, null, 2)}\n`);
 }
 
 async function handleIds(options) {
-  const issueNumber = Number.parseInt(options.get('issue') || '', 10);
-  const title = options.get('title') || `issue-${issueNumber}`;
-  if (!Number.isFinite(issueNumber)) {
+  const issueRef = options.get('issue') || '';
+  const title = options.get('title') || `issue-${issueRef || 'unknown'}`;
+  if (!issueRef) {
     throw new Error('--issue is required for ids');
   }
   process.stdout.write(
-    `${JSON.stringify(buildPlatformRunContext(issueNumber, title), null, 2)}\n`,
+    `${JSON.stringify(buildPlatformRunContext(issueRef, title), null, 2)}\n`,
   );
 }
 
 async function handleSetStatus(options) {
-  const issueNumber = Number.parseInt(options.get('issue') || '', 10);
+  const issueRef = options.get('issue') || '';
   const status = options.get('status') || '';
-  if (!Number.isFinite(issueNumber) || !status) {
+  if (!issueRef || !status) {
     throw new Error('--issue and --status are required for set-status');
   }
 
+  if (WORK_CONTROL_PLANE === 'linear') {
+    const issue = await getLinearIssue(issueRef);
+    const stateId = resolveLinearStateId(issue, status);
+    await updateLinearIssueState(issue.id, stateId);
+
+    const metadataLines = [
+      '<!-- agent-handoff -->',
+      `Control Plane: linear`,
+      options.has('agent') ? `Agent: ${options.get('agent')}` : '',
+      options.has('review-lane')
+        ? `Review Lane: ${options.get('review-lane')}`
+        : '',
+      options.has('request-id') ? `Request ID: ${options.get('request-id')}` : '',
+      options.has('run-id') ? `Run ID: ${options.get('run-id')}` : '',
+      options.has('next-decision')
+        ? `Next Decision: ${options.get('next-decision')}`
+        : '',
+    ].filter(Boolean);
+    await addLinearComment(issue.id, metadataLines.join('\n'));
+
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          issue: issueRef,
+          status,
+          updatedFields: ['state', 'comment'],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return;
+  }
+
   const project = await getPlatformProject();
+  const issueNumber = Number.parseInt(issueRef, 10);
+  if (!Number.isFinite(issueNumber)) {
+    throw new Error('GitHub control plane requires numeric --issue value');
+  }
   const issue = await getPlatformIssue(project, issueNumber);
 
   const statusFieldName =

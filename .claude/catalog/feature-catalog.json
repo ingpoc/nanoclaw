@@ -2,7 +2,7 @@
   "schema_version": 1,
   "project": "nanoclaw",
   "maintainer": "andy-developer",
-  "generated_at": "2026-03-11T06:34:38.484Z",
+  "generated_at": "2026-03-11T07:38:17.026Z",
   "source_seed": ".claude/catalog/feature-catalog.seed.json",
   "stats": {
     "feature_count": 29,
@@ -233,6 +233,10 @@
     "docs/archives/debug-known-issues-2026-02.md": [
       "docs-topology-cleanup"
     ],
+    "docs/archives/github-multi-agent-collaboration-loop.md": [
+      "docs-topology-cleanup",
+      "github-collaboration-control-plane"
+    ],
     "docs/archives/worker-dispatch-root-cause-2026-02-24.md": [
       "docs-topology-cleanup"
     ],
@@ -291,10 +295,6 @@
       "docs-topology-cleanup",
       "github-collaboration-control-plane",
       "autonomous-lane-control-plane"
-    ],
-    "docs/workflow/github/github-multi-agent-collaboration-loop.md": [
-      "docs-topology-cleanup",
-      "github-collaboration-control-plane"
     ],
     "docs/workflow/github/github-offload-boundary-loop.md": [
       "docs-topology-cleanup"
@@ -717,7 +717,7 @@
         "npm run typecheck",
         "npx vitest run src/group-folder.test.ts src/group-queue.test.ts src/routing.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "whatsapp-channel",
@@ -750,7 +750,7 @@
         "npm run typecheck",
         "npx vitest run src/channels/whatsapp.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "ipc-dispatch-contract",
@@ -786,7 +786,7 @@
         "npm run typecheck",
         "npx vitest run src/extensions/jarvis/frontdesk-service.test.ts src/ipc-auth.test.ts src/jarvis-worker-dispatch.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "container-runtime",
@@ -821,7 +821,7 @@
         "npm run typecheck",
         "npx vitest run src/container-runner.test.ts src/container-runtime.test.ts src/worker-run-supervisor.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "runtime-ownership-isolation",
@@ -870,7 +870,7 @@
         "npm run typecheck",
         "npx vitest run src/channels/whatsapp.test.ts src/db.test.ts src/runtime-ownership.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "task-scheduling",
@@ -898,7 +898,7 @@
         "npm run typecheck",
         "npx vitest run src/task-scheduler.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "database-state",
@@ -927,7 +927,7 @@
         "npm run typecheck",
         "npx vitest run src/db.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "config-env",
@@ -952,7 +952,7 @@
       "suggested_verify_commands": [
         "npm run typecheck"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "routing-formatting",
@@ -982,7 +982,7 @@
         "npm run typecheck",
         "npx vitest run src/formatting.test.ts src/routing.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "jarvis-worker-lifecycle",
@@ -1020,7 +1020,7 @@
         "npm run typecheck",
         "npx vitest run src/jarvis-worker-dispatch.test.ts src/worker-run-supervisor.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "forked-worker-runtime-restore",
@@ -1072,7 +1072,7 @@
         "npm run typecheck",
         "npx vitest run src/ipc-auth.test.ts src/jarvis-worker-dispatch.test.ts src/worker-run-supervisor.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "jarvis-extension-boundary",
@@ -1127,7 +1127,7 @@
         "npm run typecheck",
         "npx vitest run src/extensions/jarvis/lane-control-service.test.ts src/group-queue.test.ts src/ipc-auth.test.ts src/jarvis-worker-dispatch.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "andy-review-ownership",
@@ -1176,7 +1176,7 @@
         "npm run typecheck",
         "npx vitest run src/db.test.ts src/extensions/jarvis/frontdesk-service.test.ts src/jarvis-worker-dispatch.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "andy-request-admin-cleanup",
@@ -1209,7 +1209,7 @@
         "npm run typecheck",
         "npx vitest run src/jarvis-reconcile-stale-andy-requests.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "architecture-boundary-governance",
@@ -1248,7 +1248,7 @@
       "suggested_verify_commands": [
         "npm run typecheck"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "docs-topology-cleanup",
@@ -1272,6 +1272,7 @@
         "DOCS.md",
         "docs/architecture/mission-runtime-profiles.md",
         "docs/archives/debug-known-issues-2026-02.md",
+        "docs/archives/github-multi-agent-collaboration-loop.md",
         "docs/archives/worker-dispatch-root-cause-2026-02-24.md",
         "docs/operations/skills-vs-docs-map.md",
         "docs/operations/subagent-routing.md",
@@ -1291,7 +1292,6 @@
         "docs/workflow/docs-discipline/nanoclaw-root-claude-compression.md",
         "docs/workflow/docs-discipline/skill-routing-preflight.md",
         "docs/workflow/github/github-agent-collaboration-loop.md",
-        "docs/workflow/github/github-multi-agent-collaboration-loop.md",
         "docs/workflow/github/github-offload-boundary-loop.md",
         "docs/workflow/github/nanoclaw-github-control-plane.md",
         "docs/workflow/runtime/jarvis-dispatch-contract-discipline.md",
@@ -1326,11 +1326,11 @@
         "AGENTS.md",
         "CLAUDE.md",
         "DOCS.md",
+        "docs/archives/github-multi-agent-collaboration-loop.md",
         "docs/operations/workflow-setup-responsibility-map.md",
         "docs/README.md",
         "docs/workflow/delivery/nanoclaw-andy-user-happiness-gate.md",
         "docs/workflow/github/github-agent-collaboration-loop.md",
-        "docs/workflow/github/github-multi-agent-collaboration-loop.md",
         "docs/workflow/github/nanoclaw-github-control-plane.md",
         "docs/workflow/runtime/nanoclaw-container-debugging.md",
         "docs/workflow/runtime/nanoclaw-jarvis-debug-loop.md",
@@ -1341,7 +1341,7 @@
       "suggested_verify_commands": [
         "npm run typecheck"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "session-recall-tooling",
@@ -1375,7 +1375,7 @@
       "suggested_verify_commands": [
         "npm run typecheck"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "reliability-e2e",
@@ -1402,7 +1402,7 @@
       "suggested_verify_commands": [
         "npm run typecheck"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "observability-logging",
@@ -1431,7 +1431,7 @@
       "suggested_verify_commands": [
         "npm run typecheck"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "ops-reliability-tooling",
@@ -1478,7 +1478,7 @@
       "suggested_verify_commands": [
         "npm run typecheck"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "skills-engine-lifecycle",
@@ -1523,7 +1523,7 @@
         "npm run typecheck",
         "npx vitest run skills-engine/__tests__/apply.test.ts skills-engine/__tests__/rebase.test.ts skills-engine/__tests__/uninstall.test.ts skills-engine/__tests__/update.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "agent-runner-mcp",
@@ -1550,7 +1550,7 @@
       "suggested_verify_commands": [
         "npm run typecheck"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "worker-runtime-lane",
@@ -1579,7 +1579,7 @@
         "npm run typecheck",
         "npx vitest run container/worker/runner/src/lib.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "core-skill-workflows",
@@ -1611,7 +1611,7 @@
       "suggested_verify_commands": [
         "npm run typecheck"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "feature-tracking-pipeline",
@@ -1644,7 +1644,7 @@
       "suggested_verify_commands": [
         "npm run typecheck"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "project-skill-delivery-pipeline",
@@ -1680,7 +1680,7 @@
       "suggested_verify_commands": [
         "npm run typecheck"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "github-collaboration-control-plane",
@@ -1707,10 +1707,10 @@
         "AGENTS.md",
         "CLAUDE.md",
         "DOCS.md",
+        "docs/archives/github-multi-agent-collaboration-loop.md",
         "docs/operations/workflow-setup-responsibility-map.md",
         "docs/README.md",
         "docs/workflow/github/github-agent-collaboration-loop.md",
-        "docs/workflow/github/github-multi-agent-collaboration-loop.md",
         "docs/workflow/github/nanoclaw-github-control-plane.md",
         "docs/workflow/github/nanoclaw-platform-loop.md",
         "launchd/com.nanoclaw-platform-loop.plist",
@@ -1738,10 +1738,10 @@
         "AGENTS.md",
         "CLAUDE.md",
         "DOCS.md",
+        "docs/archives/github-multi-agent-collaboration-loop.md",
         "docs/operations/workflow-setup-responsibility-map.md",
         "docs/README.md",
         "docs/workflow/github/github-agent-collaboration-loop.md",
-        "docs/workflow/github/github-multi-agent-collaboration-loop.md",
         "docs/workflow/github/nanoclaw-github-control-plane.md",
         "docs/workflow/github/nanoclaw-platform-loop.md",
         "launchd/com.nanoclaw-platform-loop.plist",
@@ -1756,7 +1756,7 @@
         "npm run typecheck",
         "npx vitest run src/github-project-sync.test.ts src/platform-loop-sync.test.ts src/platform-loop.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "autonomous-lane-control-plane",
@@ -1830,7 +1830,7 @@
         "npm run typecheck",
         "npx vitest run src/platform-loop-sync.test.ts src/platform-loop.test.ts src/run-platform-claude-session.test.ts src/start-autonomy-reliability.test.ts src/start-nightly-improvement.test.ts src/start-platform-loop.test.ts src/start-pr-guardian.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     },
     {
       "id": "channel-extension-skills",
@@ -1871,7 +1871,7 @@
         "npm run typecheck",
         "npx vitest run .claude/skills/add-discord/tests/discord.test.ts .claude/skills/add-gmail/tests/gmail.test.ts .claude/skills/add-slack/tests/slack.test.ts .claude/skills/add-telegram/tests/telegram.test.ts .claude/skills/add-voice-transcription/tests/voice-transcription.test.ts"
       ],
-      "generated_at": "2026-03-11T06:34:38.484Z"
+      "generated_at": "2026-03-11T07:38:17.026Z"
     }
   ]
 }

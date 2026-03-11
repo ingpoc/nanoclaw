@@ -25,9 +25,8 @@ This document does not own:
 
 Use instead:
 
-1. `docs/workflow/github/github-multi-agent-collaboration-loop.md` for stack setup
-2. `docs/workflow/github/github-agent-collaboration-loop.md` for daily GitHub collaboration behavior
-3. `docs/workflow/github/nanoclaw-github-control-plane.md` for workflow/review/auth policy
+1. `docs/workflow/control-plane/collaboration-surface-contract.md` for the current collaboration-surface split
+2. `docs/workflow/github/github-delivery-governance.md` for workflow/review/auth policy
 
 ## Objective
 

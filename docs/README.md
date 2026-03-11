@@ -13,7 +13,7 @@ docs/
   workflow/
     delivery/       # delivery loops, gates, and cross-tool execution
     runtime/        # runtime contracts, incident/debug loops, recall
-    github/         # GitHub collaboration, governance, and offload boundaries
+    github/         # control-plane transition docs, GitHub governance, and offload boundaries
     docs-discipline/ # docs authoring, pruning, and trigger hygiene
     strategy/       # optimization cadence and slop reduction workflows
   operations/       # role authority and change-management matrix
@@ -37,8 +37,10 @@ docs/
 - Default delivery workflow: `docs/workflow/delivery/nanoclaw-development-loop.md`
 - Runtime and incident debugging: `docs/workflow/runtime/nanoclaw-jarvis-debug-loop.md`
 - Worker contract and runtime: `docs/workflow/runtime/nanoclaw-jarvis-dispatch-contract.md` + `docs/workflow/runtime/nanoclaw-jarvis-worker-runtime.md`
-- GitHub and workflow governance: `docs/workflow/github/nanoclaw-github-control-plane.md` + `docs/workflow/github/github-offload-boundary-loop.md`
-- Day-to-day GitHub agent collaboration: `docs/workflow/github/github-agent-collaboration-loop.md`
+- GitHub delivery and workflow governance: `docs/workflow/github/github-delivery-governance.md` + `docs/workflow/github/github-offload-boundary-loop.md`
+- Control-plane sweep and collaboration split: `docs/workflow/control-plane/session-work-sweep.md` + `docs/workflow/control-plane/collaboration-surface-contract.md`
+- Ownership and update surfaces: `docs/operations/workflow-setup-responsibility-map.md`
+- Shared session recall and Notion publish flow: `docs/workflow/runtime/session-recall.md`
 - Nightly upstream/tooling improvement lane: `docs/workflow/strategy/nightly-evaluation-loop.md`
 - Cross-tool Claude/Codex execution: `docs/workflow/delivery/unified-codex-claude-loop.md`
 - Ownership and update surfaces: `docs/operations/workflow-setup-responsibility-map.md` + `docs/operations/update-requirements-matrix.md`

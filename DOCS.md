@@ -44,11 +44,10 @@ Workflow docs are physically grouped by operational concern.
 
 ### `docs/workflow/github/`
 
-- `docs/workflow/github/nanoclaw-github-control-plane.md`: GitHub workflow/review control-plane rules
+- `docs/workflow/github/github-delivery-governance.md`: GitHub delivery governance rules
 - `docs/workflow/github/github-offload-boundary-loop.md`: GitHub-vs-local workflow placement policy
-- `docs/workflow/github/github-multi-agent-collaboration-loop.md`: multi-agent GitHub coordination model
-- `docs/workflow/github/github-agent-collaboration-loop.md`: day-to-day agent operating workflow for GitHub Discussions, Issues, and Project usage
-- `docs/workflow/github/github-collab-sweep.md`: session-start GitHub sweep protocol, agent-category affinity, and handoff comment format
+- `docs/workflow/control-plane/collaboration-surface-contract.md`: current collaboration-surface contract across Linear, Notion, GitHub, and repo artifacts
+- `docs/workflow/control-plane/session-work-sweep.md`: session-start work sweep protocol, agent-category affinity, and handoff comment format
 
 ### `docs/workflow/docs-discipline/`
 
@@ -96,6 +95,7 @@ Workflow docs are physically grouped by operational concern.
 
 - `docs/archives/CHANGELOG-2026-02-26.md`: historical changelog snapshot prior to current changelog flow
 - `docs/archives/debug-known-issues-2026-02.md`: archived fixed-issue notes removed from the active debug checklist
+- `docs/archives/pre-linear-github-first-collaboration-loop.md`: archived pre-migration GitHub-first collaboration model retained for migration/reference
 - `docs/archives/worker-dispatch-root-cause-2026-02-24.md`: root-cause analysis archive for worker dispatch incident
 
 ## `docs/research/`

@@ -36,7 +36,13 @@ function nowIso(): string {
 }
 
 function getStorePath(repoRoot: string): string {
-  return path.join(repoRoot, '.claude', 'progress', 'work-items.json');
+  return path.join(repoRoot, '.claude', 'archive', 'legacy-work-items.json');
+}
+
+function printLegacyNotice(): void {
+  console.error(
+    'legacy-work-items: .claude/archive/legacy-work-items.json is migration support only; keep authoritative execution state in Linear.',
+  );
 }
 
 function loadStore(repoRoot: string): WorkStore {
@@ -109,6 +115,7 @@ function ensureStatus(value: string | undefined): WorkStatus {
 }
 
 function main(): void {
+  printLegacyNotice();
   const args = process.argv.slice(2);
   const command = args[0];
   const repoRoot = process.cwd();

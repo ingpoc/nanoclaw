@@ -28,10 +28,10 @@ body:
     validations:
       required: true
   - type: dropdown
-    id: execution_board
+    id: linear_project
     attributes:
-      label: Execution Board
-      description: Choose the one board that should track this work item.
+      label: Linear Project
+      description: Choose the one Linear project that should track this work item.
       options:
         - NanoClaw Platform
         - Andy/Jarvis Delivery
@@ -86,7 +86,7 @@ body:
     id: required_evidence
     attributes:
       label: Required Evidence
-      description: Describe the evidence that must appear in the PR or board handoff before review.
+      description: Describe the evidence that must appear in the PR or Linear handoff before review.
       placeholder: Build/test output, linked PR, evidence artifact paths...
     validations:
       required: true
@@ -102,10 +102,10 @@ body:
     id: ready_checklist
     attributes:
       label: Ready Checklist
-      description: Codex must validate and check every item below before moving the board status to Ready.
+      description: Codex must validate and check every item below before moving the Linear issue to Ready.
       value: |
         - [ ] Problem Statement is explicit and implementation-relevant.
-        - [ ] Execution Board is correct for this work.
+        - [ ] Linear Project is correct for this work.
         - [ ] Scope includes clear in-scope and out-of-scope boundaries.
         - [ ] Acceptance Criteria are deterministic and testable.
         - [ ] Expected Productivity Gain is concrete.
@@ -113,7 +113,7 @@ body:
         - [ ] Required Checks are concrete commands.
         - [ ] Required Evidence is explicit.
         - [ ] Blocked If conditions are explicit.
-        - [ ] Source Discussion is linked when promoted from a discussion.
+        - [ ] Source context is linked when promoted from Notion research or planning.
         - [ ] Suggested Owner is set or intentionally omitted.
     validations:
       required: true
@@ -128,9 +128,9 @@ body:
   - type: input
     id: source_discussion
     attributes:
-      label: Source Discussion
-      description: Link the GitHub Discussion if this work was promoted from research, changelog review, or tooling evaluation.
-      placeholder: https://github.com/<owner>/<repo>/discussions/<id>
+      label: Source Context
+      description: Link the Notion page if this work was promoted from research, changelog review, or tooling evaluation.
+      placeholder: https://www.notion.so/<workspace>/<page-id>
     validations:
       required: false
   - type: input

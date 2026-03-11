@@ -50,14 +50,27 @@ Do not wait for the workflow to fully fail before treating this as introspection
 
 Do not treat one-off environmental noise as workflow debt unless the workflow should explicitly mention that degraded path.
 
+## Session Recall Check
+
+Before editing a workflow, verify whether the friction recurred across prior sessions or was only a one-off.
+
+Use the lightest evidence that answers the question:
+
+1. `qctx "<workflow/topic>"`
+2. `node scripts/workflow/session-context-audit.js --top 10` when transcript noise or raw command output may have hidden the real issue
+3. direct exported-session reads only for the few hits that appear relevant
+
+The goal is not exhaustive archaeology. The goal is to avoid promoting one noisy session into a permanent workflow rule unless prior sessions show the same pain.
+
 ## Autonomous Maintenance Rule
 
 Once workflow debt is detected:
 
 1. Finish the user task first unless the stale workflow blocks safe execution.
-2. Before final closure, capture the friction and update the owning workflow doc or trigger.
-3. Re-run the canonical path or a minimal self-test to prove the workflow is smoother.
-4. Report the workflow improvement as part of the task outcome, not as optional extra credit.
+2. Before final closure, run the minimal session recall check needed to confirm whether the pain is recurring.
+3. Capture the friction and update the owning workflow doc or trigger.
+4. Re-run the canonical path or a minimal self-test to prove the workflow is smoother.
+5. Report the workflow improvement as part of the task outcome, not as optional extra credit.
 
 This keeps workflow maintenance autonomous without turning every session into open-ended process editing.
 

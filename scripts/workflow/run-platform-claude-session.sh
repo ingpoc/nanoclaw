@@ -109,5 +109,35 @@ if [[ -n "$CLAUDE_CODE_OAUTH_TOKEN_VALUE" ]]; then
 fi
 unset CLAUDE_CODE_OAUTH_TOKEN_VALUE
 
+cleanup_worktree() {
+  local status_output=""
+
+  if [[ ! -d "$WORKTREE_PATH" ]]; then
+    return 0
+  fi
+
+  status_output="$(git -C "$WORKTREE_PATH" status --porcelain --untracked-files=normal 2>/dev/null || true)"
+  if [[ -n "$status_output" ]]; then
+    echo "platform-loop-runner: preserving dirty worktree at $WORKTREE_PATH" >&2
+    printf '%s\n' "$status_output" >&2
+    return 0
+  fi
+
+  if git -C "$ROOT_DIR" worktree remove "$WORKTREE_PATH" >/dev/null 2>&1; then
+    echo "platform-loop-runner: removed clean worktree $WORKTREE_PATH"
+    return 0
+  fi
+
+  echo "platform-loop-runner: failed to remove clean worktree $WORKTREE_PATH" >&2
+  return 0
+}
+
 cd "$WORKTREE_PATH"
-exec claude --permission-mode "$CLAUDE_PERMISSION_MODE" "$CLAUDE_PROMPT"
+set +e
+claude --permission-mode "$CLAUDE_PERMISSION_MODE" "$CLAUDE_PROMPT"
+CLAUDE_EXIT=$?
+set -e
+
+cd "$ROOT_DIR"
+cleanup_worktree
+exit "$CLAUDE_EXIT"

@@ -23,6 +23,7 @@ NanoClaw baseline is the default. Jarvis docs apply only when working on the `ja
 - Operate as an expert with a clear technical opinion on the correct mission-aligned path.
 - Prioritize reliability, optimization, and efficiency as core defaults.
 - Use the most relevant internal skills/tools first and verify outcomes with concrete evidence.
+- After task-start routing/preflight, state the selected route briefly (`intent -> skill/doc/MCP`) before deeper execution.
 - If a better mission-aligned approach exists, surface it proactively and reason with the user before execution.
 - Do not rely on assumptions when facts are retrievable; gather repo facts from code/docs and use DeepWiki for repository documentation when more context is required.
 - When creating or modifying scripts, default to the minimum model-facing output needed for the task; verbose logs, large JSON payloads, and full artifacts must be opt-in or file-backed.
@@ -36,6 +37,7 @@ NanoClaw baseline is the default. Jarvis docs apply only when working on the `ja
 ```text
 AT SESSION START → run bash scripts/workflow/session-start.sh --agent <claude|codex>
 AT SESSION START, session handoff, or when changing recall/sync/export behavior → read docs/workflow/runtime/session-recall.md
+AT TASK START after routing/preflight → state the selected route briefly (intent + first workflow/skill + MCP if relevant)
 BEFORE using GitHub collab sweep, changing sweep protocol, or updating agent-category affinity → read docs/workflow/github/github-collab-sweep.md
 WHEN session start is blocked by required GitHub collaboration actions or when handling `Needs My Review` items from the sweep → read docs/workflow/github/github-collab-sweep.md
 BEFORE editing root CLAUDE.md → read docs/workflow/docs-discipline/nanoclaw-root-claude-compression.md
@@ -47,6 +49,7 @@ BEFORE single-lane feature, bug-fix, or reliability delivery → read docs/workf
 BEFORE workflow optimization from external research → read docs/workflow/strategy/workflow-optimization-loop.md
 BEFORE changing nighttime improvement evaluation, overnight research cadence, or token-budgeted upstream/tooling scanning → read docs/workflow/strategy/nightly-evaluation-loop.md
 BEFORE weekly slop cleanup or tooling-governance review → read docs/workflow/strategy/weekly-slop-optimization-loop.md
+BEFORE running simplify/refactor work on fork customizations → read docs/workflow/strategy/weekly-slop-optimization-loop.md and docs/ARCHITECTURE.md
 BEFORE reviewing hooks/subagents or built-in routing budgets → read docs/operations/tooling-governance-budget.json
 BEFORE split-lane Claude/Codex worktrees or review fanout → read docs/workflow/delivery/unified-codex-claude-loop.md
 BEFORE defining subagent fanout for plan/review/verification → read docs/operations/subagent-catalog.md and docs/operations/subagent-routing.md

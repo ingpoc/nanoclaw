@@ -140,16 +140,38 @@ If tool versions changed and the versions are new:
    - update `SDK / Tooling Opportunities`
    - leave one Claude decision comment
 
+## Research Quality Gate
+
+Nightly research is valid only when it proves all of the following for each source family it updates.
+
+1. **Net-new check**: state exactly what changed since the last processed cursor
+   - upstream: commit range, touched paths, and why that range matters
+   - tooling: version delta, release date if available, and which changed item is being evaluated
+2. **Prior-art check**: verify whether the same idea was already researched or already exists locally
+   - check the current rolling discussion
+   - check open Issues or already-promoted follow-up work
+   - check local docs/code only when the candidate claims local absence or drift
+3. **Doc coverage**: read the usage or implementation docs for any promising changelog item before recommending adoption
+4. **MCP/tool coverage**: when a repo/docs MCP materially improves evidence quality, use it instead of shallow summary
+   - `deepwiki` for repository architecture/Q&A
+   - `context7` for library/framework usage docs
+   - token-efficient MCP for large changelog, log, or structured-data reduction
+5. **NanoClaw fit**: explain the subsystem fit and whether the change is relevant to `main`, `andy-developer`, `jarvis-worker-*`, or shared runtime
+
+Reject or defer the finding if any of those are missing. Surface-level summaries are not valid nightly research.
+
 ## Discussion Contract
 
 Nightly discussion bodies must include:
 
 1. exact evaluated range or version delta
 2. the source links actually used
+3. what is net-new in this run
 3. NanoClaw subsystem fit
 4. candidate adoption or explicit `no-fit`
 5. operator-load / risk impact
 6. `P1`, `P2`, or `P3`
+7. whether prior art already exists locally or in GitHub state
 
 Discussion bodies must include one of these markers:
 
@@ -164,6 +186,38 @@ Decision comments must include:
 4. `To: Codex`
 5. `Status: needs-input`
 6. `Next: morning Codex triage`
+
+### Fixed Discussion Template
+
+Use this structure for each nightly discussion update:
+
+```md
+## Nightly Update
+
+Source Family: <upstream|tooling>
+Net-New: <commit range or version delta>
+Why This Run Happened: <cursor change that triggered evaluation>
+
+### Evidence Used
+- Changelog / release note: <link>
+- Implementation / usage docs: <link>
+- MCP support used: <deepwiki|context7|token-efficient|none> and why
+
+### Prior-Art Check
+- Existing discussion overlap: <none|summary>
+- Existing issue overlap: <none|issue refs>
+- Local implementation/docs overlap: <none|summary>
+
+### NanoClaw Fit
+- Subsystem: <main|andy-developer|jarvis-worker-*|shared runtime>
+- Candidate: <adopt|pilot|defer|reject|no-fit>
+- Why: <short reasoning>
+- Operator Load / Risk: <short reasoning>
+- Priority: <P1|P2|P3>
+
+### Morning Codex Ask
+- Next question or bounded execution candidate
+```
 
 ## Morning Codex Contract
 

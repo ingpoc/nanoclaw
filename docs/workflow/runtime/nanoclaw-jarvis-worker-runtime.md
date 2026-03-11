@@ -185,9 +185,13 @@ Token counts are zero-filled until OpenCode exposes deterministic per-call usage
 
 ## Agent Routing
 
-| Step | Agent | Mode | Notes |
-|------|-------|------|-------|
-| Runtime architecture decisions | opus | — | Requires cross-system judgment |
-| Config mapping | scout | fg | Read worker config, env vars, model fallback chains |
-| Dockerfile reads | scout | fg | Scan container definitions and mount paths |
-| Build verification | verifier | fg | `./container/worker/build.sh` exit code |
+Use the canonical routing owners in:
+
+- `docs/operations/subagent-catalog.md`
+- `docs/operations/subagent-routing.md`
+
+Workflow-specific default:
+
+1. use `explorer` for config, env, mount, and container-definition reads
+2. use `monitor` for deterministic build or verification commands when they can run in parallel
+3. keep runtime architecture or boundary decisions in the main lane

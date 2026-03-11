@@ -62,6 +62,18 @@ bash scripts/qmd-context-recall.sh --bootstrap
 6. If recall quality is still degraded or stale after background sync completes, rerun recall.
 7. Session end: run `qctx --close ...` with concrete `--next`.
 
+## Context Hygiene
+
+When the goal is to understand context pressure or noisy transcripts, do not paste raw `/context` output into the session unless you are debugging the `/context` command itself.
+
+Prefer this order:
+
+1. `node scripts/workflow/session-context-audit.js --top 10`
+2. a short written summary of the buckets or largest stdout blocks
+3. raw `/context` output only when the exact bucket-level text is needed as evidence
+
+This keeps session recall useful and avoids turning a context-diagnosis step into the main source of context waste.
+
 ## When To Run What
 
 1. Start of day or resume interrupted work:
@@ -101,10 +113,19 @@ bash scripts/qmd-context-recall.sh --bootstrap
 `scripts/workflow/session-start.sh` is the canonical startup entrypoint. It runs:
 
 1. `qctx --bootstrap`
-2. `gh-collab-sweep.sh --agent <runtime> --fail-on-action-items`
-3. `scripts/workflow/preflight.sh --skip-recall`
+2. `scripts/workflow/platform-loop-worktree-hygiene.sh`
+3. `gh-collab-sweep.sh --agent <runtime> --fail-on-action-items`
+4. `scripts/workflow/preflight.sh --skip-recall`
 
 If `qmd status` reports pending embeddings, `session-start.sh` prints a recall-quality warning and starts background session sync by default. It also prints the log and status file paths so the main lane can keep moving while sync finishes.
+
+The startup hygiene step is narrow:
+
+1. prune stale `platform-loop` worktree admin entries
+2. remove leftover clean `platform-loop` worktrees
+3. warn and retain dirty `platform-loop` worktrees so interrupted implementation is not lost
+
+This step does not resume implementation work. The platform pickup lane still owns creation of the fresh execution worktree and any implementation branching.
 
 ### Interactive Agent Flow
 

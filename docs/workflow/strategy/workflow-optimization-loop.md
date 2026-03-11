@@ -27,6 +27,28 @@ Weekly slop-pruning execution (docs/scripts/config/code) is defined in:
 
 - `docs/workflow/strategy/weekly-slop-optimization-loop.md`
 
+## Phase 0: Local Evidence Intake
+
+Before external research, collect local evidence from prior execution history.
+
+Required inputs:
+
+1. `qctx "<workflow/topic>"`
+2. at least one targeted exported-session lookup for the workflow being changed
+3. `node scripts/workflow/session-context-audit.js --top 10` when context waste or transcript noise may be part of the problem
+
+Optional bounded Codex helper:
+
+- `bash scripts/workflow/start-session-pattern-analysis.sh --topic "<workflow/topic>"`
+
+For each candidate workflow change, capture:
+
+1. repeated pain or confusion signal from prior sessions
+2. whether the failure was discoverability, sequencing, verification, or degraded-path guidance
+3. whether the problem is still current or already fixed elsewhere in docs/scripts
+
+Do not use context graph for this loop. The evidence source of truth is exported session recall plus current repo docs/scripts.
+
 ## Phase 1: Research Intake (Weekly)
 
 Collect only high-signal sources:
@@ -77,6 +99,7 @@ Record findings in `docs/research/` with:
 2. Why it works.
 3. Preconditions.
 4. Failure modes.
+5. Matching local session evidence from Phase 0, or an explicit note that local sessions do not yet show the pain.
 
 Before implementation discussion, open or update a GitHub Discussion in `SDK / Tooling Opportunities` and require both Claude and Codex to leave a decision comment (`accept`, `pilot`, `defer`, `reject`) with explicit agent labels. If both choose `accept` or `pilot`, dedupe against existing promoted Issues first, then move the surviving execution Issue onto the correct board and leave a promotion summary comment in the Discussion. Default changelog/tooling adoption work to the `NanoClaw Platform` board unless it is explicitly scoped to a user-project delivery workflow.
 

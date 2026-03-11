@@ -19,7 +19,7 @@ Execution flow:
    - run `gh api user -q .login`
    - if the result is not `ingpoc`, run `gh auth switch --user ingpoc`
    - rerun `gh api user -q .login` and stop if it is still not `ingpoc`
-2. Refresh the dedicated loop worktree from the configured remote base before picking work:
+2. Provision a fresh ephemeral pickup worktree from the configured remote base before picking work:
    - run `bash scripts/workflow/platform-loop-sync.sh`
    - if the sync fails, stop immediately instead of using stale code
 3. Run `node scripts/workflow/platform-loop.js next`.
@@ -49,6 +49,11 @@ Execution flow:
 15. Leave an issue comment for the review handoff:
    - include branch, PR URL, `request_id`, `run_id`, checks run, and any known risks
 16. End with a concise review handoff for Codex, including issue number, branch, PR URL, checks run, and any known risks.
+
+Cleanup rule:
+
+- The session runner removes the ephemeral worktree automatically after Claude exits if the worktree is clean.
+- If the worktree is left dirty because the run stopped mid-change, leave it in place and report the path in the final blocker/handoff note.
 
 Blocked-state rule:
 

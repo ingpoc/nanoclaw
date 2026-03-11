@@ -23,6 +23,19 @@ Do not start ad-hoc edits/debug loops before this check.
 7. If no specific skill matches, use `/customize` for feature/behavior changes.
 8. If no skill/MCP applies, proceed docs-first with normal engineering flow.
 
+## Required Routing Output
+
+After preflight, state the chosen route briefly before deeper execution.
+
+Include:
+
+1. detected intent
+2. chosen path (`skill-first` or `docs-first`)
+3. exact skill or doc workflow being used first
+4. MCP choice when one is materially relevant
+
+If no exact workflow exists, say that explicitly and name the fallback path. The point is to make the selected route visible early so users do not have to ask whether a workflow already exists.
+
 ## Quick Routing Shortcuts
 
 - Feature or behavior change: use the most specific `/add-*` skill, otherwise `/customize`.

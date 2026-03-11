@@ -71,6 +71,8 @@ Operating rules:
 9. the lane must leave issue comments when it claims work, blocks, and hands off to review
 10. Codex is the default review lane after the lane finishes implementation
 11. merge remains human-only
+12. the lane provisions an ephemeral worktree per pickup and removes it automatically after Claude exits when the worktree is clean
+13. if the session ends with a dirty worktree, the lane may preserve it temporarily, but the retained path must be called out in the blocker or handoff note
 
 Scheduler rules:
 

@@ -91,6 +91,7 @@ fi
 
 require_cmd bash
 require_cmd qmd
+require_cmd git
 
 echo "== Session Start (${AGENT}) =="
 echo "repo: $ROOT_DIR"
@@ -105,6 +106,9 @@ if [[ -n "$QUERY" ]]; then
 fi
 
 "${RECALL_CMD[@]}"
+echo ""
+
+bash scripts/workflow/platform-loop-worktree-hygiene.sh
 echo ""
 
 PENDING_EMBEDDINGS="$(get_pending_embeddings)"

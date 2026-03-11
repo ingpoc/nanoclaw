@@ -16,11 +16,13 @@
 - Before handling logs, CSV data, or potentially verbose script output, follow `docs/tools/token-efficient-mcp-usage.md`.
 - Before changing core-vs-extension ownership or adding Jarvis-specific logic to shared runtime files, follow `docs/ARCHITECTURE.md`.
 - Run the task-start skill/MCP routing preflight defined by `CLAUDE.md` before ad-hoc implementation/debugging.
+- After task-start routing/preflight, state the selected route briefly (`intent -> skill/doc/MCP`) before deeper execution.
 - Before starting feature/bug/reliability implementation (default single-lane), follow `docs/workflow/delivery/nanoclaw-development-loop.md`.
 - Before changing workflow strategy/cadence based on external research, follow `docs/workflow/strategy/workflow-optimization-loop.md`.
 - After task completion or before ending a session, if a workflow caused avoidable friction, retries, or mid-task correction, you must follow `docs/workflow/strategy/session-introspection-loop.md` as required closure work unless unsafe or blocked.
 - Before changing nighttime improvement evaluation, overnight research cadence, or token-budgeted upstream/tooling scanning, follow `docs/workflow/strategy/nightly-evaluation-loop.md`.
 - Before running weekly docs/scripts/config/code slop cleanup during optimization cycles, follow `docs/workflow/strategy/weekly-slop-optimization-loop.md`.
+- Before running simplify/refactor work on fork customizations, follow `docs/workflow/strategy/weekly-slop-optimization-loop.md` and `docs/ARCHITECTURE.md`.
 - Before reviewing hooks/subagents or built-in tool routing governance, follow `docs/workflow/strategy/weekly-slop-optimization-loop.md` and `docs/operations/tooling-governance-budget.json`.
 - Before running parallel Claude/Codex worktrees or splitting execution/review ownership across tools (supersedes single-lane loop), follow `docs/workflow/delivery/unified-codex-claude-loop.md`.
 - Before defining subagent fanout for plan/review/verification, follow `docs/operations/subagent-catalog.md` and `docs/operations/subagent-routing.md`.

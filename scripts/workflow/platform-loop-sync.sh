@@ -32,7 +32,7 @@ usage() {
   cat <<'EOF'
 Usage: platform-loop-sync.sh [--dry-run]
 
-Refresh the dedicated Claude platform loop worktree from the configured remote/base
+Provision the Claude platform pickup worktree from the configured remote/base
 branch, then overlay the command/helper files from the source repo root.
 EOF
 }
@@ -147,8 +147,8 @@ else
   ensure_clean_worktree
 fi
 
-# The dedicated loop branch is disposable control state and should always point
-# at the latest fetched base before Claude creates an issue branch.
+# The loop branch is disposable control state and should always point at the
+# latest fetched base before Claude creates an issue branch.
 git -C "$WORKTREE_PATH" checkout -B "$WORKTREE_BRANCH" "$REMOTE_REF"
 
 ensure_overlay_files

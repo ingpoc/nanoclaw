@@ -172,9 +172,14 @@ Do not use Docker commands as the default NanoClaw runtime debug path.
 
 ## Agent Routing
 
-| Step | Agent | Mode | Notes |
-|------|-------|------|-------|
-| Root-cause triage | opus | — | Requires cross-symptom reasoning |
-| Diagnostics | scout | fg | `container system status`, `container ls -a` |
-| Log grep | scout | fg | Search daemon/container logs for error patterns |
-| Health checks | verifier | fg | Port listening, process status exit codes |
+Use the canonical routing owners in:
+
+- `docs/operations/subagent-catalog.md`
+- `docs/operations/subagent-routing.md`
+
+Workflow-specific default:
+
+1. use `explorer` for diagnostics, config reads, and first-pass log inspection
+2. use `reviewer` to interpret failure patterns once evidence exists
+3. use `monitor` only for deterministic health/probe polling
+4. keep final root-cause judgment in the main lane

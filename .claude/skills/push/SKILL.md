@@ -1,8 +1,6 @@
 ---
 name: push
-description:
-  Push current branch changes to origin and create or update the corresponding
-  pull request; use when asked to push, publish updates, or create pull request.
+description: Push current branch changes to origin and create or update the corresponding pull request. Runs pre-push validation including format autofix. Use when user says "push", "publish", "create PR", or needs to send branch to remote.
 ---
 
 # Push

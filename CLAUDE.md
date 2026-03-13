@@ -51,6 +51,8 @@ BEFORE workflow optimization from external research → read docs/workflow/strat
 BEFORE changing nighttime improvement evaluation, overnight research cadence, or token-budgeted upstream/tooling scanning → read docs/workflow/strategy/nightly-evaluation-loop.md
 BEFORE weekly slop cleanup or tooling-governance review → read docs/workflow/strategy/weekly-slop-optimization-loop.md
 BEFORE running simplify/refactor work on fork customizations → read docs/workflow/strategy/weekly-slop-optimization-loop.md and docs/ARCHITECTURE.md
+BEFORE pushing branch to origin or creating PR → use push skill (runs validation, pre-push format autofix, creates/updates PR)
+BEFORE merging PR or landing branch to main → use land skill (monitors CI, auto-fixes common failures, squash-merges)
 BEFORE reviewing hooks/subagents or built-in routing budgets → read docs/operations/tooling-governance-budget.json
 BEFORE split-lane Claude/Codex worktrees or review fanout → read docs/workflow/delivery/unified-codex-claude-loop.md
 BEFORE defining subagent fanout for plan/review/verification → read docs/operations/subagent-catalog.md and docs/operations/subagent-routing.md

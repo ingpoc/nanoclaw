@@ -1,7 +1,10 @@
 import os from 'node:os';
 import path from 'node:path';
 
-import type { SymphonyBackend, SymphonyBackendResolution } from './symphony-routing.js';
+import type {
+  SymphonyBackend,
+  SymphonyBackendResolution,
+} from './symphony-routing.js';
 
 function expandHome(value: string): string {
   if (!value.startsWith('~')) {

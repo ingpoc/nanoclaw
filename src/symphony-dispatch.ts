@@ -30,7 +30,9 @@ function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-function commandTemplateEnvName(backend: 'codex' | 'claude-code' | 'opencode-worker'): string {
+function commandTemplateEnvName(
+  backend: 'codex' | 'claude-code' | 'opencode-worker',
+): string {
   switch (backend) {
     case 'codex':
       return 'NANOCLAW_SYMPHONY_CODEX_COMMAND';
@@ -54,7 +56,9 @@ function renderCommandTemplate(
   });
 }
 
-function commandForPlan(plan: ReturnType<typeof buildSymphonyLaunchPlan>): string {
+function commandForPlan(
+  plan: ReturnType<typeof buildSymphonyLaunchPlan>,
+): string {
   const envName = commandTemplateEnvName(plan.backend);
   const template = process.env[envName] || '';
   if (!template) {
@@ -73,7 +77,9 @@ function commandForPlan(plan: ReturnType<typeof buildSymphonyLaunchPlan>): strin
   });
 }
 
-function sortCandidates(issues: Awaited<ReturnType<typeof listReadyIssuesForProject>>) {
+function sortCandidates(
+  issues: Awaited<ReturnType<typeof listReadyIssuesForProject>>,
+) {
   return [...issues].sort((left, right) => {
     const priorityDelta = left.priority - right.priority;
     if (priorityDelta !== 0) return priorityDelta;
@@ -85,7 +91,11 @@ function runGitCommand(args: string[], cwd: string): string {
   return execSync(`git ${args.join(' ')}`, { cwd, encoding: 'utf8' });
 }
 
-function createGitWorktree(workspacePath: string, githubRepo: string, branchName: string): void {
+function createGitWorktree(
+  workspacePath: string,
+  githubRepo: string,
+  branchName: string,
+): void {
   // Determine the source repo - use current nanoclaw repo, otherwise use remote
   let sourceRepo: string | undefined;
 
@@ -100,16 +110,27 @@ function createGitWorktree(workspacePath: string, githubRepo: string, branchName
     sourceRepo = `https://github.com/${githubRepo}.git`;
   }
 
-  console.log(`Creating git worktree at ${workspacePath} from ${sourceRepo} branch ${branchName}`);
+  console.log(
+    `Creating git worktree at ${workspacePath} from ${sourceRepo} branch ${branchName}`,
+  );
 
   // Create the worktree
   try {
-    runGitCommand(['worktree', 'add', '-B', branchName, workspacePath, 'origin/main'], sourceRepo);
+    runGitCommand(
+      ['worktree', 'add', '-B', branchName, workspacePath, 'origin/main'],
+      sourceRepo,
+    );
   } catch (err) {
     // If worktree already exists, try to prune and recreate
     try {
-      runGitCommand(['worktree', 'remove', '--force', workspacePath], sourceRepo);
-      runGitCommand(['worktree', 'add', '-B', branchName, workspacePath, 'origin/main'], sourceRepo);
+      runGitCommand(
+        ['worktree', 'remove', '--force', workspacePath],
+        sourceRepo,
+      );
+      runGitCommand(
+        ['worktree', 'add', '-B', branchName, workspacePath, 'origin/main'],
+        sourceRepo,
+      );
     } catch (retryErr) {
       console.error('Failed to create worktree:', retryErr);
       throw retryErr;
@@ -152,7 +173,11 @@ env_vars = ["NOTION_TOKEN", "NOTION_SESSION_SUMMARY_DATABASE_ID", "NOTION_NIGHTL
     'utf8',
   );
   fs.mkdirSync(path.join(workspacePath, '.codex'), { recursive: true });
-  fs.writeFileSync(path.join(workspacePath, '.codex', 'config.toml'), symphonyCodexConfig, 'utf8');
+  fs.writeFileSync(
+    path.join(workspacePath, '.codex', 'config.toml'),
+    symphonyCodexConfig,
+    'utf8',
+  );
 }
 
 function prepareWorkspace(
@@ -160,7 +185,12 @@ function prepareWorkspace(
   plan: ReturnType<typeof buildSymphonyLaunchPlan>,
   prompt: string,
   runId: string,
-): { promptFile: string; manifestFile: string; logFile: string; exitFile: string } {
+): {
+  promptFile: string;
+  manifestFile: string;
+  logFile: string;
+  exitFile: string;
+} {
   // Create worktree if enabled
   if (plan.useWorktree) {
     const branchName = `symphony-${issue.identifier.toLowerCase()}`;
@@ -228,7 +258,10 @@ with open(path, "w", encoding="utf-8") as handle:
 PY
 exit $code`;
 
-  const { CLAUDECODE: _omit, ...envWithoutClaudeCode } = { ...process.env, ...env };
+  const { CLAUDECODE: _omit, ...envWithoutClaudeCode } = {
+    ...process.env,
+    ...env,
+  };
   const child = spawn('/bin/sh', ['-lc', wrapped], {
     cwd,
     detached: true,
@@ -269,7 +302,9 @@ export async function dispatchOnceForProject(
   if (!selectedSummary) {
     return {
       action: 'noop' as const,
-      reason: options.issueIdentifier ? 'issue_not_found_or_not_ready' : 'no_ready_issue',
+      reason: options.issueIdentifier
+        ? 'issue_not_found_or_not_ready'
+        : 'no_ready_issue',
     };
   }
 

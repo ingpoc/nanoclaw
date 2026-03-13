@@ -5,7 +5,9 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-const SCRIPT_PATH = path.resolve('scripts/workflow/start-autonomy-reliability.sh');
+const SCRIPT_PATH = path.resolve(
+  'scripts/workflow/start-autonomy-reliability.sh',
+);
 
 function writeExecutable(filePath: string, content: string) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });

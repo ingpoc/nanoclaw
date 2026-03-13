@@ -98,7 +98,11 @@ describe('resolveSymphonyBackend', () => {
       projectKey: 'nanoclaw',
       workspaceRoot: '/tmp/nanoclaw-symphony',
       secretScope: 'nanoclaw',
-      reasons: ['project:nanoclaw', 'work_class:nanoclaw-core', 'backend:codex'],
+      reasons: [
+        'project:nanoclaw',
+        'work_class:nanoclaw-core',
+        'backend:codex',
+      ],
     });
   });
 

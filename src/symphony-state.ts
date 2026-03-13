@@ -64,7 +64,12 @@ function jsonFile<T>(filePath: string): T {
 export function symphonyRuntimeRoot(): string {
   const registryPath =
     process.env.NANOCLAW_SYMPHONY_REGISTRY_PATH ||
-    path.join(process.cwd(), '.nanoclaw', 'symphony', 'project-registry.cache.json');
+    path.join(
+      process.cwd(),
+      '.nanoclaw',
+      'symphony',
+      'project-registry.cache.json',
+    );
   return path.dirname(registryPath);
 }
 
@@ -101,7 +106,11 @@ export function runPidPath(runId: string): string {
 
 export function writeRunRecord(record: SymphonyRunRecord): void {
   ensureSymphonyRuntimeDirs();
-  fs.writeFileSync(runRecordPath(record.runId), `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+  fs.writeFileSync(
+    runRecordPath(record.runId),
+    `${JSON.stringify(record, null, 2)}\n`,
+    'utf8',
+  );
   if (record.pid) {
     fs.writeFileSync(
       runPidPath(record.runId),
@@ -131,15 +140,18 @@ export function listRunRecords(): SymphonyRunRecord[] {
   return fs
     .readdirSync(symphonyRunsRoot())
     .filter((entry) => entry.endsWith('.json'))
-    .map((entry) => jsonFile<SymphonyRunRecord>(path.join(symphonyRunsRoot(), entry)))
+    .map((entry) =>
+      jsonFile<SymphonyRunRecord>(path.join(symphonyRunsRoot(), entry)),
+    )
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
 }
 
 export function activeRunRecords(): SymphonyRunRecord[] {
-  return listRunRecords().filter((record) =>
-    record.status === 'planned' ||
-    record.status === 'dispatching' ||
-    record.status === 'running',
+  return listRunRecords().filter(
+    (record) =>
+      record.status === 'planned' ||
+      record.status === 'dispatching' ||
+      record.status === 'running',
   );
 }
 
@@ -169,11 +181,18 @@ export function buildRuntimeState(input: {
 }): SymphonyRuntimeState {
   const runs = input.runs || listRunRecords();
   const activeRunIds = runs
-    .filter((record) => record.status === 'planned' || record.status === 'dispatching' || record.status === 'running')
+    .filter(
+      (record) =>
+        record.status === 'planned' ||
+        record.status === 'dispatching' ||
+        record.status === 'running',
+    )
     .map((record) => record.runId);
 
   const projects = input.registry.projects.map((project) => {
-    const projectRuns = runs.filter((record) => record.projectKey === project.projectKey);
+    const projectRuns = runs.filter(
+      (record) => record.projectKey === project.projectKey,
+    );
     const latestRun = projectRuns[0];
     const activeRunCount = projectRuns.filter(
       (record) =>
@@ -198,7 +217,9 @@ export function buildRuntimeState(input: {
     daemonHealthy: input.daemonHealthy,
     daemonPid: input.daemonPid,
     registryProjectCount: input.registry.projects.length,
-    enabledProjectCount: input.registry.projects.filter((project) => project.symphonyEnabled).length,
+    enabledProjectCount: input.registry.projects.filter(
+      (project) => project.symphonyEnabled,
+    ).length,
     projectReadyCounts: input.readyCounts,
     activeRunIds,
     projects,
@@ -222,7 +243,11 @@ export function archiveRunRecords(options: {
   statuses?: SymphonyRunRecord['status'][];
 }): { archived: number; kept: number } {
   const olderThanDays = options.olderThanDays ?? 7;
-  const statuses: SymphonyRunRecord['status'][] = options.statuses ?? ['done', 'failed', 'canceled'];
+  const statuses: SymphonyRunRecord['status'][] = options.statuses ?? [
+    'done',
+    'failed',
+    'canceled',
+  ];
   const runsRoot = symphonyRunsRoot();
   const archiveDir = path.join(runsRoot, 'archive');
 
@@ -244,7 +269,9 @@ export function archiveRunRecords(options: {
     const filePath = path.join(runsRoot, entry);
     let record: SymphonyRunRecord;
     try {
-      record = JSON.parse(fs.readFileSync(filePath, 'utf8')) as SymphonyRunRecord;
+      record = JSON.parse(
+        fs.readFileSync(filePath, 'utf8'),
+      ) as SymphonyRunRecord;
     } catch {
       kept++;
       continue;

@@ -10,7 +10,10 @@ import {
   ensureLinearProject,
   findLinearProjectByName,
 } from './symphony-linear.js';
-import type { ProjectRegistry, ProjectRegistryEntry } from './symphony-routing.js';
+import type {
+  ProjectRegistry,
+  ProjectRegistryEntry,
+} from './symphony-routing.js';
 import {
   createNotionChildPage,
   fetchProjectRegistryFromNotion,
@@ -19,7 +22,10 @@ import {
   writeProjectRegistryCache,
 } from './symphony-registry.js';
 
-export const ProjectBootstrapModeSchema = z.enum(['nanoclaw-like', 'downstream-product']);
+export const ProjectBootstrapModeSchema = z.enum([
+  'nanoclaw-like',
+  'downstream-product',
+]);
 export type ProjectBootstrapMode = z.infer<typeof ProjectBootstrapModeSchema>;
 
 export const ProjectBootstrapInputSchema = z.object({
@@ -81,7 +87,9 @@ export type ProjectBootstrapApplyResult = {
 
 export type ProjectBootstrapDependencies = {
   verifyGitHubRepo: (repoSlug: string, localPath?: string) => Promise<void>;
-  findLinearProjectByName: (name: string) => Promise<LinearProjectRecord | null>;
+  findLinearProjectByName: (
+    name: string,
+  ) => Promise<LinearProjectRecord | null>;
   ensureLinearProject: (
     name: string,
   ) => Promise<{ action: 'linked' | 'created'; project: LinearProjectRecord }>;
@@ -98,7 +106,12 @@ export type ProjectBootstrapDependencies = {
 const DEFAULT_READY_POLICY = 'andy-developer-ready-v1';
 const DEFAULT_REGISTRY_PATH =
   process.env.NANOCLAW_SYMPHONY_REGISTRY_PATH ||
-  path.join(process.cwd(), '.nanoclaw', 'symphony', 'project-registry.cache.json');
+  path.join(
+    process.cwd(),
+    '.nanoclaw',
+    'symphony',
+    'project-registry.cache.json',
+  );
 
 function defaultDependencies(): ProjectBootstrapDependencies {
   return {
@@ -172,7 +185,9 @@ export function normalizeGitHubRepoSlug(input: string): string {
   }
 
   if (!trimmed.includes('/')) {
-    throw new Error(`Expected GitHub repo slug in owner/repo form, got "${trimmed}".`);
+    throw new Error(
+      `Expected GitHub repo slug in owner/repo form, got "${trimmed}".`,
+    );
   }
 
   return trimmed.replace(/\.git$/i, '');
@@ -198,10 +213,16 @@ function gitRemoteRepoSlug(localPath: string): string {
 export function deriveRepoIdentity(input: ProjectBootstrapInput): RepoIdentity {
   const parsed = ProjectBootstrapInputSchema.parse(input);
 
-  const explicitLocalPath = parsed.localPath ? path.resolve(parsed.localPath) : undefined;
+  const explicitLocalPath = parsed.localPath
+    ? path.resolve(parsed.localPath)
+    : undefined;
   const repoLooksLocal = isExistingDirectory(parsed.repo);
-  const localPath = explicitLocalPath || (repoLooksLocal ? path.resolve(parsed.repo) : undefined);
-  const githubRepo = localPath ? gitRemoteRepoSlug(localPath) : normalizeGitHubRepoSlug(parsed.repo);
+  const localPath =
+    explicitLocalPath ||
+    (repoLooksLocal ? path.resolve(parsed.repo) : undefined);
+  const githubRepo = localPath
+    ? gitRemoteRepoSlug(localPath)
+    : normalizeGitHubRepoSlug(parsed.repo);
   const repoBase = githubRepo.split('/').pop() || githubRepo;
   const projectKey = normalizeProjectKey(parsed.projectKey || repoBase);
   const displayName = parsed.displayName || titleCaseFromKey(projectKey);
@@ -228,9 +249,7 @@ function workspaceBase(projectKey: string): string {
   }
   const expanded = path.resolve(expandHome(configuredBase));
   const base =
-    path.basename(expanded) === 'nanoclaw'
-      ? path.dirname(expanded)
-      : expanded;
+    path.basename(expanded) === 'nanoclaw' ? path.dirname(expanded) : expanded;
   return path.join(base, projectKey);
 }
 
@@ -286,7 +305,10 @@ function templateDir(): string {
   );
 }
 
-function renderTemplate(templateName: string, replacements: Record<string, string>): string {
+function renderTemplate(
+  templateName: string,
+  replacements: Record<string, string>,
+): string {
   const templatePath = path.join(templateDir(), templateName);
   const source = fs.readFileSync(templatePath, 'utf8');
   return Object.entries(replacements).reduce(
@@ -318,7 +340,12 @@ function ensureLocalSymphonyLauncher(
   repoRoot: string,
   replacements: Record<string, string>,
 ): void {
-  const launcherPath = path.join(repoRoot, '.nanoclaw', 'bin', 'symphony-mcp.sh');
+  const launcherPath = path.join(
+    repoRoot,
+    '.nanoclaw',
+    'bin',
+    'symphony-mcp.sh',
+  );
   writeFileEnsuringDir(
     launcherPath,
     renderTemplate('symphony-mcp.sh.tpl', replacements),
@@ -397,13 +424,28 @@ export function writeRepoContractPack(input: {
   };
 
   const rootStatuses = [
-    maybeWriteInstructionFile(repoRoot, 'CLAUDE.md', 'CLAUDE.md.tpl', replacements),
-    maybeWriteInstructionFile(repoRoot, 'AGENTS.md', 'AGENTS.md.tpl', replacements),
+    maybeWriteInstructionFile(
+      repoRoot,
+      'CLAUDE.md',
+      'CLAUDE.md.tpl',
+      replacements,
+    ),
+    maybeWriteInstructionFile(
+      repoRoot,
+      'AGENTS.md',
+      'AGENTS.md.tpl',
+      replacements,
+    ),
   ];
   ensureLocalSymphonyLauncher(repoRoot, replacements);
 
   writeFileEnsuringDir(
-    path.join(repoRoot, 'docs', 'operations', 'project-control-plane-contract.md'),
+    path.join(
+      repoRoot,
+      'docs',
+      'operations',
+      'project-control-plane-contract.md',
+    ),
     renderTemplate('project-control-plane-contract.md.tpl', replacements),
   );
 
@@ -428,7 +470,9 @@ export function writeRepoContractPack(input: {
   const codexStatus = mergeCodexConfig(repoRoot);
   const mcpStatus = mergeMcpJson(repoRoot);
 
-  return [...rootStatuses, codexStatus, mcpStatus].every((status) => status === 'written')
+  return [...rootStatuses, codexStatus, mcpStatus].every(
+    (status) => status === 'written',
+  )
     ? 'written'
     : 'updated';
 }
@@ -499,11 +543,11 @@ export async function inspectProjectBootstrap(
   const registryDbId = requireEnv('NOTION_PROJECT_REGISTRY_DATABASE_ID');
   const registry = await dependencies.fetchRegistry(registryDbId);
   const registryEntry =
-    registry.projects.find((entry) => entry.projectKey === repo.projectKey) || null;
-  const linearProject =
-    registryEntry
-      ? await dependencies.findLinearProjectByName(registryEntry.linearProject)
-      : await dependencies.findLinearProjectByName(repo.linearProjectName);
+    registry.projects.find((entry) => entry.projectKey === repo.projectKey) ||
+    null;
+  const linearProject = registryEntry
+    ? await dependencies.findLinearProjectByName(registryEntry.linearProject)
+    : await dependencies.findLinearProjectByName(repo.linearProjectName);
 
   const plan: ProjectBootstrapPlan = {
     projectKey: repo.projectKey,
@@ -512,7 +556,8 @@ export async function inspectProjectBootstrap(
     githubRepo: repo.githubRepo,
     localPath: repo.localPath,
     linear: linearProject ? 'link' : 'create',
-    notionRoot: parsed.notionRootUrl || registryEntry?.notionRoot ? 'link' : 'create',
+    notionRoot:
+      parsed.notionRootUrl || registryEntry?.notionRoot ? 'link' : 'create',
     sessionContext: parsed.sessionContextUrl ? 'link' : 'create',
     registry: registryEntry ? 'update' : 'create',
     repoContractPack: repo.localPath ? 'write' : 'update',
@@ -541,14 +586,18 @@ export async function applyProjectBootstrap(
 
   const localPath = inspection.repo.localPath;
   if (!localPath) {
-    throw new Error('Applying project bootstrap requires --local-path (or a local repo path as --repo).');
+    throw new Error(
+      'Applying project bootstrap requires --local-path (or a local repo path as --repo).',
+    );
   }
 
   const linearResult = await dependencies.ensureLinearProject(
-    inspection.existing.registryEntry?.linearProject || inspection.repo.linearProjectName,
+    inspection.existing.registryEntry?.linearProject ||
+      inspection.repo.linearProjectName,
   );
 
-  let notionRootUrl = parsed.notionRootUrl || inspection.existing.registryEntry?.notionRoot || '';
+  let notionRootUrl =
+    parsed.notionRootUrl || inspection.existing.registryEntry?.notionRoot || '';
   if (!notionRootUrl) {
     const knowledgeParentPageId = requireEnv('NOTION_KNOWLEDGE_PARENT_PAGE_ID');
     const rootPage = await dependencies.createNotionChildPage({
@@ -565,7 +614,9 @@ export async function applyProjectBootstrap(
 
   let sessionContextUrl = parsed.sessionContextUrl || '';
   if (!sessionContextUrl) {
-    const sessionContextParentPageId = requireEnv('NOTION_SESSION_CONTEXT_PARENT_PAGE_ID');
+    const sessionContextParentPageId = requireEnv(
+      'NOTION_SESSION_CONTEXT_PARENT_PAGE_ID',
+    );
     const sessionPage = await dependencies.createNotionChildPage({
       parentPageId: sessionContextParentPageId,
       title: `${inspection.repo.displayName} Session Context`,
@@ -585,7 +636,10 @@ export async function applyProjectBootstrap(
     notionRootUrl,
   });
   const registryDbId = requireEnv('NOTION_PROJECT_REGISTRY_DATABASE_ID');
-  const registryResult = await dependencies.upsertRegistry(registryDbId, registryEntry);
+  const registryResult = await dependencies.upsertRegistry(
+    registryDbId,
+    registryEntry,
+  );
   const refreshedRegistry = await dependencies.fetchRegistry(registryDbId);
   dependencies.writeRegistryCache(DEFAULT_REGISTRY_PATH, refreshedRegistry);
 

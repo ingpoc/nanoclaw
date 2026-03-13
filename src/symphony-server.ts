@@ -1,8 +1,16 @@
 import fs from 'node:fs';
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from 'node:http';
 
 import type { ProjectRegistryEntry } from './symphony-routing.js';
-import { listReadyIssuesForProject, type SymphonyLinearIssueSummary } from './symphony-linear.js';
+import {
+  listReadyIssuesForProject,
+  type SymphonyLinearIssueSummary,
+} from './symphony-linear.js';
 import { loadProjectRegistryFromFile } from './symphony-registry.js';
 import {
   buildRuntimeState,
@@ -54,7 +62,11 @@ function formatRelativeDuration(startedAt: string, endedAt?: string): string {
   return `${seconds}s`;
 }
 
-function pluralize(value: number, singular: string, plural = `${singular}s`): string {
+function pluralize(
+  value: number,
+  singular: string,
+  plural = `${singular}s`,
+): string {
   return `${value} ${value === 1 ? singular : plural}`;
 }
 
@@ -108,7 +120,11 @@ async function loadDashboardSnapshot(registryPath: string) {
   return { registry, runtimeState, runs };
 }
 
-function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
+function sendJson(
+  res: ServerResponse,
+  statusCode: number,
+  payload: unknown,
+): void {
   res.statusCode = statusCode;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.end(`${JSON.stringify(payload, null, 2)}\n`);
@@ -497,12 +513,20 @@ function pageLayout(input: {
 </html>`;
 }
 
-function buildStatStrip(snapshot: Awaited<ReturnType<typeof loadDashboardSnapshot>>): string {
+function buildStatStrip(
+  snapshot: Awaited<ReturnType<typeof loadDashboardSnapshot>>,
+): string {
   const state = snapshot.runtimeState;
   const activeRuns = snapshot.runs.filter(
-    (run) => run.status === 'planned' || run.status === 'dispatching' || run.status === 'running',
+    (run) =>
+      run.status === 'planned' ||
+      run.status === 'dispatching' ||
+      run.status === 'running',
   ).length;
-  const totalReady = Object.values(state.projectReadyCounts).reduce((sum, count) => sum + count, 0);
+  const totalReady = Object.values(state.projectReadyCounts).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
 
   return `<div class="stat-strip">
   <div class="stat">
@@ -599,12 +623,16 @@ function renderRunTable(rows: string, emptyMessage: string): string {
 </table>`;
 }
 
-function renderHome(snapshot: Awaited<ReturnType<typeof loadDashboardSnapshot>>): string {
+function renderHome(
+  snapshot: Awaited<ReturnType<typeof loadDashboardSnapshot>>,
+): string {
   const projectRows = snapshot.runtimeState.projects
     .map((project) =>
       renderProjectRow(
         project,
-        snapshot.registry.projects.find((entry) => entry.projectKey === project.projectKey),
+        snapshot.registry.projects.find(
+          (entry) => entry.projectKey === project.projectKey,
+        ),
       ),
     )
     .join('');
@@ -614,7 +642,8 @@ function renderHome(snapshot: Awaited<ReturnType<typeof loadDashboardSnapshot>>)
   return pageLayout({
     title: 'Symphony Control Room',
     heading: 'Symphony Control Room',
-    subheading: 'Portfolio view of configured projects, dispatch readiness, and live execution state.',
+    subheading:
+      'Portfolio view of configured projects, dispatch readiness, and live execution state.',
     daemonHealthy: snapshot.runtimeState.daemonHealthy,
     body: `
       ${buildStatStrip(snapshot)}
@@ -710,7 +739,9 @@ function renderProjectDetail(input: {
   });
 }
 
-function renderRunsPage(snapshot: Awaited<ReturnType<typeof loadDashboardSnapshot>>): string {
+function renderRunsPage(
+  snapshot: Awaited<ReturnType<typeof loadDashboardSnapshot>>,
+): string {
   const runRows = snapshot.runs.map(renderRunRow).join('');
   return pageLayout({
     title: 'Symphony Run Ledger',
@@ -773,11 +804,13 @@ function renderRunDetail(run: SymphonyRunRecord): string {
                 <tr><td>Exit File</td><td class="mono">${htmlEscape(run.exitFile)}</td></tr>
               </tbody>
             </table>
-            ${run.error
-              ? `<div class="result-box error">${htmlEscape(run.error)}</div>`
-              : run.resultSummary
-                ? `<div class="result-box">${htmlEscape(run.resultSummary)}</div>`
-                : ''}
+            ${
+              run.error
+                ? `<div class="result-box error">${htmlEscape(run.error)}</div>`
+                : run.resultSummary
+                  ? `<div class="result-box">${htmlEscape(run.resultSummary)}</div>`
+                  : ''
+            }
           </section>
         </div>
         <div class="stack">
@@ -811,8 +844,9 @@ async function handleApi(
       snapshot.registry.projects.map((project) => ({
         ...project,
         runtime:
-          snapshot.runtimeState.projects.find((entry) => entry.projectKey === project.projectKey) ||
-          null,
+          snapshot.runtimeState.projects.find(
+            (entry) => entry.projectKey === project.projectKey,
+          ) || null,
       })),
     );
     return true;
@@ -821,7 +855,9 @@ async function handleApi(
   const projectMatch = url.pathname.match(/^\/api\/v1\/projects\/([^/]+)$/);
   if (projectMatch) {
     const projectKey = decodeURIComponent(projectMatch[1] || '');
-    const project = snapshot.registry.projects.find((entry) => entry.projectKey === projectKey);
+    const project = snapshot.registry.projects.find(
+      (entry) => entry.projectKey === projectKey,
+    );
     if (!project) {
       sendJson(res, 404, { error: `Unknown project: ${projectKey}` });
       return true;
@@ -830,8 +866,9 @@ async function handleApi(
     sendJson(res, 200, {
       ...project,
       runtime:
-        snapshot.runtimeState.projects.find((entry) => entry.projectKey === project.projectKey) ||
-        null,
+        snapshot.runtimeState.projects.find(
+          (entry) => entry.projectKey === project.projectKey,
+        ) || null,
       readyIssues,
       runs: snapshot.runs.filter((run) => run.projectKey === projectKey),
     });
@@ -874,7 +911,9 @@ async function handleHtml(
   const projectMatch = url.pathname.match(/^\/projects\/([^/]+)$/);
   if (projectMatch) {
     const projectKey = decodeURIComponent(projectMatch[1] || '');
-    const project = snapshot.registry.projects.find((entry) => entry.projectKey === projectKey);
+    const project = snapshot.registry.projects.find(
+      (entry) => entry.projectKey === projectKey,
+    );
     if (!project) {
       res.statusCode = 404;
       res.end('Unknown project');

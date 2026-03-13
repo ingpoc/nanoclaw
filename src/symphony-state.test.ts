@@ -4,7 +4,12 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { buildRuntimeState, buildRunId, listRunRecords, writeRunRecord } from './symphony-state.js';
+import {
+  buildRuntimeState,
+  buildRunId,
+  listRunRecords,
+  writeRunRecord,
+} from './symphony-state.js';
 
 const originalRegistryPath = process.env.NANOCLAW_SYMPHONY_REGISTRY_PATH;
 
@@ -19,7 +24,10 @@ afterEach(() => {
 describe('symphony-state', () => {
   it('writes and lists run records', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'symphony-state-'));
-    process.env.NANOCLAW_SYMPHONY_REGISTRY_PATH = path.join(tempRoot, 'project-registry.cache.json');
+    process.env.NANOCLAW_SYMPHONY_REGISTRY_PATH = path.join(
+      tempRoot,
+      'project-registry.cache.json',
+    );
 
     const runId = buildRunId('NCL-1', new Date('2026-03-11T00:00:00.000Z'));
     writeRunRecord({

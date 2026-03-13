@@ -9,7 +9,11 @@ describe('buildSymphonyLaunchPlan', () => {
       projectKey: 'nanoclaw',
       workspaceRoot: '/tmp/nanoclaw-symphony',
       secretScope: 'nanoclaw',
-      reasons: ['project:nanoclaw', 'work_class:nanoclaw-core', 'backend:claude-code'],
+      reasons: [
+        'project:nanoclaw',
+        'work_class:nanoclaw-core',
+        'backend:claude-code',
+      ],
       issueId: 'issue-1',
       issueIdentifier: 'NCL-42',
     });

@@ -1,6 +1,7 @@
 import type { ProjectRegistryEntry } from './symphony-routing.js';
 
-const LINEAR_API_URL = process.env.LINEAR_API_URL || 'https://api.linear.app/graphql';
+const LINEAR_API_URL =
+  process.env.LINEAR_API_URL || 'https://api.linear.app/graphql';
 const TEAM_KEY =
   process.env.NANOCLAW_LINEAR_TEAM_KEY || process.env.LINEAR_TEAM_KEY || '';
 
@@ -82,7 +83,9 @@ export async function linearGraphql<T>(
   return payload.data;
 }
 
-function labelNames(labels: { nodes?: Array<{ name: string }> } | null | undefined): string[] {
+function labelNames(
+  labels: { nodes?: Array<{ name: string }> } | null | undefined,
+): string[] {
   return (labels?.nodes || []).map((node) => node.name);
 }
 
@@ -186,7 +189,9 @@ export async function getIssueByIdentifier(
       team?: {
         id: string;
         key: string;
-        states?: { nodes?: Array<{ id: string; name: string; type: string }> } | null;
+        states?: {
+          nodes?: Array<{ id: string; name: string; type: string }>;
+        } | null;
       } | null;
     } | null;
   }>(
@@ -216,7 +221,9 @@ export async function getIssueByIdentifier(
   );
 
   if (!data.issue?.team?.states?.nodes) {
-    throw new Error(`Linear issue not found or missing team state metadata: ${identifier}`);
+    throw new Error(
+      `Linear issue not found or missing team state metadata: ${identifier}`,
+    );
   }
 
   return {
@@ -259,7 +266,10 @@ export function resolveLinearStateId(
   return state.id;
 }
 
-export async function updateIssueState(issueId: string, stateId: string): Promise<void> {
+export async function updateIssueState(
+  issueId: string,
+  stateId: string,
+): Promise<void> {
   await linearGraphql(
     `
       mutation SymphonyIssueUpdate($id: String!, $stateId: String!) {
@@ -272,7 +282,10 @@ export async function updateIssueState(issueId: string, stateId: string): Promis
   );
 }
 
-export async function addIssueComment(issueId: string, body: string): Promise<void> {
+export async function addIssueComment(
+  issueId: string,
+  body: string,
+): Promise<void> {
   await linearGraphql(
     `
       mutation SymphonyCommentCreate($issueId: String!, $body: String!) {
@@ -285,7 +298,9 @@ export async function addIssueComment(issueId: string, body: string): Promise<vo
   );
 }
 
-export async function findLinearTeamByKey(teamKey = requireLinearTeamKey()): Promise<LinearTeamRecord> {
+export async function findLinearTeamByKey(
+  teamKey = requireLinearTeamKey(),
+): Promise<LinearTeamRecord> {
   const data = await linearGraphql<{
     teams: {
       nodes: Array<{ id: string; key: string; name: string }>;
@@ -391,7 +406,9 @@ export async function createLinearProject(input: {
   );
 
   if (!data.projectCreate.success || !data.projectCreate.project) {
-    throw new Error(`Linear projectCreate did not return a project for "${input.name}".`);
+    throw new Error(
+      `Linear projectCreate did not return a project for "${input.name}".`,
+    );
   }
 
   return {

@@ -7,7 +7,8 @@ import {
   validateProjectRegistry,
 } from './symphony-routing.js';
 
-const NOTION_API_URL = process.env.NOTION_API_URL || 'https://api.notion.com/v1';
+const NOTION_API_URL =
+  process.env.NOTION_API_URL || 'https://api.notion.com/v1';
 const NOTION_VERSION = process.env.NOTION_VERSION || '2022-06-28';
 
 type NotionRichText = {
@@ -47,16 +48,24 @@ function propertyOrThrow(
 ): NotionProperty {
   const property = page.properties[propertyName];
   if (!property) {
-    throw new Error(`Notion registry page ${page.id} is missing property "${propertyName}".`);
+    throw new Error(
+      `Notion registry page ${page.id} is missing property "${propertyName}".`,
+    );
   }
   return property;
 }
 
 function richTextToString(items: NotionRichText[] | undefined): string {
-  return (items || []).map((item) => item.plain_text || '').join('').trim();
+  return (items || [])
+    .map((item) => item.plain_text || '')
+    .join('')
+    .trim();
 }
 
-function readStringProperty(page: NotionDatabasePage, propertyName: string): string {
+function readStringProperty(
+  page: NotionDatabasePage,
+  propertyName: string,
+): string {
   const property = propertyOrThrow(page, propertyName);
   switch (property.type) {
     case 'title': {
@@ -82,7 +91,10 @@ function readStringProperty(page: NotionDatabasePage, propertyName: string): str
   );
 }
 
-function readCheckboxProperty(page: NotionDatabasePage, propertyName: string): boolean {
+function readCheckboxProperty(
+  page: NotionDatabasePage,
+  propertyName: string,
+): boolean {
   const property = propertyOrThrow(page, propertyName);
   if (property.type !== 'checkbox') {
     throw new Error(
@@ -113,7 +125,10 @@ function readMultiSelectProperty(
   return values;
 }
 
-function readSelectProperty(page: NotionDatabasePage, propertyName: string): string {
+function readSelectProperty(
+  page: NotionDatabasePage,
+  propertyName: string,
+): string {
   const property = propertyOrThrow(page, propertyName);
   if (property.type !== 'select' || !property.select?.name?.trim()) {
     throw new Error(
@@ -173,9 +188,18 @@ function pageToRegistryEntry(page: NotionDatabasePage): ProjectRegistryEntry {
     notionRoot: readStringProperty(page, 'Notion Root'),
     githubRepo: readStringProperty(page, 'GitHub Repo'),
     symphonyEnabled: readCheckboxProperty(page, 'Symphony Enabled'),
-    allowedBackends: readMultiSelectProperty(page, 'Allowed Backends') as ProjectRegistryEntry['allowedBackends'],
-    defaultBackend: readSelectProperty(page, 'Default Backend') as ProjectRegistryEntry['defaultBackend'],
-    workClassesSupported: readMultiSelectProperty(page, 'Work Classes Supported') as ProjectRegistryEntry['workClassesSupported'],
+    allowedBackends: readMultiSelectProperty(
+      page,
+      'Allowed Backends',
+    ) as ProjectRegistryEntry['allowedBackends'],
+    defaultBackend: readSelectProperty(
+      page,
+      'Default Backend',
+    ) as ProjectRegistryEntry['defaultBackend'],
+    workClassesSupported: readMultiSelectProperty(
+      page,
+      'Work Classes Supported',
+    ) as ProjectRegistryEntry['workClassesSupported'],
     secretScope: readStringProperty(page, 'Secret Scope'),
     workspaceRoot: readStringProperty(page, 'Workspace Root'),
     readyPolicy: readStringProperty(page, 'Ready Policy'),
@@ -310,7 +334,10 @@ export async function upsertProjectRegistryEntryInNotion(
   databaseId: string,
   entry: ProjectRegistryEntry,
 ): Promise<{ action: 'created' | 'updated'; page: NotionPageReference }> {
-  const existing = await findProjectRegistryPageByProjectKey(databaseId, entry.projectKey);
+  const existing = await findProjectRegistryPageByProjectKey(
+    databaseId,
+    entry.projectKey,
+  );
 
   if (existing) {
     const payload = await notionRequest<{

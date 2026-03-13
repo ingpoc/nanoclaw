@@ -45,6 +45,7 @@ Then run `/setup`. Claude Code handles everything: dependencies, authentication,
 **Customization = code changes.** No configuration sprawl. Want different behavior? Modify the code. The codebase is small enough that it's safe to make changes.
 
 **AI-native.**
+
 - No installation wizard; Claude Code guides setup.
 - No monitoring dashboard; ask Claude what's happening.
 - No debugging tools; describe the problem and Claude fixes it.
@@ -75,6 +76,7 @@ Talk to your assistant with the trigger word (default: `@Andy`):
 ```
 
 From the main channel (your self-chat), you can manage groups and tasks:
+
 ```
 @Andy list all scheduled tasks across groups
 @Andy pause the Monday briefing task
@@ -107,9 +109,11 @@ Users then run `/add-telegram` on their fork and get clean code that does exactl
 Skills we'd like to see:
 
 **Communication Channels**
+
 - `/add-slack` - Add Slack
 
 **Session Management**
+
 - `/clear` - Add a `/clear` command that compacts the conversation (summarizes context while preserving critical information in the same session). Requires figuring out how to trigger compaction programmatically via the Claude Agent SDK.
 
 ## Requirements
@@ -128,6 +132,7 @@ WhatsApp (baileys) --> SQLite --> Polling loop --> Container (Claude Agent SDK) 
 Single Node.js process. Agents execute in isolated Linux containers with filesystem isolation. Only mounted directories are accessible. Per-group message queue with concurrency control. IPC via filesystem.
 
 Key files:
+
 - `src/index.ts` - Orchestrator: state, message loop, agent invocation
 - `src/channels/whatsapp.ts` - WhatsApp connection, auth, send/receive
 - `src/ipc.ts` - IPC watcher and task processing
@@ -182,6 +187,7 @@ bash scripts/jarvis-ops.sh watch --lines 120
 ```
 
 Notes:
+
 - `smoke` uses the live `store/messages.db` path by default.
 - Use `bash scripts/jarvis-ops.sh smoke --isolated-db` only when you explicitly want isolated in-memory validation.
 - Incident registry is stored at `.claude/progress/incident.json`.
@@ -208,4 +214,3 @@ Questions? Ideas? [Join the Discord](https://discord.gg/VDdww8qS42).
 ## License
 
 MIT
-# Test

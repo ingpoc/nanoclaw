@@ -2,6 +2,36 @@
 
 Template for evaluating whether a workflow failure should become autonomous.
 
+## Main Agent Responsibility: Be Smart
+
+The main agent using this criteria must be smart about **when** to apply autonomous loops:
+
+### When to Use Autonomous Loops
+
+- **High frequency**: Issue occurs often in your workflow
+- **Deterministic fix**: Same fix always works
+- **Time-consuming**: Saves significant wait time
+- **Non-blocking**: Doesn't prevent other work
+
+### When NOT to Use
+
+- **One-off tasks**: Single execution, not recurring
+- **Requires judgment**: Human context needed
+- **Expensive**: More cost than manual intervention
+- **Fast enough**: Manual is faster
+
+### Decision: Spawn vs Skip
+
+Before implementing autonomous handler:
+
+1. **Assess frequency**: Is this a recurring pattern?
+2. **Assess complexity**: Can it be fully automated?
+3. **Assess cost**: Tokens saved > tokens spent?
+4. **Assess risk**: What if it goes wrong?
+
+If all yes → implement autonomous loop
+If any no → keep manual
+
 ## Decision Matrix
 
 | Parameter | Description | Score (1-5) | Weight |
@@ -124,3 +154,56 @@ Store automation candidates discovered during session recall:
 - [ ] Implemented
 - [ ] Rejected (reason: )
 ```
+
+## Haiku Subagent Implementation Pattern
+
+For autonomous handlers that run in background, use Haiku subagents for cost efficiency:
+
+### Pattern: Parallel Monitoring + Auto-Fix
+
+```markdown
+## [Monitor Name] Haiku
+
+**Trigger**: Score ≥15 autonomous handler
+
+**Implementation**:
+agent:Haiku
+description: [What this monitors]
+prompt: |
+  Monitor [target] every [interval].
+  Use: [command to check]
+  If [failure condition]:
+    - [auto-fix command]
+    - [report action]
+  If [success condition]: report [status]
+  Stop when [stop condition].
+model: haiku
+run_in_background: true
+```
+
+### Smart Spawning Logic
+
+Decide when to spawn vs skip:
+
+```bash
+# Check if parallel monitoring is worthwhile
+file_count=$(git diff --name-only HEAD~1 | wc -l)
+if [ "$file_count" -gt [THRESHOLD] ]; then
+  # Spawn parallel Haiku agents
+else
+  # Skip, run sequential
+fi
+```
+
+### When to Kill
+
+- PR merged → kill all monitors
+- Any critical failure → kill others, keep fixing
+- User requests stop → kill all
+- Blocked (conflict) → keep conflict monitor, kill others
+
+### Cost Efficiency
+
+- Haiku: ~68K tokens/tick
+- Use for: monitoring loops, periodic checks
+- Don't use for: one-off commands (use direct execution)

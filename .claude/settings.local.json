@@ -62,7 +62,16 @@
       "Bash(lsof -p 48424 2>/dev/null | grep cwd | head -3; ps -o pid,cwd -p 48424 2>/dev/null)",
       "Bash(crontab -l 2>/dev/null | grep -i nightly || echo \"no cron entries\")",
       "mcp__plugin_linear_linear__get_issue",
-      "mcp__plugin_linear_linear__save_issue"
+      "mcp__plugin_linear_linear__save_issue",
+      "Bash(ls scripts/workflow/*.js | xargs -I {} basename {} | head -20)",
+      "Bash(gh auth:*)",
+      "mcp__plugin_linear_linear__list_teams",
+      "mcp__plugin_linear_linear__create_issue_label",
+      "mcp__plugin_linear_linear__list_projects",
+      "mcp__plugin_linear_linear__save_project",
+      "mcp__plugin_linear_linear__list_issues",
+      "mcp__plugin_linear_linear__create_document",
+      "mcp__plugin_linear_linear__list_documents"
     ]
   },
   "enableAllProjectMcpServers": true,

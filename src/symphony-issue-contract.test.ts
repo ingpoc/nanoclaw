@@ -42,7 +42,9 @@ describe('parseSymphonyIssueContract', () => {
   });
 
   it('reports missing required sections', () => {
-    expect(missingSymphonySections('## Scope\nx')).toContain('Problem Statement');
+    expect(missingSymphonySections('## Scope\nx')).toContain(
+      'Problem Statement',
+    );
     expect(() => parseSymphonyIssueContract('## Scope\nx')).toThrow(
       /missing required sections/i,
     );

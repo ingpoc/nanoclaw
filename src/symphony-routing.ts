@@ -64,6 +64,7 @@ export const SymphonyIssueRoutingSchema = z.object({
   workClass: SymphonyWorkClassSchema,
   executionLane: SymphonyExecutionLaneSchema,
   targetRuntime: SymphonyTargetRuntimeSchema.optional(),
+  agentName: z.string().optional(),
   repoUrl: z.string().min(1),
   baseBranch: z.string().min(1),
   notionContextUrl: z.string().optional(),
@@ -75,6 +76,7 @@ export type SymphonyBackendResolution = {
   projectKey: string;
   workspaceRoot: string;
   secretScope: string;
+  agentName?: string;
   reasons: string[];
 };
 
@@ -82,9 +84,7 @@ function normalizeState(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function runtimeToBackend(
-  runtime: SymphonyTargetRuntime,
-): SymphonyBackend {
+function runtimeToBackend(runtime: SymphonyTargetRuntime): SymphonyBackend {
   switch (runtime) {
     case 'codex':
       return 'codex';
@@ -95,15 +95,15 @@ function runtimeToBackend(
   }
 }
 
-export function validateProjectRegistry(
-  input: unknown,
-): ProjectRegistry {
+export function validateProjectRegistry(input: unknown): ProjectRegistry {
   const registry = ProjectRegistrySchema.parse(input);
   const keys = new Set<string>();
 
   for (const project of registry.projects) {
     if (keys.has(project.projectKey)) {
-      throw new Error(`Duplicate projectKey in registry: ${project.projectKey}`);
+      throw new Error(
+        `Duplicate projectKey in registry: ${project.projectKey}`,
+      );
     }
     keys.add(project.projectKey);
 
@@ -121,7 +121,9 @@ export function findProjectRegistryEntry(
   registry: ProjectRegistry,
   projectKey: string,
 ): ProjectRegistryEntry {
-  const entry = registry.projects.find((project) => project.projectKey === projectKey);
+  const entry = registry.projects.find(
+    (project) => project.projectKey === projectKey,
+  );
   if (!entry) {
     throw new Error(`Unknown Symphony projectKey: ${projectKey}`);
   }
@@ -137,15 +139,11 @@ export function resolveSymphonyBackend(
   const reasons: string[] = [];
 
   if (!project.symphonyEnabled) {
-    throw new Error(
-      `Project ${project.projectKey} is not Symphony-enabled.`,
-    );
+    throw new Error(`Project ${project.projectKey} is not Symphony-enabled.`);
   }
 
   if (issue.executionLane !== 'symphony') {
-    throw new Error(
-      `Issue ${issue.identifier} is not routed to Symphony.`,
-    );
+    throw new Error(`Issue ${issue.identifier} is not routed to Symphony.`);
   }
 
   if (normalizeState(issue.state) !== 'ready') {
@@ -155,9 +153,7 @@ export function resolveSymphonyBackend(
   }
 
   if (issue.workClass === 'governance' || issue.workClass === 'research') {
-    throw new Error(
-      `Symphony must not execute ${issue.workClass} issues.`,
-    );
+    throw new Error(`Symphony must not execute ${issue.workClass} issues.`);
   }
 
   if (!project.workClassesSupported.includes(issue.workClass)) {
@@ -195,6 +191,7 @@ export function resolveSymphonyBackend(
     projectKey: project.projectKey,
     workspaceRoot: project.workspaceRoot,
     secretScope: project.secretScope,
+    agentName: issue.agentName,
     reasons,
   };
 }

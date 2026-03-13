@@ -42,6 +42,7 @@ Run the fetch script:
 ```
 
 Parse the structured status block between `<<< STATUS` and `STATUS >>>` markers. Extract:
+
 - `TEMP_DIR` — path to extracted upstream files
 - `REMOTE` — which git remote was used
 - `CURRENT_VERSION` — version from local `package.json`
@@ -63,6 +64,7 @@ npx tsx scripts/update-core.ts --json --preview-only <TEMP_DIR>
 This outputs JSON with: `currentVersion`, `newVersion`, `filesChanged`, `filesDeleted`, `conflictRisk`, `customPatchesAtRisk`.
 
 Present to the user:
+
 - "Updating from **{currentVersion}** to **{newVersion}**"
 - "{N} files will be changed" — list them if <= 20, otherwise summarize
 - If `conflictRisk` is non-empty: "These files have skill modifications and may conflict: {list}"
@@ -72,6 +74,7 @@ Present to the user:
 ## 4. Confirm
 
 Use `AskUserQuestion`: "Apply this update?" with options:
+
 - "Yes, apply update"
 - "No, cancel"
 
@@ -98,18 +101,32 @@ Parse the JSON output. The result has: `success`, `previousVersion`, `newVersion
 **If backupPending=true:** There are unresolved merge conflicts.
 
 For each file in `mergeConflicts`:
+
 1. Read the file — it contains conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
 2. Check if there's an intent file for this path in any applied skill (e.g., `.claude/skills/<skill>/modify/<path>.intent.md`)
 3. Use the intent file and your understanding of the codebase to resolve the conflict
 4. Write the resolved file
 
-After resolving all conflicts:
+After resolving all conflicts, verify no conflict markers remain and check for duplicate declarations:
 
 ```bash
-npx tsx -e "import { clearBackup } from './skills-engine/backup.js'; clearBackup();"
+# Verify all markers are gone
+grep -rn "<<<<<<\|=======\|>>>>>>>" src/ container/ --include="*.ts" | wc -l
+# Expected: 0
+
+# Check for duplicate declarations (common when both sides of a conflict contain the same block)
+npm run build 2>&1 | grep "Cannot redeclare\|Duplicate function\|Duplicate identifier" | head -20
 ```
 
-This clears the preserved backup, confirming the resolution. The old `scripts/post-update.ts` wrapper no longer exists.
+If duplicate declarations appear: open the file, find the duplicated block, and delete the second copy — the update merge applied both conflict sides as full blocks.
+
+Then clear the backup:
+
+```bash
+npx tsx -e "import('./skills-engine/backup.ts').then(m => m.clearBackup()).then(() => console.log('backup cleared'))"
+```
+
+Note: static `import` syntax in `-e` fails (MODULE_NOT_FOUND). Always use dynamic `import()` with `.ts` extension when invoking skills-engine modules from the command line.
 
 **If you cannot confidently resolve a conflict:** Show the user the conflicting sections and ask them to choose or provide guidance.
 
@@ -136,6 +153,7 @@ npm run build && npm test
 ```
 
 **If build fails:** Show the error. Common causes:
+
 - Type errors from merged files — read the error, fix the file, retry
 - Missing dependencies — run `npm install` first, retry
 
@@ -152,6 +170,7 @@ rm -rf <TEMP_DIR>
 ```
 
 Report final status:
+
 - "Updated from **{previousVersion}** to **{newVersion}**"
 - Number of files changed
 - Any warnings (failed custom patches, failed skill tests, migration issues)
@@ -165,7 +184,9 @@ Report final status:
 
 **Build fails after update:** Check if `package.json` dependencies changed. Run `npm install` to pick up new dependencies.
 
-**Rollback:** If something goes wrong after applying but before cleanup, the backup is still in `.nanoclaw/backup/`. Run:
+**Rollback:** If something goes wrong after applying but before cleanup, restore from `.nanoclaw/backup/`:
+
 ```bash
-npx tsx -e "import { restoreBackup, clearBackup } from './skills-engine/backup.js'; restoreBackup(); clearBackup();"
+# Restore backed-up files
+cp -r .nanoclaw/backup/* . && rm -rf .nanoclaw/backup && echo "rollback complete"
 ```

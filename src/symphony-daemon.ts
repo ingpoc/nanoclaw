@@ -29,7 +29,9 @@ function pidIsAlive(pid: number | null): boolean {
   }
 }
 
-function readExitPayload(filePath: string): { code: number; finishedAt: string } | null {
+function readExitPayload(
+  filePath: string,
+): { code: number; finishedAt: string } | null {
   if (!fs.existsSync(filePath)) {
     return null;
   }
@@ -41,13 +43,21 @@ function readExitPayload(filePath: string): { code: number; finishedAt: string }
 
 async function transitionIssueForRun(
   run: SymphonyRunRecord,
-  statusName: 'Review' | 'Blocked',
+  statusName: 'In Review' | 'Blocked' | 'Done',
   comment: string,
 ): Promise<void> {
   const issue = await getIssueByIdentifier(run.issueIdentifier);
   const stateId = resolveLinearStateId(issue, statusName);
   await updateIssueState(issue.id, stateId);
   await addIssueComment(issue.id, comment);
+}
+
+function isResearchOrGovernance(issue: { labels: string[] }): boolean {
+  return issue.labels.some(
+    (label) =>
+      label.toLowerCase() === 'research' ||
+      label.toLowerCase() === 'governance',
+  );
 }
 
 function cancellationComment(run: SymphonyRunRecord, reason: string): string {
@@ -62,7 +72,9 @@ function cancellationComment(run: SymphonyRunRecord, reason: string): string {
   ].join('\n');
 }
 
-async function reconcileRun(run: SymphonyRunRecord): Promise<SymphonyRunRecord> {
+async function reconcileRun(
+  run: SymphonyRunRecord,
+): Promise<SymphonyRunRecord> {
   if (
     run.status !== 'planned' &&
     run.status !== 'dispatching' &&
@@ -79,14 +91,23 @@ async function reconcileRun(run: SymphonyRunRecord): Promise<SymphonyRunRecord> 
         endedAt: exitPayload.finishedAt,
         resultSummary: 'Backend process exited successfully.',
       });
+      // Check if this is research/governance work - move to Done; feature work goes to In Review
+      const issue = await getIssueByIdentifier(run.issueIdentifier);
+      const isResearch = isResearchOrGovernance(issue);
+      const finalStatus: 'In Review' | 'Done' = isResearch
+        ? 'Done'
+        : 'In Review';
       await transitionIssueForRun(
         next,
-        'Review',
+        finalStatus,
         [
           '<!-- symphony-reconcile -->',
           `Run ID: ${next.runId}`,
           `Backend: ${next.backend}`,
-          `Status: Review`,
+          `Status: ${finalStatus}`,
+          isResearch
+            ? '🔄 Research/governance work - use recurring in Linear for cadence'
+            : '',
           `Workspace: ${next.workspacePath}`,
           `Log File: ${next.logFile}`,
         ].join('\n'),
@@ -247,7 +268,11 @@ export async function stopSymphonyRun(input: {
     resultSummary: 'Run canceled by operator.',
   });
 
-  await transitionIssueForRun(next, 'Blocked', cancellationComment(next, reason));
+  await transitionIssueForRun(
+    next,
+    'Blocked',
+    cancellationComment(next, reason),
+  );
 
   return {
     run: next,

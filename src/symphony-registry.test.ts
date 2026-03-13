@@ -113,9 +113,9 @@ describe('fetchProjectRegistryFromNotion', () => {
 
     process.env.NOTION_TOKEN = 'test-token';
 
-    await expect(
-      fetchProjectRegistryFromNotion('registry-db'),
-    ).rejects.toThrow(/missing property "Project Key"/i);
+    await expect(fetchProjectRegistryFromNotion('registry-db')).rejects.toThrow(
+      /missing property "Project Key"/i,
+    );
 
     global.fetch = originalFetch;
   });

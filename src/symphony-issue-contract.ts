@@ -30,7 +30,9 @@ function extractSection(body: string, sectionName: string): string {
   const start = match.index + match[0].length;
   const remaining = body.slice(start);
   const nextHeadingIndex = remaining.search(/^##+\s+/m);
-  return (nextHeadingIndex === -1 ? remaining : remaining.slice(0, nextHeadingIndex)).trim();
+  return (
+    nextHeadingIndex === -1 ? remaining : remaining.slice(0, nextHeadingIndex)
+  ).trim();
 }
 
 function parseRoutingLine(section: string, fieldName: string): string {
@@ -46,6 +48,7 @@ export type SymphonyIssueContract = {
   workClass: SymphonyWorkClass;
   executionLane: SymphonyExecutionLane;
   targetRuntime: SymphonyTargetRuntime;
+  agentName?: string;
   missingSections: string[];
 };
 
@@ -55,7 +58,9 @@ export function missingSymphonySections(body: string): string[] {
   );
 }
 
-export function parseSymphonyIssueContract(body: string): SymphonyIssueContract {
+export function parseSymphonyIssueContract(
+  body: string,
+): SymphonyIssueContract {
   const missingSections = missingSymphonySections(body);
   if (missingSections.length > 0) {
     throw new Error(
@@ -74,10 +79,16 @@ export function parseSymphonyIssueContract(body: string): SymphonyIssueContract 
     parseRoutingLine(routingSection, 'Work Class').toLowerCase(),
   );
 
+  // Optional: Agent name to invoke via --agent flag (e.g. nightly-improvement-researcher)
+  const agentPattern = /^[-*]\s*Agent\s*:\s*(.+)$/im;
+  const agentMatch = routingSection.match(agentPattern);
+  const agentName = agentMatch?.[1]?.trim() || undefined;
+
   return {
     workClass,
     executionLane,
     targetRuntime,
+    agentName,
     missingSections,
   };
 }

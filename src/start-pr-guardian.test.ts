@@ -84,4 +84,3 @@ describe('start-pr-guardian launcher', () => {
     expect(output).toContain('--output-schema');
   });
 });
-

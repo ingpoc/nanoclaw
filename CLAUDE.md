@@ -37,6 +37,7 @@ NanoClaw baseline is the default. Jarvis docs apply only when working on the `ja
 ```text
 AT SESSION START → run bash scripts/workflow/session-start.sh --agent <claude|codex>
 AT SESSION START, session handoff, or when changing recall/sync/export behavior → read docs/workflow/runtime/session-recall.md
+DURING SESSION RECALL at end of session → evaluate friction points against docs/troubleshooting/AUTONOMOUS-LOOP-CRITERIA.md and log candidates scoring ≥15
 AT TASK START after routing/preflight → state the selected route briefly (intent + first workflow/skill + MCP if relevant)
 BEFORE using the collaboration sweep, changing sweep protocol, or updating agent-category affinity → read docs/workflow/control-plane/session-work-sweep.md
 WHEN session start is blocked by required Linear review or triage actions from the sweep → read docs/workflow/control-plane/session-work-sweep.md
@@ -50,6 +51,8 @@ BEFORE workflow optimization from external research → read docs/workflow/strat
 BEFORE changing nighttime improvement evaluation, overnight research cadence, or token-budgeted upstream/tooling scanning → read docs/workflow/strategy/nightly-evaluation-loop.md
 BEFORE weekly slop cleanup or tooling-governance review → read docs/workflow/strategy/weekly-slop-optimization-loop.md
 BEFORE running simplify/refactor work on fork customizations → read docs/workflow/strategy/weekly-slop-optimization-loop.md and docs/ARCHITECTURE.md
+BEFORE pushing branch to origin or creating PR → use push skill (runs validation, pre-push format autofix, creates/updates PR)
+BEFORE merging PR or landing branch to main → use land skill (monitors CI, auto-fixes common failures, squash-merges)
 BEFORE reviewing hooks/subagents or built-in routing budgets → read docs/operations/tooling-governance-budget.json
 BEFORE split-lane Claude/Codex worktrees or review fanout → read docs/workflow/delivery/unified-codex-claude-loop.md
 BEFORE defining subagent fanout for plan/review/verification → read docs/operations/subagent-catalog.md and docs/operations/subagent-routing.md

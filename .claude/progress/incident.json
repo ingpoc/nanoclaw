@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-17T01:40:00+05:30",
+  "updated_at": "2026-03-17T01:59:30+05:30",
   "incidents": [
     {
       "id": "inc-20260316-worker-timeout-retry-loop",
@@ -25,6 +25,17 @@
         "Discovered while mapping the LaunchDeck proving-program docs under docs-topology-cleanup.",
         "build-feature-catalog still generates output, but validate-feature-catalog fails with missing refs under docs-topology-cleanup, workflow-collaboration-surfaces, and autonomous-lane-control-plane.",
         "New proving-program touch-set was kept aligned by updating .claude/catalog/feature-catalog.seed.json and re-running check-touch-set.ts, but the broader seed cleanup is still pending."
+      ]
+    },
+    {
+      "id": "inc-20260317-dispatch-without-worker-link",
+      "status": "open",
+      "summary": "Andy can emit a user-facing 'Dispatched' message for a request while the backing andy_requests row remains coordinator_active with no worker_run_id and no worker_runs row, creating a trust-breaking mismatch between visible status and actual execution state.",
+      "notes": [
+        "Discovered during the first live LaunchDeck proving run on request req-1773692784606-5274h0tr for NAN-57 / LD-01.",
+        "User-facing evidence: Andy sent a 'Dispatched: NAN-57 LD-01' message naming jarvis-worker-1 and a branch.",
+        "Database evidence after the dispatch message: andy_requests row stayed state=coordinator_active with worker_run_id empty, and worker_runs had no row for request_id=req-1773692784606-5274h0tr.",
+        "Follow-up status query repeated the coordinator_active state ('Coordinator is processing your request'), confirming the visible dispatch message did not correspond to a linked worker run."
       ]
     }
   ]

@@ -78,6 +78,8 @@ Inside a container, OpenCode auto-loads from these paths (no triggers needed):
 
 ## CI Sync Rule
 
-When compressing CLAUDE.md (removing trigger references), update `scripts/check-workflow-contracts.sh` in the same change — it validates trigger presence.
+CI scripts (`scripts/check-workflow-contracts.sh`, `scripts/check-claude-codex-mirror.sh`) validate doc existence and trigger references. When these checks go stale:
 
-When deleting docs moved to skills, remove the file existence check from the same CI script.
+- **Fix the CI script**, not the content it checks. Never add content back just to pass a stale check.
+- When compressing CLAUDE.md: remove the corresponding trigger check from the CI script in the same change.
+- When deleting a doc moved to a skill: remove the file existence check from the CI script in the same change.

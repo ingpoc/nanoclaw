@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-16T19:16:30Z",
+  "updated_at": "2026-03-17T01:40:00+05:30",
   "incidents": [
     {
       "id": "inc-20260316-worker-timeout-retry-loop",
@@ -15,6 +15,16 @@
         "2026-03-16 worker shutdown hardening: single-shot worker agent-runtime now writes a graceful _close sentinel first and only falls back to container stop after a grace window, reducing normal post-completion exit 137 dependence.",
         "2026-03-16 worker confidence: live probes reached review_requested on both jarvis-worker-1 (probe-jarvis-worker-1-1773688332-4691) and jarvis-worker-2 (probe-jarvis-worker-2-1773687505-30281); verify-worker-connectivity now passes.",
         "2026-03-16 ops signal cleanup: preflight/status now report recent successful worker evidence instead of misclassifying quiet lanes as inactive from chat message timestamps alone."
+      ]
+    },
+    {
+      "id": "inc-20260317-feature-catalog-missing-refs",
+      "status": "open",
+      "summary": "Feature catalog strict validation is failing because several legacy docs and launchd references in the seed catalog no longer exist, which weakens the feature-tracking gate for docs and workflow work.",
+      "notes": [
+        "Discovered while mapping the LaunchDeck proving-program docs under docs-topology-cleanup.",
+        "build-feature-catalog still generates output, but validate-feature-catalog fails with missing refs under docs-topology-cleanup, workflow-collaboration-surfaces, and autonomous-lane-control-plane.",
+        "New proving-program touch-set was kept aligned by updating .claude/catalog/feature-catalog.seed.json and re-running check-touch-set.ts, but the broader seed cleanup is still pending."
       ]
     }
   ]

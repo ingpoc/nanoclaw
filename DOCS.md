@@ -57,32 +57,27 @@ Workflow docs are physically grouped by operational concern.
 - `docs/workflow/github/github-delivery-governance.md`: GitHub-only delivery governance for PRs, reviews, CI, and branch protection
 - `docs/workflow/github/github-offload-boundary-loop.md`: GitHub-vs-local workflow placement policy
 
-### `docs/workflow/docs-discipline/`
+### Docs Governance
 
-- `docs/workflow/docs-discipline/doc-creation-contract.md`: admission gate and template for new docs and `CLAUDE.md` triggers
-- `docs/workflow/docs-discipline/docs-pruning-loop.md`: docs lifecycle cleanup, deletion, and sync checks
-- `docs/workflow/docs-discipline/nanoclaw-root-claude-compression.md`: root `CLAUDE.md` compression rule
-- `docs/workflow/docs-discipline/andy-compression-loop.md`: Andy lane `CLAUDE.md` compression rule
-- `docs/workflow/docs-discipline/skill-routing-preflight.md`: task-start routing checklist for skills, docs, and MCPs
+Consolidated into `.claude/rules/docs-governance.md` (auto-loaded rule).
 
 ### `docs/workflow/strategy/`
 
 - `docs/workflow/strategy/workflow-optimization-loop.md`: research-to-pilot workflow optimization process and decision gates
-- `docs/workflow/strategy/nightly-evaluation-loop.md`: token-efficient overnight upstream/tooling evaluation lane and morning Codex triage contract
-- `docs/workflow/strategy/weekly-slop-optimization-loop.md`: weekly deterministic slop-pruning workflow for docs/scripts/config/code surfaces
+- `docs/workflow/strategy/code-execution-mcp-pattern.md`: distilled code-execution-with-MCP research and tool selection guide
 
 ## `docs/operations/`
 
 - `docs/operations/roles-classification.md`: role authority and handoff model for user shaping, Andy coordination, NanoClaw execution lanes, and downstream workers
 - `docs/operations/update-requirements-matrix.md`: required doc/code update surfaces by change type
 - `docs/operations/agreement-sync-protocol.md`: agreement-driven sync protocol for docs/code
-- `docs/operations/skills-vs-docs-map.md`: decision boundary for skill-first vs docs-first execution
+- Skill-vs-docs routing: consolidated into `.claude/rules/docs-governance.md`
 - `docs/operations/claude-codex-adapter-matrix.md`: mapping of workflow intents to Claude/Codex internal controls
 - `docs/operations/subagent-catalog.md`: canonical subagent purpose/scope/output contracts
 - `docs/operations/tooling-governance-budget.json`: deterministic budget and required coverage for hooks, subagents, and built-in tooling gates
 - `docs/operations/upstream-sync-policy.md`: upstream sync operating policy
 - `docs/operations/runtime-vs-prebaked-boundary.md`: runtime-local vs prebaked placement policy
-- `docs/operations/workflow-setup-responsibility-map.md`: ownership map for setup and workflow governance
+- Workflow responsibility ownership: derivable from code structure and git blame
 
 ## `docs/tools/`
 
@@ -120,7 +115,7 @@ Workflow docs are physically grouped by operational concern.
 - `container/rules/jarvis-worker-operating-rule.md`
 - `.claude/rules/nanoclaw-jarvis-debug-loop.md`
 - `.claude/rules/jarvis-dispatch-contract-discipline.md`
-- `.claude/rules/andy-compression-loop.md`
+- `.claude/rules/docs-governance.md`
 
 ## Maintenance Rule
 

@@ -3,6 +3,8 @@ import path from 'path';
 
 import { CronExpressionParser } from 'cron-parser';
 
+import { writeJsonAtomic } from './fs-atomic.js';
+
 import {
   DATA_DIR,
   ENABLE_DYNAMIC_GROUP_REGISTRATION,
@@ -92,10 +94,7 @@ function writeDispatchBlockEvent(
   const errorDir = path.join(ipcBaseDir, 'errors');
   fs.mkdirSync(errorDir, { recursive: true });
   const filename = `dispatch-block-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`;
-  fs.writeFileSync(
-    path.join(errorDir, filename),
-    JSON.stringify(event, null, 2),
-  );
+  writeJsonAtomic(path.join(errorDir, filename), event);
 }
 
 function buildDispatchBlockedMessage(event: DispatchBlockEvent): string {
@@ -1063,10 +1062,7 @@ export async function processTaskIpc(
 
       const steerDir = path.join(IPC_BASE_DIR, workerRun.group_folder, 'steer');
       fs.mkdirSync(steerDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(steerDir, `${run_id}.json`),
-        JSON.stringify(steerEvent, null, 2),
-      );
+      writeJsonAtomic(path.join(steerDir, `${run_id}.json`), steerEvent);
 
       insertSteeringEvent({
         steer_id: steerId,

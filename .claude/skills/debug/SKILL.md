@@ -77,25 +77,49 @@ container ls -a | rg 'nanoclaw-andy-developer|nanoclaw-jarvis'
 
 ### Apple Container Networking
 
-Containers need manual networking setup for internet access:
+Apple Container uses a separate bridge network (`192.168.64.0/24`). The host is always at `192.168.64.1` (`bridge100`). **`host.docker.internal` does NOT resolve — it has no built-in DNS entry.**
+
+#### Diagnostic: test host reachability from inside container
+
+```bash
+container run --rm --entrypoint sh nanoclaw-agent:latest -c '
+  curl -s --max-time 5 http://192.168.64.1:7802/health && echo "7802 ok" || echo "7802 FAIL"
+  curl -s --max-time 5 http://192.168.64.1:3001/ 2>&1 | head -1 && echo "3001 ok" || echo "3001 FAIL"
+'
+```
+
+#### Full fix chain (apply in order when container sessions fail)
+
+| # | Symptom | Root Cause | Code Fix |
+|---|---------|-----------|---------|
+| 1 | `host.docker.internal` unresolvable | Not built-in for Apple Container | `CONTAINER_HOST_GATEWAY` = `appleContainerBridgeIp()` in `src/container-runtime.ts` |
+| 2 | Credential proxy unreachable | `detectProxyBindHost()` returns `127.0.0.1` for darwin | Returns `appleContainerBridgeIp()` when `IS_APPLE_CONTAINER_RUNTIME` |
+| 3 | API returns 404 | Credential proxy drops upstream base path (`/anthropic`) | `forwardPath = basePath + req.url` in `src/credential-proxy.ts` |
+| 4 | Linear/Notion tools throw "Missing API key" | `process.env.LINEAR_API_KEY` not set in launchd process | Use `readEnvFile(['LINEAR_API_KEY'])` fallback in `symphony-linear.ts` and `symphony-notion.ts` |
+| 5 | Wrong model error | `ANTHROPIC_DEFAULT_SONNET_MODEL` not forwarded | Inject `-e ANTHROPIC_DEFAULT_SONNET_MODEL=...` in `src/container-runner.ts` |
+| 6 | MCP URLs still use `host.docker.internal` | Hardcoded in agent-runner | Use `process.env.CONTAINER_HOST_GATEWAY` in `container/agent-runner/src/index.ts` |
+
+#### Internet access (if containers can't reach external URLs)
 
 ```bash
 # Enable IP forwarding
 sudo sysctl -w net.inet.ip.forwarding=1
 
-# Enable NAT
-echo "nat on en0 from 192.168.64.0/24 to any -> (en0)" | sudo pfctl -ef -
+# Enable NAT (replace en1 with active interface: route get 8.8.8.8 | grep interface)
+echo "nat on en1 from 192.168.64.0/24 to any -> (en1)" | sudo pfctl -ef -
 ```
 
-Replace `en0` with active interface: `route get 8.8.8.8 | grep interface`
+Make persistent: add `net.inet.ip.forwarding=1` to `/etc/sysctl.conf`, NAT rule to `/etc/pf.conf`.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `curl: (28) Connection timed out` | IP forwarding disabled | `sudo sysctl -w net.inet.ip.forwarding=1` |
 | HTTP works, HTTPS times out | IPv6 DNS resolution | Add `NODE_OPTIONS=--dns-result-order=ipv4first` |
-| `Could not resolve host` | DNS not forwarded | Check bridge100, verify pfctl NAT rules |
+| Container API returns 404 | Credential proxy path bug | Fix `forwardPath` in `src/credential-proxy.ts` (see fix #3 above) |
 
-Make persistent: add `net.inet.ip.forwarding=1` to `/etc/sysctl.conf`, NAT rule to `/etc/pf.conf`.
+#### Launchd env var isolation
+
+NanoClaw started via `launchctl` does **not** have `.env` vars in `process.env`. Any module that reads API keys must use `readEnvFile(['KEY_NAME'])` as a fallback — never rely on `process.env.LINEAR_API_KEY` etc. alone. The `credential-proxy.ts` is the reference implementation.
 
 ---
 

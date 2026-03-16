@@ -79,11 +79,16 @@ export function startCredentialProxy(
           }
         }
 
+        // Prepend upstream base path (e.g. /anthropic) so proxies like minimax work correctly.
+        // upstreamUrl.pathname is '' or '/' for plain hosts — normalize to '' to avoid double slash.
+        const basePath = upstreamUrl.pathname.replace(/\/$/, '');
+        const forwardPath = basePath + (req.url || '/');
+
         const upstream = makeRequest(
           {
             hostname: upstreamUrl.hostname,
             port: upstreamUrl.port || (isHttps ? 443 : 80),
-            path: req.url,
+            path: forwardPath,
             method: req.method,
             headers,
           } as RequestOptions,

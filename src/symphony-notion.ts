@@ -1,8 +1,16 @@
+import { readEnvFile } from './env.js';
+
 const NOTION_API_URL = process.env.NOTION_API_URL || 'https://api.notion.com/v1';
 const NOTION_VERSION = process.env.NOTION_VERSION || '2022-06-28';
 
 function requireNotionToken(): string {
-  const token = process.env.NOTION_TOKEN || process.env.NOTION_API_KEY || '';
+  const envSecrets = readEnvFile(['NOTION_TOKEN', 'NOTION_API_KEY']);
+  const token =
+    process.env.NOTION_TOKEN ||
+    process.env.NOTION_API_KEY ||
+    envSecrets.NOTION_TOKEN ||
+    envSecrets.NOTION_API_KEY ||
+    '';
   if (!token) throw new Error('Missing NOTION_TOKEN or NOTION_API_KEY.');
   return token;
 }

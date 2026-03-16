@@ -9,6 +9,8 @@ import {
   ANDY_ERROR_NOTICE_COOLDOWN_MS,
   ASSISTANT_NAME,
   CREDENTIAL_PROXY_PORT,
+  NOTION_MCP_HTTP_PORT,
+  LINEAR_MCP_HTTP_PORT,
   DATA_DIR,
   ENABLE_CONTROL_PLANE_SNAPSHOTS,
   ENABLE_DYNAMIC_GROUP_REGISTRATION,
@@ -24,6 +26,7 @@ import {
   TRIGGER_PATTERN,
 } from './config.js';
 import { startCredentialProxy } from './credential-proxy.js';
+import { startMcpHttpServers } from './mcp-http-servers.js';
 import './channels/index.js';
 import {
   type WhatsAppChannelOpts,
@@ -134,6 +137,11 @@ import {
   RegisteredGroup,
 } from './types.js';
 import { logger } from './logger.js';
+import {
+  notionQueryMemory,
+  notionCreateMemory,
+} from './symphony-notion.js';
+import { readEnvFile } from './env.js';
 import { WorkerRunSupervisor } from './worker-run-supervisor.js';
 
 // Re-export for backwards compatibility during refactor
@@ -699,7 +707,69 @@ function extractWorkerRunContext(
   return null;
 }
 
-function buildWorkerDispatchPrompt(payload: DispatchPayload): string {
+/**
+ * Query Notion for project-scoped and global memories to inject into worker prompts.
+ * Returns a formatted `## Prior Knowledge` block, or empty string on failure / no data.
+ */
+async function queryProjectMemories(repo: string): Promise<string> {
+  const databaseId =
+    process.env.NOTION_AGENT_MEMORY_DATABASE_ID ||
+    readEnvFile(['NOTION_AGENT_MEMORY_DATABASE_ID']).NOTION_AGENT_MEMORY_DATABASE_ID ||
+    '';
+  if (!databaseId) return '';
+
+  try {
+    const [projectMemories, globalMemories] = await Promise.all([
+      notionQueryMemory(databaseId, repo, undefined, 5),
+      notionQueryMemory(databaseId, 'global', undefined, 3),
+    ]);
+
+    const entries = [...projectMemories, ...globalMemories];
+    if (entries.length === 0) return '';
+
+    const lines = entries.map(
+      (m) => `- [${m.type}/${m.scope}] ${m.content}`,
+    );
+    return ['## Prior Knowledge', '', ...lines].join('\n');
+  } catch (err) {
+    logger.debug({ err, repo }, 'Failed to query project memories — continuing without');
+    return '';
+  }
+}
+
+/**
+ * Persist worker learnings to Notion agent memory (fire-and-forget).
+ * Silently ignores errors — learnings are advisory, never blocking.
+ */
+async function persistWorkerLearnings(
+  runId: string,
+  projectKey: string,
+  learnings: string[],
+): Promise<void> {
+  const databaseId =
+    process.env.NOTION_AGENT_MEMORY_DATABASE_ID ||
+    readEnvFile(['NOTION_AGENT_MEMORY_DATABASE_ID']).NOTION_AGENT_MEMORY_DATABASE_ID ||
+    '';
+  if (!databaseId) return;
+
+  for (const learning of learnings) {
+    const trimmed = learning.trim();
+    if (!trimmed) continue;
+    try {
+      await notionCreateMemory(databaseId, {
+        memoryId: `${runId}-learning-${Date.now()}`,
+        type: 'lesson',
+        scope: 'project',
+        projectKey,
+        content: trimmed,
+      });
+    } catch (err) {
+      logger.debug({ err, runId, projectKey }, 'Failed to persist worker learning');
+    }
+  }
+}
+
+function buildWorkerDispatchPrompt(payload: DispatchPayload, memories?: string): string {
   const acceptanceTests = payload.acceptance_tests
     .map((test, idx) => `${idx + 1}. ${test}`)
     .join('\n');
@@ -729,6 +799,7 @@ function buildWorkerDispatchPrompt(payload: DispatchPayload): string {
     sessionFieldRule,
     '- Andy will pass this session_id to the next worker to continue the conversation.',
     '',
+    ...(memories ? [memories, ''] : []),
     'Task instructions:',
     payload.input,
     '',
@@ -747,6 +818,7 @@ function buildWorkerDispatchPrompt(payload: DispatchPayload): string {
     '- Only no-code runs with run_id prefix ping-/smoke-/health-/sync- may use commit_sha placeholder n/a/none and empty files_changed.',
     '- files_changed must be a JSON array of changed file paths.',
     '- OPTIONAL: Add "session_id": "<session-id>" if you want follow-up tasks to continue this session.',
+    '- OPTIONAL: Add "learnings": ["..."] with 1-3 genuinely new insights discovered during this task.',
     '',
     'Required completion fields:',
     requiredFields,
@@ -1101,8 +1173,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   const activeAndyRequestId = andyRequestsInBatch[0]?.requestId;
 
   const workerRun = extractWorkerRunContext(group, messagesToProcess);
+  const workerMemories = workerRun
+    ? await queryProjectMemories(workerRun.dispatchPayload.project_key ?? workerRun.dispatchPayload.repo)
+    : '';
   const basePrompt = workerRun
-    ? buildWorkerDispatchPrompt(workerRun.dispatchPayload)
+    ? buildWorkerDispatchPrompt(workerRun.dispatchPayload, workerMemories)
     : formatMessages(messagesToProcess, TIMEZONE);
   const prompt =
     !workerRun && group.folder === ANDY_DEVELOPER_FOLDER && activeAndyRequestId
@@ -1553,6 +1628,19 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           completion,
           effectiveSessionId: runtimeEffectiveSessionId ?? null,
         });
+        if (
+          Array.isArray(completion.learnings) &&
+          completion.learnings.length > 0
+        ) {
+          const projectKey =
+            workerRun.dispatchPayload.project_key ??
+            workerRun.dispatchPayload.repo;
+          void persistWorkerLearnings(
+            workerRun.runId,
+            projectKey,
+            completion.learnings,
+          );
+        }
         void emitBridgeEvent({
           event_type: 'worker_completed',
           summary: `[${group.folder}] ✓ review: ${completion.branch}`,
@@ -2226,6 +2314,11 @@ async function main(): Promise<void> {
 
     // Start credential proxy (containers route API calls through this)
     await startCredentialProxy(CREDENTIAL_PROXY_PORT, PROXY_BIND_HOST);
+
+    // Start Notion + Linear HTTP MCP servers so all container sessions
+    // (andy-developer, jarvis workers, main lane) can reach them immediately
+    // via host.docker.internal:<port>/mcp — no secrets enter containers.
+    await startMcpHttpServers(NOTION_MCP_HTTP_PORT, LINEAR_MCP_HTTP_PORT);
 
     process.on('SIGTERM', () => requestShutdown('SIGTERM'));
     process.on('SIGINT', () => requestShutdown('SIGINT'));

@@ -52,8 +52,8 @@ When an agent discovers documented workflows are stale, misleading, or rough dur
 | Task execution | `docs/workflow/delivery/nanoclaw-development-loop.md` |
 | Git/push/PR | Development loop Phase 7 |
 | Startup/recall/sweep | `docs/workflow/runtime/session-recall.md` |
-| Docs confusion | `docs/workflow/docs-discipline/` |
-| Governance | `docs/workflow/strategy/weekly-slop-optimization-loop.md` |
+| Docs confusion | `.claude/rules/docs-governance.md` |
+| Governance | `/weekly-cleanup` skill |
 
 ### Phase 3: Update the workflow
 

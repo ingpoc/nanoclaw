@@ -51,7 +51,7 @@ It does not own shared-context placement, GitHub governance, or worker runtime i
 - `docs/workflow/control-plane/collaboration-surface-contract.md`
 - `docs/workflow/control-plane/project-bootstrap-and-secret-contract.md`
 - `docs/workflow/control-plane/symphony-operations-runbook.md`
-- `docs/operations/workflow-setup-responsibility-map.md`
+- `docs/operations/update-requirements-matrix.md`
 
 ## Requirements
 

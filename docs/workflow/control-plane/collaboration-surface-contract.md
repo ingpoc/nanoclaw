@@ -39,7 +39,7 @@ It does not own execution-lane routing, GitHub governance, or worker runtime beh
 - `docs/workflow/control-plane/execution-lane-routing-contract.md`
 - `docs/workflow/github/github-delivery-governance.md`
 - `docs/workflow/github/github-offload-boundary-loop.md`
-- `docs/operations/workflow-setup-responsibility-map.md`
+- `docs/operations/update-requirements-matrix.md`
 
 ## Precedence
 

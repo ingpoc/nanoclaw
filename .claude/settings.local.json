@@ -101,7 +101,9 @@
       "mcp__notion__notion_query_memory",
       "mcp__linear__linear_graphql",
       "mcp__notion__notion_search",
-      "mcp__notion__notion_get_page"
+      "mcp__notion__notion_get_page",
+      "mcp__notion__notion_create_memory",
+      "WebFetch(domain:openai.com)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -10,7 +10,7 @@ Provide the canonical routing guide for when and how to use the token-efficient 
 
 ## Canonical Owner
 
-This doc owns token-efficient MCP usage guidance for Codex work in this repo. It must not duplicate general skill-routing policy from `docs/workflow/docs-discipline/skill-routing-preflight.md` or the strategy rationale in `docs/workflow/strategy/code-execution-mcp-pattern.md`.
+This doc owns token-efficient MCP usage guidance for Codex work in this repo. It must not duplicate the strategy rationale in `docs/workflow/strategy/code-execution-mcp-pattern.md`.
 
 ## Use When
 
@@ -20,7 +20,7 @@ This doc owns token-efficient MCP usage guidance for Codex work in this repo. It
 
 ## Do Not Use When
 
-- Defining general MCP routing policy. Use `docs/workflow/docs-discipline/skill-routing-preflight.md`.
+- Defining general MCP routing policy. See `.claude/rules/docs-governance.md`.
 - Recording why the code-execution MCP pattern is strategically valid. Use `docs/workflow/strategy/code-execution-mcp-pattern.md`.
 - Describing core product/runtime architecture. Use `docs/ARCHITECTURE.md` or `docs/reference/SPEC.md`.
 
@@ -40,9 +40,8 @@ This doc owns token-efficient MCP usage guidance for Codex work in this repo. It
 
 ## Related Docs
 
-- `docs/workflow/docs-discipline/skill-routing-preflight.md`
 - `docs/workflow/strategy/code-execution-mcp-pattern.md`
-- `docs/operations/skills-vs-docs-map.md`
+- `.claude/rules/docs-governance.md`
 
 ## Linear API Reads
 
@@ -87,7 +86,7 @@ Request only the fields you will actually read. Each extra field on 50 issues co
 | Surface | Canonical owner |
 |--------|------------------|
 | Tool behavior and limits | `/Users/gurusharan/Documents/remote-claude/mcp-servers/token-efficient-mcp` |
-| Repo routing policy | `docs/workflow/docs-discipline/skill-routing-preflight.md` |
+| Repo routing policy | `.claude/rules/docs-governance.md` |
 | Strategic rationale for MCP-first code execution | `docs/workflow/strategy/code-execution-mcp-pattern.md` |
 | Codex tool-budget governance | `docs/operations/tooling-governance-budget.json` |
 
@@ -95,7 +94,7 @@ Request only the fields you will actually read. Each extra field on 50 issues co
 
 - Update this doc when the token-efficient MCP tool set, defaults, or best-practice routing changes.
 - Update `docs/workflow/strategy/code-execution-mcp-pattern.md` only when the strategic recommendation changes.
-- Update `docs/workflow/docs-discipline/skill-routing-preflight.md` only when global routing policy changes.
+- Update `.claude/rules/docs-governance.md` only when global routing policy changes.
 - Update `docs/operations/tooling-governance-budget.json` only when required MCP coverage changes.
 
 ## Default Usage Rules

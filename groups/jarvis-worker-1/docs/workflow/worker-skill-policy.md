@@ -49,7 +49,6 @@ These are available, but must be explicitly requested by task context:
 - `orchestrator`
 - `global-hook-setup`
 - `project-hook-setup`
-- `context-graph`
 - `testing-tracker`
 - `mcp-setup`
 

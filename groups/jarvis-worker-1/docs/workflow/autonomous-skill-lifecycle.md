@@ -15,7 +15,7 @@ INIT → IMPLEMENT → TEST → COMPLETE
 | INIT | initialization |
 | IMPLEMENT | implementation |
 | TEST | GitHub Actions (CI) |
-| COMPLETE | context-graph |
+| COMPLETE | learnings in completion contract |
 
 ## Scripts
 

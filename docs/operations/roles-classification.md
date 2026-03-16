@@ -74,5 +74,4 @@ Rules:
 
 ## Related Map
 
-For exact surface ownership and update locations, see:
-`docs/operations/workflow-setup-responsibility-map.md`.
+For update locations by change type, see `docs/operations/update-requirements-matrix.md`.

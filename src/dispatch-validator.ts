@@ -30,6 +30,7 @@ export interface DispatchPayload {
   ui_impacting?: boolean;
   session_id?: string;
   parent_run_id?: string;
+  project_key?: string;
 }
 
 export interface BrowserEvidence {
@@ -49,6 +50,7 @@ export interface CompletionContract {
   pr_skipped_reason?: string;
   browser_evidence?: BrowserEvidence;
   session_id?: string;
+  learnings?: string[];
 }
 
 const RUN_ID_MAX_LENGTH = 64;

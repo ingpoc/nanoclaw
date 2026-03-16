@@ -3,7 +3,7 @@
 Defines who changes GitHub governance and how those changes are shipped.
 
 For cross-domain ownership and update-location mapping, see
-`docs/operations/workflow-setup-responsibility-map.md`.
+`docs/operations/update-requirements-matrix.md`.
 
 ## Owns
 

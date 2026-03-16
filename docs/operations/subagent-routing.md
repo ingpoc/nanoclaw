@@ -103,7 +103,7 @@ Do not delegate when:
 | `nanoclaw-container-debugging.md` | `explorer` -> `reviewer` | fg | root-cause triage | diagnostics first, then interpretation |
 | `github-delivery-governance.md` | `explorer` | fg | policy decisions | workflow YAML reads, drift detection |
 | `nanoclaw-andy-user-happiness-gate.md` | `monitor` | bg | user satisfaction judgment | probe scripts and verification runs |
-| `weekly-slop-optimization-loop.md` | `explorer` -> `monitor` | fg -> bg | prioritization | inventory first, then deterministic checks |
+| `/weekly-cleanup` skill | `explorer` -> `monitor` | fg -> bg | prioritization | inventory first, then deterministic checks |
 
 ## Not Routed Away From Main
 
@@ -113,6 +113,7 @@ Do not delegate when:
 - `session-recall.md` — script-driven, result is needed immediately
 
 Exception:
+
 - In interactive session start, post-bootstrap `qmd-session-sync.sh` remediation may be delegated to one background `monitor` lane after the main lane already has the recall result it needs.
 
 ## GitHub Governance Routing

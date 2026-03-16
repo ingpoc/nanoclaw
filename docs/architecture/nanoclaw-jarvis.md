@@ -138,7 +138,7 @@ Andy-developer can steer an in-flight worker by writing a `steer_worker` IPC tas
 | Jarvis extension policy | `src/extensions/jarvis/*` |
 | Dispatch contract | `src/dispatch-validator.ts` + `docs/workflow/runtime/nanoclaw-jarvis-dispatch-contract.md` |
 | Worker runtime details | `docs/workflow/runtime/nanoclaw-jarvis-worker-runtime.md` |
-| Team operating model | `docs/operations/workflow-setup-responsibility-map.md` + lane `groups/*/CLAUDE.md` |
+| Team operating model | `docs/operations/update-requirements-matrix.md` + lane `groups/*/CLAUDE.md` |
 
 ## Non-Goals
 

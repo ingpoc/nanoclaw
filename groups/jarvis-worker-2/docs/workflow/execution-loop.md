@@ -39,9 +39,9 @@ Task received
 
 **When task needs architecture/design decisions:**
 
-1. Query `context-graph` for precedents
-2. If precedent exists (trust > 0.75) → use it
-3. If new decision → make choice, store trace
+1. Check `## Prior Knowledge` block for precedents from prior runs
+2. If precedent exists → use it
+3. If new decision → include in `learnings` field at completion
 4. Continue to implementation
 
 **Store decision trace:**

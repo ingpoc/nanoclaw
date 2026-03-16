@@ -4,6 +4,109 @@ Canonical architecture view for this NanoClaw codebase (including Jarvis extensi
 
 Boundary ownership lives in [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md). This file describes topology, not what layer owns each change.
 
+## What the System Does
+
+You message Andy on WhatsApp → Andy plans and delegates → Jarvis workers build your projects autonomously → results tracked in Linear + Notion.
+
+## End-to-End Flow
+
+### Lane 1: User-Initiated (WhatsApp → Andy → Worker)
+
+```text
+YOU (WhatsApp)
+  │  "@Andy build API rate limiting for Aadharchain"
+  ▼
+NANOCLAW (Host - single Node.js process)
+  │  Message loop polls SQLite every 2s
+  │  Matches @Andy trigger → resolves andy-developer group
+  │  Spawns container with isolated filesystem + MCP tools
+  ▼
+ANDY DEVELOPER (Container - Claude Agent)
+  │  A. Checks Linear: does project exist?
+  │  B. Checks Notion: does workspace exist?
+  │  C. If missing → bootstraps (creates Linear project + Notion root page)
+  │  D. Creates Linear issue (AND-XX) with spec
+  │  E. Builds dispatch payload → writes to data/ipc/
+  │  F. Replies on WhatsApp: "Got it, coordinating with Jarvis"
+  ▼
+NANOCLAW (IPC Watcher - polls data/ipc/ every 1s)
+  │  Picks up dispatch file
+  │  Validates payload (schema, required fields, authorization)
+  │  Spawns worker container
+  ▼
+JARVIS WORKER (Container - Claude Agent)
+  │  A. Clones repo, creates branch
+  │  B. Implements the feature
+  │  C. Runs tests
+  │  D. Comments on Linear issue with results
+  │  E. Writes Notion memory entry
+  │  F. Returns <completion> JSON → writes to data/ipc/
+  ▼
+NANOCLAW (Completion Handler)
+  │  Validates completion contract
+  │  Updates worker_runs in DB → notifies Andy
+  ▼
+ANDY DEVELOPER (gets notified)
+  │  Reviews worker output → reports back on WhatsApp
+  ▼
+YOU (WhatsApp)
+   "Done. AND-42 implemented, branch ready for review."
+```
+
+### Lane 2: Automated (Linear → Symphony → Agent)
+
+```text
+LINEAR (Issue marked "Ready")
+  ▼
+SYMPHONY DAEMON (polls Linear every 15s)
+  │  Finds ready issues → selects backend (codex/claude-code/opencode)
+  │  Provisions workspace → spawns agent subprocess
+  ▼
+AGENT (Codex or Claude Code)
+  │  Works the issue → updates Linear → returns
+  ▼
+SYMPHONY (Reconciler)
+  │  Detects completion → transitions issue state
+  │  Posts results as Linear comment
+```
+
+### Component Map
+
+```text
+┌─────────────┐     SQLite      ┌──────────────────┐
+│  WhatsApp    │───────────────▶│  NanoClaw         │
+│  (Baileys)   │◀───────────────│  (Orchestrator)   │
+└─────────────┘                 └──────┬────────────┘
+                                       │ spawns containers
+                        ┌──────────────┼──────────────┐
+                        ▼              ▼              ▼
+                   ┌─────────┐   ┌──────────┐   ┌──────────┐
+                   │  Andy   │   │ Worker 1 │   │ Worker N │
+                   │Container│   │Container │   │Container │
+                   └────┬────┘   └────┬─────┘   └────┬─────┘
+                        │             │               │
+                   file IPC      file IPC        file IPC
+                        │             │               │
+                        ▼             ▼               ▼
+              ┌───────────────────────────────────────────┐
+              │  Host Services (never inside containers)  │
+              │  • Credential Proxy (:3001) — API auth    │
+              │  • Notion MCP (:7802) — Notion tools      │
+              │  • Linear MCP (:7803) — Linear tools      │
+              └───────────────────────────────────────────┘
+```
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| File-based IPC | Security boundary — containers can't access host DB or sockets |
+| Polling (not events) | Simplicity — predictable, debuggable, no message queue infra |
+| Single Node.js process | "Small enough to understand" — no microservices |
+| Per-request MCP servers | Stateless by design — no state leaks between requests |
+| Credential proxy on host | Secrets never enter containers — proxy injects auth on forwarding |
+| Two dispatch lanes | WhatsApp (user-initiated, real-time) + Symphony (automated, scheduled) |
+
 ## Layered Topology
 
 1. **Host Orchestrator (NanoClaw core)**

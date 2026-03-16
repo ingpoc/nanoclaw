@@ -53,6 +53,11 @@ groups/jarvis-worker-*/*
 !groups/**/container-config.yml
 
 # Always ignore runtime artifacts under groups
+groups/**/.claude/hooks/
+groups/**/.claude/progress/
+groups/**/.claude/reports/
+groups/**/.claude/scripts/
+groups/**/.claude/settings.local.json
 groups/**/logs/
 groups/**/logs/**
 groups/**/memory/**

@@ -58,3 +58,26 @@ When editing `groups/*/` governance files (`.claude/rules/`, `.claude/skills/`, 
 - **No `container/rules/`**: this path is not auto-loaded by OpenCode. Use `.claude/rules/` instead
 - **No `/home/node/.claude/rules/` triggers**: rules in `.claude/rules/` are auto-loaded, triggers are redundant and point to wrong path
 - **Validate**: run `bash scripts/check-lane-governance.sh` after lane governance changes
+
+## Container Governance Path Hierarchy
+
+Inside a container, OpenCode auto-loads from these paths (no triggers needed):
+
+| Path (in container) | Host source | Auto-loaded? |
+|---------------------|-------------|--------------|
+| `/workspace/group/CLAUDE.md` | `groups/<folder>/CLAUDE.md` | Yes |
+| `/workspace/group/.claude/rules/*.md` | `groups/<folder>/.claude/rules/` | Yes |
+| `/workspace/group/.claude/skills/*/SKILL.md` | `groups/<folder>/.claude/skills/` | Yes |
+| `/workspace/group/docs/` | `groups/<folder>/docs/` | No — via Docs Index triggers |
+| `/home/node/.claude/skills/` | `container/skills/` (synced at startup) | Yes |
+| `/workspace/global/CLAUDE.md` | `groups/global/CLAUDE.md` | Yes (via env var) |
+
+**Dead paths** (do NOT use): `container/rules/`, `/home/node/.claude/rules/`
+
+**Git tracking**: `.gitignore` tracks `CLAUDE.md`, `docs/`, `.claude/rules/`, `.claude/skills/` per group. Runtime artifacts (hooks, progress, reports, scripts, settings) are gitignored.
+
+## CI Sync Rule
+
+When compressing CLAUDE.md (removing trigger references), update `scripts/check-workflow-contracts.sh` in the same change — it validates trigger presence.
+
+When deleting docs moved to skills, remove the file existence check from the same CI script.

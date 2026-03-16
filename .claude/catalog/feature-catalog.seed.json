@@ -415,6 +415,8 @@
         "docs/workflow/runtime/nanoclaw-jarvis-dispatch-contract.md",
         "docs/workflow/runtime/nanoclaw-jarvis-worker-runtime.md",
         "docs/workflow/runtime/session-recall.md",
+        "docs/workflow/strategy/launchdeck-ld01-execution-pack.md",
+        "docs/workflow/strategy/launchdeck-proving-program.md",
         "docs/workflow/strategy/weekly-slop-optimization-loop.md",
         "docs/workflow/strategy/workflow-optimization-loop.md",
         "groups/andy-developer/docs/review-handoff.md",

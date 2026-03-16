@@ -14,6 +14,7 @@
  *   Final marker after loop ends signals completion.
  */
 
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { query, HookCallback, PreCompactHookInput, PreToolUseHookInput, SubagentStartHookInput } from '@anthropic-ai/claude-agent-sdk';
@@ -27,6 +28,7 @@ interface ContainerInput {
   isMain: boolean;
   isScheduledTask?: boolean;
   assistantName?: string;
+  secrets?: Record<string, string>;
 }
 
 interface ContainerOutput {
@@ -117,6 +119,49 @@ function writeOutput(output: ContainerOutput): void {
 
 function log(message: string): void {
   console.error(`[agent-runner] ${message}`);
+}
+
+function configureGitIdentity(): void {
+  const gitEmail = process.env.WORKER_GIT_EMAIL || 'openclaw-gurusharan@users.noreply.github.com';
+  const gitName = process.env.WORKER_GIT_NAME || 'Andy (openclaw-gurusharan)';
+  const setEmail = spawnSync('git', ['config', '--global', 'user.email', gitEmail], { stdio: 'ignore' });
+  const setName = spawnSync('git', ['config', '--global', 'user.name', gitName], { stdio: 'ignore' });
+  if (setEmail.status !== 0 || setName.status !== 0) {
+    throw new Error('failed to configure git identity');
+  }
+}
+
+function injectSecrets(input: ContainerInput): void {
+  if (!input.secrets) return;
+
+  const secretKeys = [
+    'GITHUB_TOKEN',
+    'GH_TOKEN',
+    'ANTHROPIC_API_KEY',
+    'OPENROUTER_API_KEY',
+    'MINIMAX_API_KEY',
+  ];
+
+  for (const key of secretKeys) {
+    if (input.secrets[key]) {
+      process.env[key] = input.secrets[key];
+    }
+  }
+
+  if (input.secrets.GITHUB_TOKEN && !input.secrets.GH_TOKEN) {
+    process.env.GH_TOKEN = input.secrets.GITHUB_TOKEN;
+  }
+  if (input.secrets.GH_TOKEN && !input.secrets.GITHUB_TOKEN) {
+    process.env.GITHUB_TOKEN = input.secrets.GH_TOKEN;
+  }
+
+  if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) {
+    try {
+      configureGitIdentity();
+    } catch {
+      log('Failed to configure git identity from injected secrets');
+    }
+  }
 }
 
 function getSessionSummary(sessionId: string, transcriptPath: string): string | null {
@@ -412,6 +457,7 @@ async function runQuery(
 
   let newSessionId: string | undefined;
   let lastAssistantUuid: string | undefined;
+  let lastAssistantText: string | null = null;
   let messageCount = 0;
   let resultCount = 0;
 
@@ -521,6 +567,16 @@ async function runQuery(
 
     if (message.type === 'assistant' && 'uuid' in message) {
       lastAssistantUuid = (message as { uuid: string }).uuid;
+      const assistantMessage = message as {
+        message?: { content?: Array<{ type?: string; text?: string }> };
+      };
+      const text = (assistantMessage.message?.content || [])
+        .filter((part) => part.type === 'text' && typeof part.text === 'string')
+        .map((part) => part.text || '')
+        .join('');
+      if (text.trim()) {
+        lastAssistantText = text;
+      }
     }
 
     if (message.type === 'system' && message.subtype === 'init') {
@@ -548,6 +604,16 @@ async function runQuery(
   }
 
   ipcPolling = false;
+  if (resultCount === 0 && lastAssistantText?.trim()) {
+    log('No result message emitted; using final assistant text as fallback output');
+    writeOutput({
+      status: 'success',
+      result: lastAssistantText,
+      newSessionId,
+      agentId: capturedAgentId,
+      agentType: capturedAgentType,
+    });
+  }
   log(`Query done. Messages: ${messageCount}, results: ${resultCount}, lastAssistantUuid: ${lastAssistantUuid || 'none'}, closedDuringQuery: ${closedDuringQuery}`);
   return { newSessionId, lastAssistantUuid, closedDuringQuery };
 }
@@ -568,6 +634,8 @@ async function main(): Promise<void> {
     });
     process.exit(1);
   }
+
+  injectSecrets(containerInput);
 
   // Credentials are injected by the host's credential proxy via ANTHROPIC_BASE_URL.
   // No real secrets exist in the container environment.

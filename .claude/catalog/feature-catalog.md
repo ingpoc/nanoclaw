@@ -1,6 +1,6 @@
 # NanoClaw Feature Catalog
 
-Generated: 2026-03-11T08:37:09.967Z
+Generated: 2026-03-16T07:44:24.033Z
 Project: nanoclaw
 
 ## Features
@@ -359,17 +359,14 @@ Project: nanoclaw
 ### docs-topology-cleanup - Docs Topology Cleanup
 - Risk: medium
 - Summary: Physical docs reorganization, canonical ownership cleanup, and reference migration across root docs, group mirrors, and workflow checks.
-- Keywords: docs cleanup, workflow subfolders, reference migration, doc topology, docs governance, mission runtime profiles, archive cleanup
-- Files (52):
+- Keywords: docs cleanup, workflow subfolders, reference migration, doc topology, docs governance, mission runtime profiles, docs cleanup
+- Files (49):
   - .claude/catalog/feature-catalog.seed.json
   - .claude/hooks/posttool-workflow-sync-check.sh
   - AGENTS.md
   - CLAUDE.md
   - DOCS.md
   - docs/architecture/mission-runtime-profiles.md
-  - docs/archives/debug-known-issues-2026-02.md
-  - docs/archives/pre-linear-github-first-collaboration-loop.md
-  - docs/archives/worker-dispatch-root-cause-2026-02-24.md
   - docs/operations/skills-vs-docs-map.md
   - docs/operations/subagent-routing.md
   - docs/operations/update-requirements-matrix.md
@@ -430,6 +427,15 @@ Project: nanoclaw
   - docs/workflow/runtime/nanoclaw-jarvis-dispatch-contract.md
   - docs/workflow/runtime/session-recall.md
   - scripts/check-workflow-contracts.sh
+- Validation Warnings:
+  - missing file: docs/operations/skills-vs-docs-map.md
+  - missing file: docs/operations/workflow-setup-responsibility-map.md
+  - missing file: docs/workflow/docs-discipline/andy-compression-loop.md
+  - missing file: docs/workflow/docs-discipline/doc-creation-contract.md
+  - missing file: docs/workflow/docs-discipline/docs-pruning-loop.md
+  - missing file: docs/workflow/docs-discipline/nanoclaw-root-claude-compression.md
+  - missing file: docs/workflow/docs-discipline/skill-routing-preflight.md
+  - missing file: docs/workflow/strategy/weekly-slop-optimization-loop.md
 - Suggested Verify:
   - npm run typecheck
 
@@ -692,6 +698,13 @@ Project: nanoclaw
   - scripts/workflow/run-platform-claude-session.sh
   - scripts/workflow/start-platform-loop.sh
   - scripts/workflow/trigger-platform-pickup-now.sh
+- Validation Warnings:
+  - missing file: docs/operations/workflow-setup-responsibility-map.md
+  - missing file: docs/workflow/strategy/nightly-evaluation-loop.md
+  - missing file: launchd/com.nanoclaw-nightly-improvement.plist
+  - missing file: launchd/com.nanoclaw-platform-loop.plist
+  - missing file: src/start-nightly-improvement.test.ts
+  - missing test: src/start-nightly-improvement.test.ts
 - Suggested Verify:
   - npm run typecheck
   - npx vitest run src/nightly-improvement.test.ts src/platform-loop-sync.test.ts src/platform-loop.test.ts src/start-nightly-improvement.test.ts
@@ -751,6 +764,12 @@ Project: nanoclaw
   - scripts/workflow/run-platform-claude-session.sh
   - scripts/workflow/start-platform-loop.sh
   - scripts/workflow/trigger-platform-pickup-now.sh
+- Validation Warnings:
+  - missing file: docs/operations/workflow-setup-responsibility-map.md
+  - missing file: docs/workflow/strategy/nightly-evaluation-loop.md
+  - missing file: launchd/com.nanoclaw-morning-codex-prep.plist
+  - missing file: launchd/com.nanoclaw-platform-loop.plist
+  - missing test: src/start-nightly-improvement.test.ts
 - Suggested Verify:
   - npm run typecheck
   - npx vitest run src/platform-loop-sync.test.ts src/platform-loop.test.ts src/run-platform-claude-session.test.ts src/start-autonomy-reliability.test.ts src/start-nightly-improvement.test.ts src/start-platform-loop.test.ts src/start-pr-guardian.test.ts

@@ -5,6 +5,7 @@
 import { ChildProcess, exec, spawn } from 'child_process';
 import { createHash } from 'crypto';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import {
@@ -33,6 +34,7 @@ import {
   stopRunningContainersByPrefix,
 } from './container-runtime.js';
 import { detectAuthMode } from './credential-proxy.js';
+import { readEnvFile } from './env.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { isJarvisWorkerFolder, RegisteredGroup } from './types.js';
 
@@ -56,6 +58,7 @@ export interface ContainerInput {
   schedulerEnabled?: boolean;
   workerSteeringEnabled?: boolean;
   dynamicGroupRegistrationEnabled?: boolean;
+  secrets?: Record<string, string>;
 }
 
 export interface ContainerOutput {
@@ -81,6 +84,65 @@ interface AgentRunnerSourceSyncMetadata {
 }
 
 const AGENT_RUNNER_SYNC_METADATA_FILENAME = 'agent-runner-src.sync.json';
+const DEFAULT_MODEL_SECRET_KEYS = [
+  'MINIMAX_API_KEY',
+  'OPENROUTER_API_KEY',
+  'ANTHROPIC_API_KEY',
+] as const;
+
+type SessionMcpConfig = {
+  mcpServers?: Record<string, unknown>;
+};
+
+function readSecretValue(name: string): string | undefined {
+  const fromProcess = process.env[name]?.trim();
+  if (fromProcess) return fromProcess;
+  const fromEnvFile = readEnvFile([name])[name]?.trim();
+  return fromEnvFile || undefined;
+}
+
+function resolveGithubTokenForGroup(group: RegisteredGroup): string | undefined {
+  const candidateKeys =
+    group.folder === 'andy-developer'
+      ? ['GITHUB_TOKEN_ANDY_DEVELOPER', 'GITHUB_TOKEN', 'GH_TOKEN']
+      : group.folder === 'andy-bot'
+        ? ['GITHUB_TOKEN_ANDY_BOT', 'GITHUB_TOKEN', 'GH_TOKEN']
+        : isJarvisWorkerFolder(group.folder)
+          ? ['GITHUB_TOKEN_WORKER', 'GITHUB_TOKEN', 'GH_TOKEN']
+          : ['GITHUB_TOKEN', 'GH_TOKEN'];
+
+  for (const key of candidateKeys) {
+    const value = readSecretValue(key);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function resolveContainerSecrets(group: RegisteredGroup): Record<string, string> {
+  const resolved: Record<string, string> = {};
+
+  const githubToken = resolveGithubTokenForGroup(group);
+  if (githubToken) {
+    resolved.GITHUB_TOKEN = githubToken;
+    resolved.GH_TOKEN = githubToken;
+  }
+
+  for (const key of DEFAULT_MODEL_SECRET_KEYS) {
+    const value = readSecretValue(key);
+    if (value) {
+      resolved[key] = value;
+    }
+  }
+
+  for (const key of group.containerConfig?.secrets ?? []) {
+    const value = readSecretValue(key);
+    if (value) {
+      resolved[key] = value;
+    }
+  }
+
+  return resolved;
+}
 
 function isRetryableSkillSyncError(err: unknown): boolean {
   const code = (err as NodeJS.ErrnoException | undefined)?.code;
@@ -123,6 +185,20 @@ function syncContainerSkills(skillsSrc: string, skillsDst: string): void {
     if (entryName.startsWith('.')) continue;
 
     const srcPath = path.join(skillsSrc, entryName);
+    let isSymlink = false;
+    try {
+      isSymlink = fs.lstatSync(srcPath).isSymbolicLink();
+    } catch (err) {
+      logger.warn({ err, srcPath }, 'Failed to inspect skill source entry');
+      continue;
+    }
+    if (isSymlink && !fs.existsSync(srcPath)) {
+      logger.debug(
+        { srcPath },
+        'Skipping broken skill symlink during container skill sync',
+      );
+      continue;
+    }
 
     let isDirectory = false;
     try {
@@ -351,7 +427,9 @@ function buildVolumeMounts(
     // Shadow .env so the agent cannot read secrets from the mounted project root.
     // Credentials are injected by the credential proxy, never exposed to containers.
     const envFile = path.join(projectRoot, '.env');
-    if (fs.existsSync(envFile)) {
+    // Apple Container only supports directory bind mounts, so the /dev/null
+    // file-shadow workaround is limited to runtimes that support file mounts.
+    if (fs.existsSync(envFile) && CONTAINER_RUNTIME_BIN !== 'container') {
       mounts.push({
         hostPath: '/dev/null',
         containerPath: '/workspace/project/.env',
@@ -449,6 +527,37 @@ function buildVolumeMounts(
 
   writeFileAtomic(settingsFile, JSON.stringify(settings, null, 2) + '\n');
 
+  const mcpConfigFile = path.join(groupSessionsDir, '.mcp.json');
+  let mcpConfig: SessionMcpConfig = {};
+  if (fs.existsSync(mcpConfigFile)) {
+    try {
+      mcpConfig = JSON.parse(fs.readFileSync(mcpConfigFile, 'utf8')) as SessionMcpConfig;
+    } catch {
+      mcpConfig = {};
+    }
+  }
+  const existingMcpServers = mcpConfig.mcpServers ?? {};
+  mcpConfig.mcpServers = {
+    ...existingMcpServers,
+    notion: {
+      command: 'mcp-remote',
+      args: [
+        `http://${CONTAINER_HOST_GATEWAY}:7802/mcp`,
+        '--transport',
+        'streamable-http',
+      ],
+    },
+    linear: {
+      command: 'mcp-remote',
+      args: [
+        `http://${CONTAINER_HOST_GATEWAY}:7803/mcp`,
+        '--transport',
+        'streamable-http',
+      ],
+    },
+  };
+  writeFileAtomic(mcpConfigFile, JSON.stringify(mcpConfig, null, 2) + '\n');
+
   // Sync hooks from groups/<folder>/.claude/hooks/ into sessions/<folder>/.claude/hooks/
   // This runs on every container start so updated scripts are always current.
   const hooksSrc = path.join(GROUPS_DIR, group.folder, '.claude', 'hooks');
@@ -466,10 +575,14 @@ function buildVolumeMounts(
     }
   }
 
-  // Sync skills from container/skills/ into each group's .claude/skills/
-  const skillsSrc = path.join(process.cwd(), 'container', 'skills');
   const skillsDst = path.join(groupSessionsDir, 'skills');
-  syncContainerSkills(skillsSrc, skillsDst);
+  const skillSources = [
+    path.join(process.cwd(), 'container', 'skills'),
+    path.join(process.cwd(), '.claude', 'skills'),
+  ];
+  for (const skillsSrc of skillSources) {
+    syncContainerSkills(skillsSrc, skillsDst);
+  }
   mounts.push({
     hostPath: groupSessionsDir,
     containerPath: '/home/node/.claude',
@@ -492,6 +605,24 @@ function buildVolumeMounts(
     containerPath: '/workspace/ipc',
     readonly: false,
   });
+
+  // Worker images expect the local MCP server bundle at /workspace/mcp-servers.
+  // Mount it when present so OpenCode-backed lanes can start token-efficient
+  // and other local MCP tools declared in OPENCODE_CONFIG_CONTENT.
+  const mcpServersCandidates = [
+    path.join(projectRoot, 'mcp-servers'),
+    path.join(os.homedir(), 'Documents', 'remote-claude', 'mcp-servers'),
+  ];
+  const mcpServersDir = mcpServersCandidates.find((candidate) =>
+    fs.existsSync(candidate),
+  );
+  if (mcpServersDir) {
+    mounts.push({
+      hostPath: mcpServersDir,
+      containerPath: '/workspace/mcp-servers',
+      readonly: true,
+    });
+  }
 
   // Stage agent-runner source into a per-group writable location so agents can
   // customize it without affecting other groups. The staged copy is baseline-
@@ -598,6 +729,11 @@ export async function runContainerAgent(
   onOutput?: (output: ContainerOutput) => Promise<void>,
 ): Promise<ContainerOutput> {
   const startTime = Date.now();
+  const injectedSecrets = resolveContainerSecrets(group);
+  const effectiveInput: ContainerInput =
+    Object.keys(injectedSecrets).length > 0
+      ? { ...input, secrets: injectedSecrets }
+      : input;
 
   const groupDir = resolveGroupFolderPath(group.folder);
   fs.mkdirSync(groupDir, { recursive: true });
@@ -673,7 +809,7 @@ export async function runContainerAgent(
     let stdoutTruncated = false;
     let stderrTruncated = false;
 
-    container.stdin.write(JSON.stringify(input));
+    container.stdin.write(JSON.stringify(effectiveInput));
     container.stdin.end();
 
     // Streaming output: parse OUTPUT_START/END marker pairs as they arrive

@@ -23,9 +23,7 @@ Mission anchor: `docs/MISSION.md`.
 2. Biweekly (`1 pilot/cycle`): run one controlled workflow experiment.
 3. Monthly (`60 min`): governance review and baseline reset.
 
-Weekly slop-pruning execution (docs/scripts/config/code) is defined in:
-
-- `docs/workflow/strategy/weekly-slop-optimization-loop.md`
+Weekly slop-pruning execution: load `/weekly-cleanup` skill.
 
 ## Phase 0: Local Evidence Intake
 

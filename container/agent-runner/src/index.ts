@@ -479,23 +479,35 @@ async function runQuery(
         'mcp__nanoclaw__cancel_task',
         'mcp__nanoclaw__update_task',
         'mcp__nanoclaw__register_group',
-        'mcp__nanoclaw__*'
+        'mcp__nanoclaw__*',
+        'mcp__notion__*',
+        'mcp__linear__*',
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       settingSources: ['project', 'user'],
-      mcpServers: {
-        nanoclaw: {
-          command: 'node',
-          args: [mcpServerPath],
-          env: {
-            NANOCLAW_CHAT_JID: containerInput.chatJid,
-            NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
-            NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+      mcpServers: (() => {
+        const servers = {
+          nanoclaw: {
+            command: 'node',
+            args: [mcpServerPath],
+            env: {
+              NANOCLAW_CHAT_JID: containerInput.chatJid,
+              NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
+              NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+            },
           },
-        },
-      },
+        };
+        // Add Notion and Linear HTTP MCPs via host gateway.
+        // Servers run on the host; CONTAINER_HOST_GATEWAY is injected by container-runner.ts
+        // pointing to the reachable host IP (bridge IP for Apple Container, host.docker.internal for Docker).
+        const hostGateway = process.env.CONTAINER_HOST_GATEWAY || 'host.docker.internal';
+        (servers as Record<string, unknown>).notion = { type: 'http', url: `http://${hostGateway}:7802/mcp` };
+        (servers as Record<string, unknown>).linear = { type: 'http', url: `http://${hostGateway}:7803/mcp` };
+        log('Notion and Linear HTTP MCPs configured via host gateway');
+        return servers as typeof servers & Record<string, { type: 'http'; url: string }>;
+      })(),
       hooks: {
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
         PreToolUse: [{ matcher: 'Bash', hooks: [createSanitizeBashHook()] }],

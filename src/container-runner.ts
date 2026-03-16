@@ -21,6 +21,7 @@ import {
   TIMEZONE,
   WORKER_CONTAINER_IMAGE,
 } from './config.js';
+import { writeFileAtomic, writeJsonAtomic } from './fs-atomic.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
 import {
@@ -239,7 +240,7 @@ function writeAgentRunnerSyncMetadata(
     baselineHash,
     syncedAt: new Date().toISOString(),
   };
-  fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+  writeJsonAtomic(metadataPath, metadata);
 }
 
 function replaceDirectory(srcPath: string, dstPath: string): void {
@@ -446,7 +447,7 @@ function buildVolumeMounts(
     };
   }
 
-  fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + '\n');
+  writeFileAtomic(settingsFile, JSON.stringify(settings, null, 2) + '\n');
 
   // Sync hooks from groups/<folder>/.claude/hooks/ into sessions/<folder>/.claude/hooks/
   // This runs on every container start so updated scripts are always current.
@@ -548,6 +549,15 @@ function buildContainerArgs(
   } else {
     args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
   }
+
+  // Forward model override so containers use the same model as the host.
+  // Required when the upstream proxy (e.g. minimax) maps a specific model name.
+  if (process.env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
+    args.push('-e', `ANTHROPIC_DEFAULT_SONNET_MODEL=${process.env.ANTHROPIC_DEFAULT_SONNET_MODEL}`);
+  }
+
+  // Expose the resolved host gateway IP so the agent-runner can build correct MCP URLs.
+  args.push('-e', `CONTAINER_HOST_GATEWAY=${CONTAINER_HOST_GATEWAY}`);
 
   // Runtime-specific args for host gateway resolution
   args.push(...hostGatewayArgs());
@@ -740,8 +750,6 @@ export async function runContainerAgent(
                 noOutputTimeout = null;
               }
             }
-            // Activity detected — reset the hard timeout.
-            resetHardTimeout();
             // Call onOutput for all markers (including null results)
             // so idle timers start even for "silent" query completions.
             outputChain = outputChain.then(() => onOutput(parsed));
@@ -834,7 +842,7 @@ export async function runContainerAgent(
       });
     };
 
-    let hardTimeout = setTimeout(
+    const hardTimeout = setTimeout(
       () => stopForTimeout('hard_timeout'),
       hardTimeoutMs,
     );
@@ -846,15 +854,6 @@ export async function runContainerAgent(
       );
     }
 
-    // Reset the hard timeout whenever there's activity (streaming output)
-    const resetHardTimeout = () => {
-      clearTimeout(hardTimeout);
-      hardTimeout = setTimeout(
-        () => stopForTimeout('hard_timeout'),
-        hardTimeoutMs,
-      );
-    };
-
     container.on('close', (code) => {
       clearTimeout(hardTimeout);
       if (noOutputTimeout) clearTimeout(noOutputTimeout);
@@ -863,7 +862,7 @@ export async function runContainerAgent(
       if (timedOut) {
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const timeoutLog = path.join(logsDir, `container-${ts}.log`);
-        fs.writeFileSync(
+        writeFileAtomic(
           timeoutLog,
           [
             `=== Container Run Log (TIMEOUT) ===`,
@@ -1106,7 +1105,7 @@ export function writeTasksSnapshot(
     : tasks.filter((t) => t.groupFolder === groupFolder);
 
   const tasksFile = path.join(groupIpcDir, 'current_tasks.json');
-  fs.writeFileSync(tasksFile, JSON.stringify(filteredTasks, null, 2));
+  writeJsonAtomic(tasksFile, filteredTasks);
 }
 
 export interface AvailableGroup {
@@ -1181,17 +1180,10 @@ export function writeGroupsSnapshot(
   const visibleGroups = isMain ? groups : [];
 
   const groupsFile = path.join(groupIpcDir, 'available_groups.json');
-  fs.writeFileSync(
-    groupsFile,
-    JSON.stringify(
-      {
-        groups: visibleGroups,
-        lastSync: new Date().toISOString(),
-      },
-      null,
-      2,
-    ),
-  );
+  writeJsonAtomic(groupsFile, {
+    groups: visibleGroups,
+    lastSync: new Date().toISOString(),
+  });
 }
 
 export function writeWorkerRunsSnapshot(
@@ -1202,5 +1194,5 @@ export function writeWorkerRunsSnapshot(
   fs.mkdirSync(groupIpcDir, { recursive: true });
 
   const workerRunsFile = path.join(groupIpcDir, 'worker_runs.json');
-  fs.writeFileSync(workerRunsFile, JSON.stringify(snapshot, null, 2));
+  writeJsonAtomic(workerRunsFile, snapshot);
 }

@@ -53,4 +53,4 @@ Use this before changing any behavior:
 ## Notes
 
 - Runtime-lane docs/config agreement updates must follow `docs/operations/agreement-sync-protocol.md`.
-- For workflow setup matrix and exact ownership map, see `docs/operations/workflow-setup-responsibility-map.md`.
+- For update locations by change type, see `docs/operations/update-requirements-matrix.md`.

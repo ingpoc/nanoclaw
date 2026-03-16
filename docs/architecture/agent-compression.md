@@ -1,9 +1,7 @@
 # Agent Compression Reference (Template)
 
 Historical template/reference material for compression strategy.
-Repository-specific authoritative rules are:
-- `docs/workflow/docs-discipline/nanoclaw-root-claude-compression.md` (root `CLAUDE.md`)
-- `docs/workflow/docs-discipline/andy-compression-loop.md` (Andy lane docs)
+Repository-specific authoritative rule: `.claude/rules/docs-governance.md`
 
 For a Codex-based harness, you want to keep the *same* progressive-disclosure pattern but tune the rule around three Codex realities: harness-first architecture, repo-as-system-of-record, and AGENTS.md as a compressed “map”, not a manual. [nngroup](https://www.nngroup.com/articles/progressive-disclosure/)
 

@@ -63,6 +63,9 @@ echo "[PASS] claude/codex mirror check"
 bash scripts/check-tooling-governance.sh
 echo "[PASS] tooling governance check"
 
+bash scripts/check-lane-governance.sh
+echo "[PASS] lane governance check"
+
 if [ "$with_incident_status" -eq 1 ]; then
   bash scripts/jarvis-ops.sh incident list --status open || true
 fi

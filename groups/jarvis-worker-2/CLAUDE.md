@@ -24,7 +24,6 @@ BEFORE starting a new task → read /workspace/group/docs/workflow/execution-loo
 BEFORE any browser/UI automation task → read /workspace/group/docs/workflow/webmcp-testing.md
 BEFORE selecting skills for a task → read /workspace/group/docs/workflow/worker-skill-policy.md
 BEFORE applying an Andy-approved workflow/policy agreement → read /workspace/group/docs/workflow/agreement-sync.md
-BEFORE modifying CLAUDE/workflow docs → read /home/node/.claude/rules/compression-loop.md
 
 ## Task Format
 
@@ -110,6 +109,25 @@ Get it after push with: `git rev-parse HEAD` or from PR URL.
 Prefer `"pr_url"` for code tasks. If push/PR is blocked, use `"pr_skipped_reason"` with the exact blocker and next step.
 Recommended quick check after push: `git ls-remote --heads origin <branch>`.
 When dispatch `output_contract.required_fields` includes `session_id` (continue runs), completion must include `"session_id": "<current-session-id>"`.
+
+## Memory
+
+Your prompt may contain a `## Prior Knowledge` block with memories from prior runs on the same project. Use these to avoid re-discovering known constraints, decisions, or lessons.
+
+When your task reveals genuinely new knowledge (architectural decisions, non-obvious constraints, debugging insights), include a `"learnings"` field in your completion contract:
+
+```json
+"learnings": [
+  "Redis cache TTL must be ≤300s due to upstream rate limits",
+  "auth middleware requires x-request-id header for tracing"
+]
+```
+
+Guidelines:
+
+- 1-3 entries max — only what a future worker would need
+- Skip obvious facts derivable from code or docs
+- Skip task-specific details (what you changed, test counts)
 
 ## Communication
 

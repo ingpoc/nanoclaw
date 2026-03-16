@@ -21,10 +21,6 @@ const MAX_UPSTREAM_COMMITS = 12;
 const MAX_TOOL_CANDIDATES = 3;
 const UPSTREAM_REMOTE = process.env.NANOCLAW_NIGHTLY_UPSTREAM_REMOTE || 'upstream';
 const UPSTREAM_BRANCH = process.env.NANOCLAW_NIGHTLY_UPSTREAM_BRANCH || 'main';
-const REPO_OWNER = process.env.NANOCLAW_NIGHTLY_REPO_OWNER || 'ingpoc';
-const REPO_NAME = process.env.NANOCLAW_NIGHTLY_REPO_NAME || 'nanoclaw';
-const MAX_EXPERIMENT_ITERATIONS = 3;
-const EXPERIMENT_PREFIX = 'nightly/eval-';
 const NOTION_API_URL = process.env.NOTION_API_URL || 'https://api.notion.com/v1';
 const NOTION_VERSION = process.env.NOTION_VERSION || '2022-06-28';
 const NOTION_NIGHTLY_DATABASE_ID =
@@ -73,13 +69,9 @@ Commands:
   upsert-context --kind <upstream|tooling> (--body-file <path> | --body-stdin) [--title <title>]
   append-decision --kind <upstream|tooling> --decision <pilot|defer|reject> --summary <text>
     [--agent-label <label>] [--to <agent>] [--status <status>] [--next <text>]
-  create-experiment --candidate <key> --description <text> [--output <path>]
-  measure --experiment-branch <name> [--output <path>]
-  iterate --experiment-branch <name> --iteration <n> [--output <path>]
-  promote --experiment-branch <name> [--output <path>]
-  defer --experiment-branch <name> --reason <text>
-  reject --experiment-branch <name> --reason <text>
-  notion-handoff --experiment-branch <name> [--output <path>]
+  create-experiment --name <name> [--base-branch <branch>] [--output <path>]
+  push-experiment --name <name> [--remote <remote>] [--output <path>]
+  measure-metrics --experiment-name <name> [--iterations <n>] [--output <path>]
 `);
 }
 
@@ -300,197 +292,6 @@ export function applyNightlyRecord(
   return nextState;
 }
 
-// --- Experiment state helpers ---
-
-function getExperimentStatePath() {
-  return path.join(ROOT_DIR, '.nanoclaw', 'nightly-improvement', 'experiments.json');
-}
-
-function loadExperimentState() {
-  const statePath = getExperimentStatePath();
-  if (!fs.existsSync(statePath)) {
-    return { schema_version: 1, experiments: {}, last_run_at: null };
-  }
-  const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  return { schema_version: 1, experiments: {}, last_run_at: null, ...parsed };
-}
-
-function saveExperimentState(state) {
-  const statePath = getExperimentStatePath();
-  fs.mkdirSync(path.dirname(statePath), { recursive: true });
-  fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
-}
-
-function generateExperimentBranchName(candidateKey) {
-  const sanitized = candidateKey.replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase();
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  return `${EXPERIMENT_PREFIX}${sanitized}-${date}`;
-}
-
-// --- Real metric measurements ---
-
-function measureContainerStartup() {
-  try {
-    const start = Date.now();
-    execFileSync('docker', ['run', '--rm', '--entrypoint', 'echo', 'node:22-alpine', 'ready'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 30000,
-    });
-    return Date.now() - start;
-  } catch {
-    return -1;
-  }
-}
-
-function measureMemoryUsage() {
-  try {
-    const raw = execFileSync(
-      'node',
-      ['-e', 'process.stdout.write(String(process.memoryUsage().rss))'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], cwd: ROOT_DIR },
-    );
-    return Math.round(parseInt(raw, 10) / 1024 / 1024);
-  } catch {
-    return -1;
-  }
-}
-
-function measureLatency() {
-  try {
-    const start = Date.now();
-    execFileSync('curl', ['-s', '-o', '/dev/null', 'http://localhost:3000/health'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 5000,
-    });
-    return Date.now() - start;
-  } catch {
-    return -1;
-  }
-}
-
-// --- Experiment commands ---
-
-function cmdCreateExperiment(candidateKey, description) {
-  const branchName = generateExperimentBranchName(candidateKey);
-  runGit(['checkout', '-b', branchName, `origin/main`]);
-  const experiment = {
-    id: branchName,
-    candidateKey,
-    description,
-    branchName,
-    status: 'created',
-    iterations: [],
-    createdAt: new Date().toISOString(),
-    metrics: {},
-  };
-  const state = loadExperimentState();
-  state.experiments[branchName] = experiment;
-  state.last_run_at = new Date().toISOString();
-  saveExperimentState(state);
-  return { action: 'created', branchName, experiment };
-}
-
-function cmdMeasure(experimentBranch) {
-  const state = loadExperimentState();
-  const experiment = state.experiments[experimentBranch];
-  if (!experiment) throw new Error(`Experiment not found: ${experimentBranch}`);
-  const metrics = {
-    measuredAt: new Date().toISOString(),
-    containerStartup: { value: measureContainerStartup(), unit: 'ms' },
-    memoryUsage: { value: measureMemoryUsage(), unit: 'MB' },
-    latency: { value: measureLatency(), unit: 'ms' },
-  };
-  experiment.metrics = metrics;
-  experiment.status = 'measured';
-  saveExperimentState(state);
-  return { action: 'measured', branchName: experimentBranch, metrics };
-}
-
-function cmdIterate(experimentBranch, iteration, changes) {
-  const state = loadExperimentState();
-  const experiment = state.experiments[experimentBranch];
-  if (!experiment) throw new Error(`Experiment not found: ${experimentBranch}`);
-  if (iteration > MAX_EXPERIMENT_ITERATIONS) {
-    throw new Error(`Max iterations (${MAX_EXPERIMENT_ITERATIONS}) reached`);
-  }
-  experiment.iterations.push({ number: iteration, changes, timestamp: new Date().toISOString(), metrics: {} });
-  experiment.status = `iteration-${iteration}`;
-  experiment.lastIterationAt = new Date().toISOString();
-  saveExperimentState(state);
-  return { action: 'iterated', branchName: experimentBranch, iteration, maxIterations: MAX_EXPERIMENT_ITERATIONS };
-}
-
-function cmdPromote(experimentBranch) {
-  const state = loadExperimentState();
-  const experiment = state.experiments[experimentBranch];
-  if (!experiment) throw new Error(`Experiment not found: ${experimentBranch}`);
-  runGit(['push', 'origin', experimentBranch]);
-  experiment.status = 'promoted';
-  experiment.promotedAt = new Date().toISOString();
-  saveExperimentState(state);
-  return {
-    action: 'promoted',
-    branchName: experimentBranch,
-    remoteUrl: `https://github.com/${REPO_OWNER}/${REPO_NAME}/tree/${experimentBranch}`,
-    experiment,
-  };
-}
-
-function cmdDefer(experimentBranch, reason) {
-  const state = loadExperimentState();
-  const experiment = state.experiments[experimentBranch];
-  if (!experiment) throw new Error(`Experiment not found: ${experimentBranch}`);
-  experiment.status = 'deferred';
-  experiment.deferReason = reason;
-  experiment.deferredAt = new Date().toISOString();
-  saveExperimentState(state);
-  return { action: 'deferred', branchName: experimentBranch, reason };
-}
-
-function cmdReject(experimentBranch, reason) {
-  const state = loadExperimentState();
-  const experiment = state.experiments[experimentBranch];
-  if (!experiment) throw new Error(`Experiment not found: ${experimentBranch}`);
-  experiment.status = 'rejected';
-  experiment.rejectReason = reason;
-  experiment.rejectedAt = new Date().toISOString();
-  saveExperimentState(state);
-  return { action: 'rejected', branchName: experimentBranch, reason };
-}
-
-function cmdNotionHandoff(experimentBranch) {
-  const state = loadExperimentState();
-  const experiment = state.experiments[experimentBranch];
-  if (!experiment) throw new Error(`Experiment not found: ${experimentBranch}`);
-  const branchUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/tree/${experimentBranch}`;
-  const iterationSummary = experiment.iterations.map((i) => `- Iteration ${i.number}: ${i.changes}`).join('\n') || 'None';
-  const notionPayload = {
-    parent: { type: 'workspace', workspace: true },
-    properties: {
-      title: [{ type: 'text', text: { content: `Nightly Experiment: ${experiment.candidateKey}` } }],
-    },
-    children: [
-      { object: 'block', type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: 'Experiment Handoff' } }] } },
-      { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: `Branch: ${experiment.branchName}\nStatus: ${experiment.status}\nCreated: ${experiment.createdAt}\nDescription: ${experiment.description}` } }] } },
-      { object: 'block', type: 'heading_3', heading_3: { rich_text: [{ type: 'text', text: { content: 'Metrics' } }] } },
-      { object: 'block', type: 'code', code: { language: 'json', rich_text: [{ type: 'text', text: { content: JSON.stringify(experiment.metrics, null, 2) } }] } },
-      { object: 'block', type: 'heading_3', heading_3: { rich_text: [{ type: 'text', text: { content: 'Iterations' } }] } },
-      { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: iterationSummary } }] } },
-      { object: 'block', type: 'heading_3', heading_3: { rich_text: [{ type: 'text', text: { content: 'Git Branch' } }] } },
-      { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: branchUrl, link: { url: branchUrl } } }] } },
-    ],
-  };
-  const handoffPath = path.join(ROOT_DIR, '.nanoclaw', 'nightly-improvement', `handoff-${experimentBranch.replace(/\//g, '-')}.json`);
-  fs.mkdirSync(path.dirname(handoffPath), { recursive: true });
-  fs.writeFileSync(handoffPath, `${JSON.stringify(notionPayload, null, 2)}\n`);
-  experiment.notionHandoffPath = handoffPath;
-  experiment.branchUrl = branchUrl;
-  saveExperimentState(state);
-  return { action: 'handoff-prepared', handoffPath, branchUrl, notionPayload };
-}
-
 function parseCommitLines(rawValue) {
   return rawValue
     .split('\x1e')
@@ -500,6 +301,93 @@ function parseCommitLines(rawValue) {
       const [sha, subject, body] = line.split('\x1f');
       return { sha, subject, body: body?.trim() || '' };
     });
+}
+
+function createExperimentBranch(experimentName, baseBranch = 'main', remote = 'origin') {
+  const sanitizedName = experimentName.replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase();
+  const branchName = `nightly-experiment/${sanitizedName}-${Date.now()}`;
+
+  try {
+    const currentBranch = runGit(['branch', '--show-current']);
+    runGit(['checkout', '-b', branchName, `${remote}/${baseBranch}`]);
+    runGit(['checkout', currentBranch]);
+
+    return {
+      success: true,
+      branchName,
+      baseBranch: `${remote}/${baseBranch}`,
+      createdAt: nowIso(),
+    };
+  } catch (error) {
+    return {
+      success: false,
+      branchName,
+      error: error instanceof Error ? error.message : String(error),
+      createdAt: nowIso(),
+    };
+  }
+}
+
+function pushExperimentBranch(branchName, remote = 'origin') {
+  try {
+    runGit(['push', '-u', remote, branchName]);
+    const url = runGit(['remote', 'get-url', remote]).trim();
+    const repoMatch = url.match(/github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?$/);
+    const repoPath = repoMatch ? `${repoMatch[1]}/${repoMatch[2]}` : null;
+    const branchUrl = repoPath
+      ? `https://github.com/${repoPath}/tree/${branchName}`
+      : null;
+
+    return {
+      success: true,
+      branchName,
+      remote,
+      url: branchUrl,
+      pushedAt: nowIso(),
+    };
+  } catch (error) {
+    return {
+      success: false,
+      branchName,
+      remote,
+      error: error instanceof Error ? error.message : String(error),
+      pushedAt: nowIso(),
+    };
+  }
+}
+
+function measureContainerMetrics(experimentName, iterations = 3) {
+  const results = {
+    experimentName,
+    iterations,
+    measuredAt: nowIso(),
+    container: null,
+    memory: null,
+    latency: null,
+    errors: [],
+  };
+
+  try {
+    const containerRunnerPath = path.join(ROOT_DIR, 'src', 'container-runner.ts');
+    if (!fs.existsSync(containerRunnerPath)) {
+      results.errors.push('container-runner.ts not found - skipping runtime metrics');
+      results.note = 'Metrics measurement requires runtime container execution';
+      return results;
+    }
+
+    const memBefore = process.memoryUsage().heapUsed / 1024 / 1024;
+    const memRss = process.memoryUsage().rss / 1024 / 1024;
+
+    results.memory = {
+      processHeapUsedMB: Math.round(memBefore * 100) / 100,
+      processRssMB: Math.round(memRss * 100) / 100,
+      note: 'Full container metrics require runtime execution - this is baseline Node.js process memory',
+    };
+  } catch (error) {
+    results.errors.push(error instanceof Error ? error.message : String(error));
+  }
+
+  return results;
 }
 
 function fetchUpstreamSummary(previousSha) {
@@ -993,56 +881,36 @@ async function main() {
     }
 
     case 'create-experiment': {
-      const candidate = optionValue(options, 'candidate');
-      const description = optionValue(options, 'description');
-      if (!candidate || !description) throw new Error('create-experiment requires --candidate and --description');
-      writeOutput(cmdCreateExperiment(candidate, description), optionValue(options, 'output'));
+      const name = optionValue(options, 'name');
+      if (!name) {
+        throw new Error('create-experiment requires --name');
+      }
+      const baseBranch = optionValue(options, 'base-branch') || 'main';
+      const remote = optionValue(options, 'remote') || 'origin';
+      const result = createExperimentBranch(name, baseBranch, remote);
+      writeOutput(result, optionValue(options, 'output'));
       return;
     }
 
-    case 'measure': {
-      const experimentBranch = optionValue(options, 'experiment-branch');
-      if (!experimentBranch) throw new Error('measure requires --experiment-branch');
-      writeOutput(cmdMeasure(experimentBranch), optionValue(options, 'output'));
+    case 'push-experiment': {
+      const name = optionValue(options, 'name');
+      if (!name) {
+        throw new Error('push-experiment requires --name');
+      }
+      const remote = optionValue(options, 'remote') || 'origin';
+      const result = pushExperimentBranch(name, remote);
+      writeOutput(result, optionValue(options, 'output'));
       return;
     }
 
-    case 'iterate': {
-      const experimentBranch = optionValue(options, 'experiment-branch');
-      const iteration = optionValue(options, 'iteration');
-      if (!experimentBranch || !iteration) throw new Error('iterate requires --experiment-branch and --iteration');
-      const changes = optionValue(options, 'changes') || 'Iteration changes';
-      writeOutput(cmdIterate(experimentBranch, parseInt(iteration, 10), changes), optionValue(options, 'output'));
-      return;
-    }
-
-    case 'promote': {
-      const experimentBranch = optionValue(options, 'experiment-branch');
-      if (!experimentBranch) throw new Error('promote requires --experiment-branch');
-      writeOutput(cmdPromote(experimentBranch), optionValue(options, 'output'));
-      return;
-    }
-
-    case 'defer': {
-      const experimentBranch = optionValue(options, 'experiment-branch');
-      const reason = optionValue(options, 'reason');
-      if (!experimentBranch || !reason) throw new Error('defer requires --experiment-branch and --reason');
-      writeOutput(cmdDefer(experimentBranch, reason));
-      return;
-    }
-
-    case 'reject': {
-      const experimentBranch = optionValue(options, 'experiment-branch');
-      const reason = optionValue(options, 'reason');
-      if (!experimentBranch || !reason) throw new Error('reject requires --experiment-branch and --reason');
-      writeOutput(cmdReject(experimentBranch, reason));
-      return;
-    }
-
-    case 'notion-handoff': {
-      const experimentBranch = optionValue(options, 'experiment-branch');
-      if (!experimentBranch) throw new Error('notion-handoff requires --experiment-branch');
-      writeOutput(cmdNotionHandoff(experimentBranch), optionValue(options, 'output'));
+    case 'measure-metrics': {
+      const experimentName = optionValue(options, 'experiment-name');
+      if (!experimentName) {
+        throw new Error('measure-metrics requires --experiment-name');
+      }
+      const iterations = parseInt(optionValue(options, 'iterations') || '3', 10);
+      const result = measureContainerMetrics(experimentName, iterations);
+      writeOutput(result, optionValue(options, 'output'));
       return;
     }
 

@@ -105,6 +105,14 @@ export const CREDENTIAL_PROXY_PORT = parseInt(
   process.env.CREDENTIAL_PROXY_PORT || '3001',
   10,
 );
+export const NOTION_MCP_HTTP_PORT = parseInt(
+  process.env.NOTION_MCP_HTTP_PORT || '7802',
+  10,
+);
+export const LINEAR_MCP_HTTP_PORT = parseInt(
+  process.env.LINEAR_MCP_HTTP_PORT || '7803',
+  10,
+);
 export const IPC_POLL_INTERVAL = 1000;
 export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '300000', 10); // 5min default — close stdin after last result
 export const MAX_CONCURRENT_CONTAINERS = Math.max(

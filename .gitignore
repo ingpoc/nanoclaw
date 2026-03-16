@@ -33,9 +33,19 @@ groups/jarvis-worker-*/*
 !groups/andy-developer/CLAUDE.md
 !groups/andy-developer/docs/
 !groups/andy-developer/docs/**
+!groups/andy-developer/.claude/
+!groups/andy-developer/.claude/rules/
+!groups/andy-developer/.claude/rules/**
+!groups/andy-developer/.claude/skills/
+!groups/andy-developer/.claude/skills/**
 !groups/jarvis-worker-*/CLAUDE.md
 !groups/jarvis-worker-*/docs/
 !groups/jarvis-worker-*/docs/**
+!groups/jarvis-worker-*/.claude/
+!groups/jarvis-worker-*/.claude/rules/
+!groups/jarvis-worker-*/.claude/rules/**
+!groups/jarvis-worker-*/.claude/skills/
+!groups/jarvis-worker-*/.claude/skills/**
 !groups/**/.mcp.json
 !groups/**/opencode.json
 !groups/**/container-config.json
@@ -43,6 +53,11 @@ groups/jarvis-worker-*/*
 !groups/**/container-config.yml
 
 # Always ignore runtime artifacts under groups
+groups/**/.claude/hooks/
+groups/**/.claude/progress/
+groups/**/.claude/reports/
+groups/**/.claude/scripts/
+groups/**/.claude/settings.local.json
 groups/**/logs/
 groups/**/logs/**
 groups/**/memory/**

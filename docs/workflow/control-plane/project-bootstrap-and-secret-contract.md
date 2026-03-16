@@ -40,7 +40,7 @@ It does not own execution-lane routing or shared-context content design.
 - `docs/workflow/control-plane/collaboration-surface-contract.md`
 - `docs/workflow/control-plane/custom-symphony-orchestration-contract.md`
 - `docs/workflow/control-plane/execution-lane-routing-contract.md`
-- `docs/operations/workflow-setup-responsibility-map.md`
+- `docs/operations/update-requirements-matrix.md`
 
 ## Bootstrap Sequence
 

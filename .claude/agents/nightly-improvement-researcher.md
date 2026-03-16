@@ -13,6 +13,9 @@ allowedTools:
   - Bash(git show:*)
   - Bash(git diff:*)
   - Bash(git status)
+  - Bash(git checkout:*)
+  - Bash(git branch:*)
+  - Bash(git push:*)
   - mcp__deepwiki__ask_question
   - mcp__deepwiki__read_wiki_contents
   - mcp__context7__resolve-library-id
@@ -20,20 +23,11 @@ allowedTools:
   - mcp__exa__web_search_exa
   - mcp__token-efficient__execute_code
   - mcp__token-efficient__process_logs
-  - mcp__plugin_Notion_notion__notion-search
-  - mcp__plugin_Notion_notion__notion-fetch
-  - mcp__plugin_Notion_notion__notion-create-pages
-  - mcp__plugin_Notion_notion__notion-update-page
-  - mcp__plugin_Notion_notion__notion-create-comment
-  - mcp__plugin_linear_linear__get_issue
-  - mcp__plugin_linear_linear__save_issue
-  - mcp__plugin_linear_linear__list_issues
-  - mcp__plugin_linear_linear__save_comment
+  - mcp__symphony__symphony_list_runs
   - mcp__symphony__symphony_mark_run_status
-  - mcp__symphony__symphony_get_run
 memory: none
 permissionMode: bypassPermissions
-maxTurns: 24
+maxTurns: 18
 ---
 
 # Nightly Improvement Researcher
@@ -130,18 +124,58 @@ When recording a decision, use `node scripts/workflow/nightly-improvement.js app
 
 Do not create Linear issues directly. The handoff target is always morning Codex triage in the rolling nightly Notion context page.
 
-## Run Completion
+## Experiment Branch Workflow
 
-At the end of every run, mark the Symphony run status. Linear handles recurrence automatically when the issue returns to Ready.
+For promising candidates that warrant experimentation:
 
-**On success:** `mcp__symphony__symphony_mark_run_status` with `status: "done"`
+### Step 1: Create Experiment Branch
 
-**On failure (blocker, scan error, token exhausted):**
+Run `node scripts/workflow/nightly-improvement.js create-experiment --name "<experiment-name>" --base-branch <branch> --output /tmp/experiment.json`
 
-1. `mcp__symphony__symphony_mark_run_status` with `status: "blocked"`
-2. Include the blocker reason in the nightly Notion page before stopping.
+This creates a new branch from the specified base branch (default: main).
 
-For promoted experiments, create a Notion handoff page:
+### Step 2: Measure Baseline Metrics (Optional)
 
-1. Run `node scripts/workflow/nightly-improvement.js notion-handoff --experiment-branch <branch> --output /tmp/handoff.json`
-2. Read `/tmp/handoff.json` and pass `notionPayload` to `mcp__plugin_Notion_notion__notion-create-pages`
+Before making changes, measure baseline metrics if relevant:
+
+- Container startup time
+- Memory usage
+- Latency
+
+Run `node scripts/workflow/nightly-improvement.js measure-metrics --experiment-name "<name>" --iterations 3 --output /tmp/metrics-baseline.json`
+
+### Step 3: Document Changes
+
+After creating experiment branch:
+
+- Note the branch name in the Notion context page
+- Record the experiment URL if pushed to origin
+
+### Step 4: Promote via Git Push (Only for Successful Experiments)
+
+If the experiment shows promise, push to origin:
+
+- Run `node scripts/workflow/nightly-improvement.js push-experiment --name "<branch-name>" --remote origin --output /tmp/push-result.json`
+- Include the branch URL in the decision update
+
+Note: The experiment workflow is for evaluation purposes. Do not edit repo-tracked files directly in the main branch.
+
+## Run Status Contract
+
+At the end of EVERY run, you MUST mark the run status using the Symphony MCP tool:
+
+1. First, find your run ID using `mcp__symphony__symphony_list_runs`:
+   - Filter by `project_key: "nanoclaw"`
+   - Filter by `status: "running"` (your current run)
+   - Use the most recent run's `runId`
+
+2. Then mark the status using `mcp__symphony__symphony_mark_run_status`:
+   - run_id: the runId from step 1
+   - status: "done" if the run completed successfully (even if noop), "blocked" if something prevented completion
+   - result_summary: brief summary of what was done
+
+Example:
+
+- If scan returned noop: mark as "done", result_summary: "No pending candidates - scan returned noop"
+- If decisions were recorded: mark as "done", result_summary: "Evaluated X candidates, recorded Y decisions"
+- If blocked by missing env vars or errors: mark as "blocked", result_summary: "Blocked by: [reason]"

@@ -14,6 +14,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 
+import { readEnvFile } from './env.js';
 import { logger } from './logger.js';
 import {
   notionCreateMemory,
@@ -23,15 +24,6 @@ import {
   notionSearch,
 } from './symphony-notion.js';
 import { linearGraphql } from './symphony-linear.js';
-
-function readBody(req: import('http').IncomingMessage): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
-}
 
 function startServer(
   port: number,
@@ -57,7 +49,7 @@ function startServer(
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       try {
         await server.connect(transport);
-        await transport.handleRequest(req, res, await readBody(req));
+        await transport.handleRequest(req, res);
       } catch (err) {
         logger.error({ err, label }, 'MCP HTTP request error');
         if (!res.headersSent) {
@@ -84,7 +76,10 @@ function startServer(
 }
 
 function registerNotionTools(server: McpServer): void {
-  const databaseId = process.env.NOTION_AGENT_MEMORY_DATABASE_ID || '';
+  const databaseId =
+    process.env.NOTION_AGENT_MEMORY_DATABASE_ID ||
+    readEnvFile(['NOTION_AGENT_MEMORY_DATABASE_ID']).NOTION_AGENT_MEMORY_DATABASE_ID ||
+    '';
 
   function resultWithJson(summary: string, payload: unknown) {
     return {

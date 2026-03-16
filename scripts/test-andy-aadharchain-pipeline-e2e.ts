@@ -56,12 +56,15 @@ const DEFAULT_DB_PATH = 'store/messages.db';
 const PROJECT_NAME = 'Aadharchain';
 const PROJECT_KEY = 'AND-aadharchain';
 const GITHUB_REPO = 'openclaw-gurusharan/aadhaar-chain';
+const WORKER_REPO_SLUG = 'workspace/aadhaar-chain';
 const NOTION_HTTP_PORT = 7802;
 const LINEAR_HTTP_PORT = 7803;
 const POLL_MS = 500;
 const REQUEST_ACK_TIMEOUT_MS = 30_000;
-const REQUEST_LINK_TIMEOUT_MS = 180_000;
+const REQUEST_LINK_TIMEOUT_MS = 10 * 60_000;
 const RUN_TERMINAL_TIMEOUT_MS = 20 * 60_000;
+const ARTIFACT_TIMEOUT_MS = 6 * 60_000;
+const REQUEST_COMPLETION_TIMEOUT_MS = 6 * 60_000;
 const TIMESTAMP_FLOOR_TOLERANCE_MS = 1_000;
 const RUN_TERMINAL_OK = new Set(['review_requested', 'done']);
 const RUN_TERMINAL_FAIL = new Set(['failed', 'failed_contract']);
@@ -89,6 +92,41 @@ function getAndyChatJid(db: Database.Database): string {
     throw new Error('andy-developer is not registered in registered_groups');
   }
   return row.jid;
+}
+
+function selectProbeWorkerLane(db: Database.Database): string {
+  const rows = db.prepare(
+    `SELECT
+       folder,
+       COALESCE((
+         SELECT MAX(COALESCE(completed_at, started_at))
+         FROM worker_runs
+         WHERE group_folder = registered_groups.folder
+           AND status IN ('review_requested', 'done')
+       ), '') AS last_success_at,
+       COALESCE((
+         SELECT MAX(COALESCE(completed_at, started_at))
+         FROM worker_runs
+         WHERE group_folder = registered_groups.folder
+       ), '') AS last_run_at
+     FROM registered_groups
+     WHERE folder LIKE 'jarvis-worker-%'
+     ORDER BY
+       CASE WHEN last_success_at = '' THEN 0 ELSE 1 END,
+       last_success_at ASC,
+       last_run_at ASC,
+       folder ASC`,
+  ).all() as Array<{
+    folder: string;
+    last_success_at: string;
+    last_run_at: string;
+  }>;
+
+  if (rows.length === 0) {
+    throw new Error('no jarvis-worker lanes are registered');
+  }
+
+  return rows[0].folder;
 }
 
 function upsertChat(db: Database.Database, chatJid: string): void {
@@ -218,6 +256,25 @@ function getWorkerRun(db: Database.Database, runId: string): WorkerRunRow | null
   return row || null;
 }
 
+async function waitForRequestCompleted(
+  db: Database.Database,
+  requestId: string,
+  timeoutMs: number,
+): Promise<AndyRequestRow | null> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const row = getAndyRequestById(db, requestId);
+    if (row?.state === 'completed') {
+      return row;
+    }
+    if (row && (row.state === 'failed' || row.state === 'cancelled')) {
+      throw new Error(`andy_request ${requestId} reached terminal non-success state ${row.state}`);
+    }
+    await sleep(POLL_MS);
+  }
+  return null;
+}
+
 async function waitForWorkerRunTerminal(
   db: Database.Database,
   runId: string,
@@ -266,7 +323,7 @@ async function assertHealth(port: number, label: string): Promise<void> {
   console.log(`[preflight] ${label} (port ${port}): PASS`);
 }
 
-function buildPrompt(token: string): string {
+function buildPrompt(token: string, workerLane: string): string {
   return [
     '@Andy Run the NAN-54 Aadharchain full pipeline probe using the real NanoClaw flow, not Symphony.',
     `GitHub repo: ${GITHUB_REPO}.`,
@@ -276,15 +333,36 @@ function buildPrompt(token: string): string {
     `If the project is missing from the AND team or missing its Notion root page/memory scope, load /project-bootstrap and bootstrap it for the existing repo ${GITHUB_REPO}.`,
     `Then create one AND-team Linear issue titled "[Delivery] NAN-54 pipeline probe ${token}" under the ${PROJECT_NAME} project.`,
     '',
-    'After the issue exists, dispatch jarvis-worker-1 with strict valid worker dispatch JSON.',
-    'The worker task must stay small and local:',
-    `1. Create docs/nanoclaw/pipeline-${token}.md inside the aadhaar-chain workspace`,
-    `2. Add a Linear comment on the created AND issue containing the exact token ${token}`,
-    `3. Write one Notion memory entry for project_key ${PROJECT_KEY} containing the exact token ${token} and the issue identifier`,
-    '4. Return a valid completion contract with run_id, branch, commit_sha, files_changed, test_result, risk, pr_skipped_reason',
+    `After the issue exists, dispatch ${workerLane} with strict valid worker dispatch JSON.`,
+    'The worker task must stay small and local inside its own repo workspace under /workspace/group.',
+    `Use relative worker paths rooted at ${WORKER_REPO_SLUG} (for example ${WORKER_REPO_SLUG}/docs/...).`,
+    'Do not use /workspace/extra/repos anywhere in worker input or acceptance_tests; that path is for Andy review staging only.',
+    'The worker dispatch acceptance_tests must verify the file inside the worker workspace, not Andy review staging.',
+    'For context_intent=fresh, require the worker to start from a clean repo state before editing. If the workspace repo is dirty, clean it or reclone before continuing.',
+    'Require the worker to create or switch to the exact dispatched jarvis-* branch before making any file changes.',
+    `1. Create ${WORKER_REPO_SLUG}/docs/nanoclaw/pipeline-${token}.md`,
+    '2. Commit and push the worker branch with the new file',
+    '3. Return a valid completion contract with run_id, branch, commit_sha, files_changed, test_result, risk, pr_skipped_reason',
+    '',
+    `After you approve the worker result, you must add a Linear comment on the created AND issue containing the exact token ${token}, approved branch, and commit SHA.`,
+    `After review, you must also write one Notion memory entry for project_key ${PROJECT_KEY} containing the exact token ${token}, issue identifier, approved branch, and commit SHA.`,
+    'Do not ask the worker to update Linear or Notion directly; keep those control-plane updates in Andy after review.',
     '',
     'Do not open a PR or push to main. Use the normal Andy -> worker flow and report exact blockers if bootstrap or tool access fails.',
   ].join('\n');
+}
+
+function assertWorkerDispatchScope(payload: {
+  input: string;
+  acceptance_tests: string[];
+}): void {
+  const combined = [payload.input, ...payload.acceptance_tests].join('\n');
+  if (/\/workspace\/extra\/repos/i.test(combined)) {
+    throw new Error('dispatch payload leaked Andy review path /workspace/extra/repos into worker scope');
+  }
+  if (!new RegExp(`${WORKER_REPO_SLUG}/docs/nanoclaw`, 'i').test(combined)) {
+    throw new Error(`dispatch payload did not target ${WORKER_REPO_SLUG}/docs/nanoclaw in worker scope`);
+  }
 }
 
 function validateWorkerCompletion(row: WorkerRunRow): void {
@@ -363,26 +441,41 @@ async function verifyLinearState(token: string): Promise<{
   };
 }
 
-async function verifyNotionState(token: string): Promise<number> {
-  const databaseId = getRequiredEnv('NOTION_AGENT_MEMORY_DATABASE_ID');
-  if (!databaseId) {
-    throw new Error('Missing NOTION_AGENT_MEMORY_DATABASE_ID env var.');
+async function waitForLinearState(token: string, timeoutMs: number): Promise<{
+  viewerName: string;
+  issue: LinearIssueVerification;
+}> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    try {
+      return await verifyLinearState(token);
+    } catch (err) {
+      if (Date.now() - started + POLL_MS >= timeoutMs) {
+        throw err;
+      }
+    }
+    await sleep(POLL_MS);
   }
+  throw new Error(`Linear artifacts for token ${token} not observed within ${timeoutMs}ms`);
+}
 
-  const data = await notionRequest<{ results: Array<{ id: string }> }>(
-    'POST',
-    `/databases/${databaseId}/query`,
-    {
-      filter: {
-        and: [
-          { property: 'ProjectKey', rich_text: { contains: PROJECT_KEY } },
-          { property: 'Content', rich_text: { contains: token } },
-        ],
-      },
-      page_size: 20,
-    },
-  );
-  return data.results.length;
+async function verifyNotionState(token: string): Promise<number> {
+  const pages = await notionSearch(token, 10);
+  return pages.filter((page) =>
+    page.title.toLowerCase().includes(`pipeline probe ${token}`.toLowerCase()),
+  ).length;
+}
+
+async function waitForNotionState(token: string, timeoutMs: number): Promise<number> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const count = await verifyNotionState(token);
+    if (count >= 1) {
+      return count;
+    }
+    await sleep(POLL_MS);
+  }
+  throw new Error(`Notion artifacts for token ${token} not observed within ${timeoutMs}ms`);
 }
 
 async function verifyNotionProjectPage(): Promise<void> {
@@ -399,12 +492,14 @@ async function main(): Promise<void> {
   const db = new Database(dbPath, { readonly: false });
   const token = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const messageId = `uat-nan54-${token}`;
+  const workerLane = selectProbeWorkerLane(db);
   let requestId: string | null = null;
 
   try {
     console.log('=== NAN-54 Aadharchain Pipeline E2E ===');
     console.log(`db=${dbPath}`);
     console.log(`token=${token}`);
+    console.log(`worker_lane=${workerLane}`);
 
     await assertHealth(NOTION_HTTP_PORT, 'notion-mcp-http');
     await assertHealth(LINEAR_HTTP_PORT, 'linear-mcp-http');
@@ -412,7 +507,12 @@ async function main(): Promise<void> {
     const chatJid = getAndyChatJid(db);
     upsertChat(db, chatJid);
     const baselineBotIds = getBotIds(db, chatJid);
-    const sentAt = insertUserMessage(db, chatJid, messageId, buildPrompt(token));
+    const sentAt = insertUserMessage(
+      db,
+      chatJid,
+      messageId,
+      buildPrompt(token, workerLane),
+    );
     const sentMs = Date.parse(sentAt);
 
     const initialReply = await waitForBotMessage(
@@ -461,6 +561,7 @@ async function main(): Promise<void> {
     if (!dispatchCheck.valid) {
       throw new Error(`dispatch validation failed: ${dispatchCheck.errors.join('; ')}`);
     }
+    assertWorkerDispatchScope(dispatch);
     console.log('[dispatch] validation: PASS');
 
     const terminal = await waitForWorkerRunTerminal(db, link.runId, RUN_TERMINAL_TIMEOUT_MS);
@@ -474,19 +575,28 @@ async function main(): Promise<void> {
     validateWorkerCompletion(terminal);
     console.log('[worker] completion contract: PASS');
 
-    const { viewerName, issue } = await verifyLinearState(token);
+    const { viewerName, issue } = await waitForLinearState(token, ARTIFACT_TIMEOUT_MS);
     console.log(`[andy] issue in andyworkspace team: PASS (${issue.identifier})`);
     console.log(`[andy] Aadharchain project in andyworkspace: PASS`);
     console.log(`[verify] Linear comment on ${issue.identifier}: PASS`);
 
     await verifyNotionProjectPage();
-    const notionMemoryCount = await verifyNotionState(token);
-    if (notionMemoryCount < 1) {
-      throw new Error(`expected at least one Notion memory entry containing token ${token}`);
-    }
+    const notionMemoryCount = await waitForNotionState(token, ARTIFACT_TIMEOUT_MS);
     console.log('[verify] Notion memory write: PASS');
     console.log(`[result] notion_memory_count=${notionMemoryCount}`);
     console.log(`[result] linear_viewer_name=${viewerName}`);
+
+    const completedRequest = await waitForRequestCompleted(
+      db,
+      request.request_id,
+      REQUEST_COMPLETION_TIMEOUT_MS,
+    );
+    if (!completedRequest) {
+      throw new Error(
+        `andy_request ${request.request_id} did not reach completed within ${REQUEST_COMPLETION_TIMEOUT_MS}ms after artifacts were verified`,
+      );
+    }
+    console.log(`[andy] request completion: PASS (${completedRequest.request_id})`);
     console.log(`PASS in ${Math.round((Date.now() - startedAt) / 1000)}s`);
   } finally {
     cleanupRequest(db, messageId, requestId);

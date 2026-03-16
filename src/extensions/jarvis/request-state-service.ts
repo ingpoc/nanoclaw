@@ -16,6 +16,19 @@ const REVIEW_REQUEST_PATTERN =
   /<review_request>\s*([\s\S]*?)\s*<\/review_request>/i;
 const REVIEW_STATE_UPDATE_PATTERN =
   /<review_state_update>\s*([\s\S]*?)\s*<\/review_state_update>/gi;
+const LEADING_ANDY_PREFIX_PATTERN = /^\s*Andy:\s*/i;
+const PLAIN_COMPLETED_PATTERNS = [
+  /REVIEW:\s*(req-[a-z0-9-]+)\s*[—-]\s*COMPLETED/gi,
+  /Pipeline Probe COMPLETED:\s*(req-[a-z0-9-]+)/gi,
+  /Request\s+`?(req-[a-z0-9-]+)`?\s+already\s+completed/gi,
+  /pipeline probe\s+\**(req-[a-z0-9-]+)\**\s+completed\b/gi,
+  /pipeline probe\s+\**(req-[a-z0-9-]+)\**\s+is\s+\**already\s+\**completed\**/gi,
+];
+const PLAIN_FAILED_PATTERNS = [
+  /REVIEW:\s*(req-[a-z0-9-]+)\s*[—-]\s*FAILED/gi,
+  /Pipeline Probe FAILED:\s*(req-[a-z0-9-]+)/gi,
+  /Request\s+`?(req-[a-z0-9-]+)`?\s+already\s+failed/gi,
+];
 
 export interface AndyRequestMessageRef {
   requestId: string;
@@ -47,6 +60,23 @@ export interface AndyReviewStateUpdate {
     | 'completed'
     | 'failed';
   summary?: string;
+}
+
+export interface DeferredAndyReviewMessage {
+  originalMessageId: string;
+  requestId: string;
+  replayMessage: NewMessage;
+}
+
+export interface AndyMessageBatchSelection {
+  selectedMessages: NewMessage[];
+  activeRequestId?: string;
+  deferredReviewMessages: DeferredAndyReviewMessage[];
+}
+
+function extractPipelineProbeToken(branch: string): string | null {
+  const match = branch.match(/-probe-([a-z0-9-]+)$/i);
+  return match?.[1]?.trim() || null;
 }
 
 function parseJsonBlock<T>(raw: string): T | null {
@@ -88,6 +118,22 @@ export function buildAndyReviewTriggerMessage(input: {
   timestamp: string;
   payload: AndyReviewRequestPayload;
 }): NewMessage {
+  const pipelineProbeToken = extractPipelineProbeToken(input.payload.branch);
+  const reviewContractLines = [
+    `Approve path: emit <review_state_update>{"request_id":"${input.payload.request_id}","state":"completed","summary":"..."}</review_state_update>.`,
+    'Do not send any chat message to jarvis-worker-* when approving.',
+    'Only send a jarvis-worker message if you are dispatching strict JSON for rework.',
+    'If you need a bounded direct patch yourself, emit andy_patch_in_progress instead of messaging a worker.',
+  ];
+  if (pipelineProbeToken) {
+    reviewContractLines.push(
+      `For this pipeline probe, create a Notion page titled "Pipeline Probe ${pipelineProbeToken}" with notion_create_page before you emit completed.`,
+      'Notion memory alone does not satisfy pipeline-probe completion.',
+    );
+  }
+  reviewContractLines.push(
+    'Emit <review_state_update> directly in your assistant response body. Do not send it via mcp__nanoclaw__send_message.',
+  );
   return {
     id: `review-${input.payload.run_id}`,
     chat_jid: input.chatJid,
@@ -97,6 +143,9 @@ export function buildAndyReviewTriggerMessage(input: {
       '<review_request>',
       JSON.stringify(input.payload, null, 2),
       '</review_request>',
+      '<review_contract>',
+      ...reviewContractLines,
+      '</review_contract>',
     ].join('\n'),
     timestamp: input.timestamp,
     is_from_me: false,
@@ -107,8 +156,10 @@ export function buildAndyReviewTriggerMessage(input: {
 export function parseAndyReviewStateUpdates(
   content: string,
 ): AndyReviewStateUpdate[] {
+  const normalizedContent = content.replace(LEADING_ANDY_PREFIX_PATTERN, '');
   const updates: AndyReviewStateUpdate[] = [];
-  for (const match of content.matchAll(REVIEW_STATE_UPDATE_PATTERN)) {
+  const seen = new Set<string>();
+  for (const match of normalizedContent.matchAll(REVIEW_STATE_UPDATE_PATTERN)) {
     const parsed = parseJsonBlock<AndyReviewStateUpdate>(match[1] || '');
     if (!parsed) continue;
     if (
@@ -123,13 +174,42 @@ export function parseAndyReviewStateUpdates(
     ) {
       continue;
     }
+    seen.add(parsed.request_id);
     updates.push(parsed);
   }
+
+  const summary = stripAndyReviewStateUpdates(normalizedContent)
+    .replace(/\s+/g, ' ')
+    .slice(0, 240);
+
+  const collectPlainUpdates = (
+    patterns: RegExp[],
+    state: AndyReviewStateUpdate['state'],
+  ): void => {
+    for (const pattern of patterns) {
+      for (const match of normalizedContent.matchAll(pattern)) {
+        const requestId = match[1]?.trim();
+        if (!requestId || seen.has(requestId)) continue;
+        seen.add(requestId);
+        updates.push({
+          request_id: requestId,
+          state,
+          summary,
+        });
+      }
+    }
+  };
+
+  collectPlainUpdates(PLAIN_COMPLETED_PATTERNS, 'completed');
+  collectPlainUpdates(PLAIN_FAILED_PATTERNS, 'failed');
   return updates;
 }
 
 export function stripAndyReviewStateUpdates(content: string): string {
-  return content.replace(REVIEW_STATE_UPDATE_PATTERN, '').trim();
+  return content
+    .replace(LEADING_ANDY_PREFIX_PATTERN, '')
+    .replace(REVIEW_STATE_UPDATE_PATTERN, '')
+    .trim();
 }
 
 export function createAndyWorkIntakeRequest(input: {
@@ -194,6 +274,15 @@ export function markAndyRequestsCoordinatorActive(
 ): void {
   for (const request of requests) {
     if (request.kind !== 'coordinator') continue;
+    const current = getAndyRequestById(request.requestId);
+    if (
+      !current ||
+      current.state === 'completed' ||
+      current.state === 'failed' ||
+      current.state === 'cancelled'
+    ) {
+      continue;
+    }
     updateAndyRequestState(request.requestId, 'coordinator_active', statusText);
   }
 }
@@ -204,6 +293,15 @@ export function markAndyRequestsReviewInProgress(
 ): void {
   for (const request of requests) {
     if (request.kind !== 'review') continue;
+    const current = getAndyRequestById(request.requestId);
+    if (
+      !current ||
+      current.state === 'completed' ||
+      current.state === 'failed' ||
+      current.state === 'cancelled'
+    ) {
+      continue;
+    }
     updateAndyRequestState(request.requestId, 'review_in_progress', statusText);
   }
 }
@@ -244,6 +342,100 @@ export function setAndyCoordinatorSession(
   sessionId: string | null,
 ): void {
   setAndyRequestCoordinatorSession(requestId, sessionId);
+}
+
+export function resolveAndyCoordinatorSessionOverride(
+  requests: AndyRequestMessageRef[],
+): string | null | undefined {
+  const firstRequest = requests[0];
+  if (!firstRequest) return undefined;
+
+  const current = getAndyRequestById(firstRequest.requestId);
+  const persistedSessionId = current?.coordinator_session_id?.trim();
+  if (persistedSessionId) {
+    return persistedSessionId;
+  }
+
+  if (firstRequest.kind === 'coordinator') {
+    return null;
+  }
+
+  return undefined;
+}
+
+export function shouldForceFreshAndyCoordinatorRun(
+  requests: AndyRequestMessageRef[],
+): boolean {
+  return resolveAndyCoordinatorSessionOverride(requests) === null;
+}
+
+export function shouldForceFreshAndySessionRun(
+  requests: AndyRequestMessageRef[],
+): boolean {
+  const firstRequest = requests[0];
+  if (!firstRequest) return false;
+  if (firstRequest.kind === 'review') return true;
+  return shouldForceFreshAndyCoordinatorRun(requests);
+}
+
+function isTerminalRequestState(state: string | undefined): boolean {
+  return state === 'completed' || state === 'failed' || state === 'cancelled';
+}
+
+export function selectAndyMessageBatch(
+  messages: NewMessage[],
+  replayTimestamp: string,
+): AndyMessageBatchSelection {
+  const refs = listTrackedAndyRequestRefsForMessages(messages);
+  const activeRequest = refs[0];
+  if (!activeRequest) {
+    return {
+      selectedMessages: messages,
+      deferredReviewMessages: [],
+    };
+  }
+
+  if (activeRequest.kind !== 'coordinator') {
+    return {
+      selectedMessages: messages,
+      activeRequestId: activeRequest.requestId,
+      deferredReviewMessages: [],
+    };
+  }
+
+  const deferredReviewMessages: DeferredAndyReviewMessage[] = [];
+  const deferredIds = new Set<string>();
+
+  for (const ref of refs.slice(1)) {
+    if (ref.kind !== 'review') continue;
+    if (ref.requestId === activeRequest.requestId) continue;
+
+    const request = getAndyRequestById(ref.requestId);
+    if (isTerminalRequestState(request?.state)) continue;
+
+    const original = messages.find((message) => message.id === ref.messageId);
+    if (!original) continue;
+
+    deferredIds.add(original.id);
+    deferredReviewMessages.push({
+      originalMessageId: original.id,
+      requestId: ref.requestId,
+      replayMessage: {
+        ...original,
+        id: `deferred-${original.id}-${Date.now().toString(36)}`,
+        timestamp: replayTimestamp,
+      },
+    });
+  }
+
+  return {
+    selectedMessages:
+      deferredIds.size > 0
+        ? messages.filter((message) => !deferredIds.has(message.id))
+        : messages,
+    activeRequestId: activeRequest.requestId,
+    deferredReviewMessages,
+  };
 }
 
 export function markAndyRequestDispatchBlocked(input: {

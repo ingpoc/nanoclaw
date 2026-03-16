@@ -44,6 +44,7 @@ const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
 
 // Must match AGENT_RUNNER_LOG_PREFIX in container/agent-runner/src/index.ts
 const AGENT_RUNNER_LOG_PREFIX = '[agent-runner]';
+const OPENCODE_HEARTBEAT_LOG = 'heartbeat worker-opencode-active';
 
 export interface ContainerInput {
   prompt: string;
@@ -83,6 +84,13 @@ interface AgentRunnerSourceSyncMetadata {
   syncedAt: string;
 }
 
+function shouldTreatAgentRunnerStderrAsProgress(chunk: string): boolean {
+  return (
+    chunk.includes(AGENT_RUNNER_LOG_PREFIX) &&
+    !chunk.includes(OPENCODE_HEARTBEAT_LOG)
+  );
+}
+
 const AGENT_RUNNER_SYNC_METADATA_FILENAME = 'agent-runner-src.sync.json';
 const DEFAULT_MODEL_SECRET_KEYS = [
   'MINIMAX_API_KEY',
@@ -94,11 +102,77 @@ type SessionMcpConfig = {
   mcpServers?: Record<string, unknown>;
 };
 
-function readSecretValue(name: string): string | undefined {
+function readRuntimeConfigValue(name: string): string | undefined {
   const fromProcess = process.env[name]?.trim();
   if (fromProcess) return fromProcess;
   const fromEnvFile = readEnvFile([name])[name]?.trim();
   return fromEnvFile || undefined;
+}
+
+function readSecretValue(name: string): string | undefined {
+  return readRuntimeConfigValue(name);
+}
+
+function isTruthyEnvValue(value: string | undefined): boolean {
+  if (!value) return false;
+  return /^(true|1|yes|on)$/i.test(value.trim());
+}
+
+export function resolveWorkerRuntimeMode():
+  | 'agent'
+  | 'opencode'
+  | 'auto' {
+  const configured = readRuntimeConfigValue('WORKER_RUNTIME_MODE')?.toLowerCase();
+  if (configured === 'agent' || configured === 'opencode') {
+    return configured;
+  }
+  return 'auto';
+}
+
+export function shouldUseAgentRuntimeForWorkers(): boolean {
+  const mode = resolveWorkerRuntimeMode();
+  if (mode === 'agent') return true;
+  if (mode === 'opencode') return false;
+
+  const apiFallbackEnabled = isTruthyEnvValue(
+    readRuntimeConfigValue('OAUTH_API_FALLBACK_ENABLED'),
+  );
+  const model = (
+    readRuntimeConfigValue('ANTHROPIC_DEFAULT_SONNET_MODEL') || ''
+  ).toLowerCase();
+
+  return apiFallbackEnabled && model.startsWith('minimax');
+}
+
+export function selectContainerImageForGroup(group: RegisteredGroup): string {
+  if (!isJarvisWorkerFolder(group.folder)) {
+    return CONTAINER_IMAGE;
+  }
+  return shouldUseAgentRuntimeForWorkers()
+    ? CONTAINER_IMAGE
+    : WORKER_CONTAINER_IMAGE;
+}
+
+export function shouldStopSingleShotWorkerAgentRuntime(input: {
+  groupFolder: string;
+  image: string;
+  result: ContainerOutput['result'];
+  stopRequestedAfterResult: boolean;
+}): boolean {
+  return (
+    isJarvisWorkerFolder(input.groupFolder) &&
+    input.image === CONTAINER_IMAGE &&
+    !!input.result &&
+    !input.stopRequestedAfterResult
+  );
+}
+
+const SINGLE_SHOT_WORKER_CLOSE_GRACE_MS = 15000;
+
+function requestGracefulContainerClose(groupFolder: string): void {
+  const inputDir = path.join(resolveGroupIpcPath(groupFolder), 'input');
+  fs.mkdirSync(inputDir, { recursive: true });
+  fs.writeFileSync(path.join(inputDir, '_close'), '');
 }
 
 function resolveGithubTokenForGroup(group: RegisteredGroup): string | undefined {
@@ -505,23 +579,54 @@ function buildVolumeMounts(
       (settings.hooks as Record<string, unknown> | undefined) ?? {};
     const existingPreToolUse =
       (existingHooks.PreToolUse as unknown[] | undefined) ?? [];
-    const validateHook = {
+    const validateDispatchHook = {
       matcher: 'mcp__nanoclaw__send_message',
       hooks: [
         {
           type: 'command',
           command: '/home/node/.claude/hooks/validate-dispatch.sh',
         },
+        {
+          type: 'command',
+          command: '/home/node/.claude/hooks/validate-review-state-update.sh',
+        },
       ],
     };
-    const alreadyPresent = existingPreToolUse.some(
-      (h) => JSON.stringify(h) === JSON.stringify(validateHook),
+    const validateLinearIssueHook = {
+      matcher: 'mcp__linear__save_issue',
+      hooks: [
+        {
+          type: 'command',
+          command: '/home/node/.claude/hooks/validate-linear-issue.sh',
+        },
+      ],
+    };
+    const validateLinearGraphqlHook = {
+      matcher: 'mcp__linear__linear_graphql',
+      hooks: [
+        {
+          type: 'command',
+          command: '/home/node/.claude/hooks/validate-linear-graphql.sh',
+        },
+      ],
+    };
+    const requiredHooks = [
+      validateDispatchHook,
+      validateLinearIssueHook,
+      validateLinearGraphqlHook,
+    ];
+    const missingHooks = requiredHooks.filter(
+      (hook) =>
+        !existingPreToolUse.some(
+          (existingHook) => JSON.stringify(existingHook) === JSON.stringify(hook),
+        ),
     );
     settings.hooks = {
       ...existingHooks,
-      PreToolUse: alreadyPresent
-        ? existingPreToolUse
-        : [...existingPreToolUse, validateHook],
+      PreToolUse:
+        missingHooks.length === 0
+          ? existingPreToolUse
+          : [...existingPreToolUse, ...missingHooks],
     };
   }
 
@@ -766,9 +871,9 @@ export async function runContainerAgent(
     );
   }
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
-  const image = isJarvisWorkerFolder(group.folder)
-    ? WORKER_CONTAINER_IMAGE
-    : CONTAINER_IMAGE;
+  const image = selectContainerImageForGroup(group);
+  const singleShotWorkerAgentRuntime =
+    isJarvisWorkerFolder(group.folder) && image === CONTAINER_IMAGE;
   const containerArgs = buildContainerArgs(mounts, containerName, image);
 
   logger.debug(
@@ -819,6 +924,8 @@ export async function runContainerAgent(
     let sessionResumeError: string | undefined;
     let outputChain = Promise.resolve();
     const parseBufferLimit = CONTAINER_PARSE_BUFFER_LIMIT || 1024 * 1024;
+    let stopRequestedAfterResult = false;
+    let singleShotStopFallback: ReturnType<typeof setTimeout> | null = null;
 
     container.stdout.on('data', (data) => {
       const chunk = data.toString();
@@ -889,6 +996,51 @@ export async function runContainerAgent(
             // Call onOutput for all markers (including null results)
             // so idle timers start even for "silent" query completions.
             outputChain = outputChain.then(() => onOutput(parsed));
+            if (
+              shouldStopSingleShotWorkerAgentRuntime({
+                groupFolder: group.folder,
+                image,
+                result: parsed.result,
+                stopRequestedAfterResult,
+              })
+            ) {
+              stopRequestedAfterResult = true;
+              outputChain = outputChain.then(
+                () =>
+                  new Promise<void>((stopResolved) => {
+                    logger.info(
+                      { group: group.name, containerName },
+                      'Gracefully closing single-shot worker agent runtime after first result',
+                    );
+                    try {
+                      requestGracefulContainerClose(group.folder);
+                    } catch (err) {
+                      logger.warn(
+                        { group: group.name, containerName, err },
+                        'Failed to write close sentinel for single-shot worker runtime',
+                      );
+                    }
+                    if (singleShotStopFallback) {
+                      clearTimeout(singleShotStopFallback);
+                    }
+                    singleShotStopFallback = setTimeout(() => {
+                      exec(
+                        stopContainer(containerName),
+                        { timeout: 15000 },
+                        (err) => {
+                          if (err) {
+                            logger.warn(
+                              { group: group.name, containerName, err },
+                              'Failed to stop single-shot worker agent runtime after grace window',
+                            );
+                          }
+                        },
+                      );
+                    }, SINGLE_SHOT_WORKER_CLOSE_GRACE_MS);
+                    stopResolved();
+                  }),
+              );
+            }
           } catch (err) {
             logger.warn(
               { group: group.name, error: err },
@@ -907,7 +1059,7 @@ export async function runContainerAgent(
       }
       // Re-arm no_output_timeout on our own [agent-runner] instrumentation lines
       // (heartbeats, status logs) but NOT on SDK debug spam.
-      if (noOutputTimeout && chunk.includes(AGENT_RUNNER_LOG_PREFIX)) {
+      if (noOutputTimeout && shouldTreatAgentRunnerStderrAsProgress(chunk)) {
         clearTimeout(noOutputTimeout);
         noOutputTimeout = setTimeout(
           () => stopForTimeout('no_output_timeout'),
@@ -991,6 +1143,10 @@ export async function runContainerAgent(
     }
 
     container.on('close', (code) => {
+      if (singleShotStopFallback) {
+        clearTimeout(singleShotStopFallback);
+        singleShotStopFallback = null;
+      }
       clearTimeout(hardTimeout);
       if (noOutputTimeout) clearTimeout(noOutputTimeout);
       const duration = Date.now() - startTime;

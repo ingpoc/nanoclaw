@@ -44,6 +44,16 @@ function stripAssistantTrigger(content: string): string {
   return content.trim().replace(TRIGGER_PATTERN, '').trim();
 }
 
+function hasExtraTextBeyondStatusQuery(body: string): boolean {
+  const remainder = body
+    .replace(ANDY_STATUS_BY_ID_PATTERN, ' ')
+    .replace(ANDY_PROGRESS_QUERY_PATTERN, ' ')
+    .replace(ANDY_REQUEST_ID_PATTERN, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+  return remainder.length > 0;
+}
+
 export function isSimpleAndyGreeting(
   group: RegisteredGroup,
   messages: NewMessage[],
@@ -83,6 +93,9 @@ function getAndyProgressQueryContext(
       ANDY_PROGRESS_QUERY_PATTERN.test(body)
     ) {
       queryMessage = message;
+      if (hasExtraTextBeyondStatusQuery(body)) {
+        containsNonQueryWork = true;
+      }
       continue;
     }
     if (SIMPLE_ANDY_GREETING_PATTERN.test(body)) continue;
@@ -121,6 +134,28 @@ export function isStaleAndyReviewRequest(
   return nowMs - updatedAtMs >= STALE_REVIEW_REQUEST_THRESHOLD_MS;
 }
 
+function shouldHideTerminalLinkedRequest(request: AndyRequestRecord): boolean {
+  if (!request.worker_run_id) return false;
+  if (
+    request.state !== 'coordinator_active' &&
+    request.state !== 'worker_queued' &&
+    request.state !== 'worker_running'
+  ) {
+    return false;
+  }
+
+  const run = getWorkerRun(request.worker_run_id);
+  if (!run) return false;
+  return (
+    run.status === 'failed' ||
+    run.status === 'failed_contract' ||
+    run.status === 'failed_runtime' ||
+    run.status === 'failed_timeout' ||
+    run.status === 'review_requested' ||
+    run.status === 'done'
+  );
+}
+
 export function getAndyStatusRequestBuckets(
   chatJid: string,
   limit = 20,
@@ -133,6 +168,9 @@ export function getAndyStatusRequestBuckets(
   const staleReviewRequests: AndyRequestRecord[] = [];
 
   for (const request of requests) {
+    if (shouldHideTerminalLinkedRequest(request)) {
+      continue;
+    }
     if (isStaleAndyReviewRequest(request)) {
       staleReviewRequests.push(request);
     } else {
@@ -155,8 +193,9 @@ function isAndyWorkIntakeMessage(
   if (!body) return false;
   if (SIMPLE_ANDY_GREETING_PATTERN.test(body)) return false;
   if (
-    ANDY_STATUS_BY_ID_PATTERN.test(body) ||
-    ANDY_PROGRESS_QUERY_PATTERN.test(body)
+    (ANDY_STATUS_BY_ID_PATTERN.test(body) ||
+      ANDY_PROGRESS_QUERY_PATTERN.test(body)) &&
+    !hasExtraTextBeyondStatusQuery(body)
   )
     return false;
   return true;
@@ -383,25 +422,22 @@ async function trySendAndyProgressStatus(
   if (!progressContext) return false;
   const requestId = extractAndyStatusRequestId(progressContext.queryMessage);
 
-  const lastTimestamp = messages[messages.length - 1].timestamp;
-  if (!progressContext.containsNonQueryWork) {
-    runtime.markCursorInFlight(chatJid, lastTimestamp);
+  if (progressContext.containsNonQueryWork) {
+    return false;
   }
+
+  const lastTimestamp = messages[messages.length - 1].timestamp;
+  runtime.markCursorInFlight(chatJid, lastTimestamp);
   try {
     await channel.sendMessage(
       chatJid,
       buildAndyProgressStatusReply(chatJid, requestId),
     );
-    if (progressContext.containsNonQueryWork) {
-      return false;
-    }
     runtime.markBatchProcessed(chatJid, progressContext.handledMessages);
     runtime.commitInFlightCursor(chatJid);
     return true;
   } catch (err) {
-    if (!progressContext.containsNonQueryWork) {
-      runtime.clearInFlightCursor(chatJid);
-    }
+    runtime.clearInFlightCursor(chatJid);
     logger.warn({ chatJid, err }, 'Andy progress status send failed');
     return false;
   }

@@ -7,6 +7,7 @@ FROM node:22-slim
 RUN apt-get update && apt-get install -y \
     chromium \
     gh \
+    jq \
     fonts-liberation \
     fonts-noto-cjk \
     fonts-noto-color-emoji \

@@ -623,6 +623,47 @@ export function getMessagesSince(
     .all(chatJid, sinceTimestamp, `${botPrefix}:%`, limit) as NewMessage[];
 }
 
+export function getUnprocessedMessages(
+  chatJid: string,
+  limit: number = 500,
+): NewMessage[] {
+  const boundedLimit = Math.max(1, Math.min(limit, 1000));
+  const sql = `
+    SELECT id, chat_jid, sender, sender_name, content, timestamp, is_from_me
+    FROM messages
+    WHERE chat_jid = ?
+      AND is_bot_message = 0
+      AND content != '' AND content IS NOT NULL
+      AND id NOT IN (
+        SELECT message_id
+        FROM processed_messages
+        WHERE chat_jid = ?
+      )
+    ORDER BY timestamp, id
+    LIMIT ?
+  `;
+  return db.prepare(sql).all(chatJid, chatJid, boundedLimit) as NewMessage[];
+}
+
+export function getRecentBotMessages(
+  chatJid: string,
+  limit: number = 50,
+): NewMessage[] {
+  const boundedLimit = Math.max(1, Math.min(limit, 200));
+  const sql = `
+    SELECT * FROM (
+      SELECT id, chat_jid, sender, sender_name, content, timestamp, is_from_me, is_bot_message
+      FROM messages
+      WHERE chat_jid = ?
+        AND is_bot_message = 1
+        AND content != '' AND content IS NOT NULL
+      ORDER BY timestamp DESC, id DESC
+      LIMIT ?
+    ) ORDER BY timestamp, id
+  `;
+  return db.prepare(sql).all(chatJid, boundedLimit) as NewMessage[];
+}
+
 export function createTask(
   task: Omit<ScheduledTask, 'last_run' | 'last_result'>,
 ): void {
@@ -978,6 +1019,7 @@ export type WorkerRunStatus =
   | 'running'
   | 'review_requested'
   | 'failed_contract'
+  | 'failed_timeout'
   | 'done'
   | 'failed';
 
@@ -1120,6 +1162,7 @@ const TERMINAL_WORKER_RUN_STATUSES: Set<WorkerRunStatus> = new Set([
   'done',
   'failed',
   'failed_contract',
+  'failed_timeout',
 ]);
 
 function isTerminalWorkerRunStatus(status: WorkerRunStatus): boolean {
@@ -1150,20 +1193,23 @@ function canTransitionWorkerRunStatus(
         next === 'review_requested' ||
         next === 'done' ||
         next === 'failed' ||
-        next === 'failed_contract'
+        next === 'failed_contract' ||
+        next === 'failed_timeout'
       );
     case 'running':
       return (
         next === 'review_requested' ||
         next === 'done' ||
         next === 'failed' ||
-        next === 'failed_contract'
+        next === 'failed_contract' ||
+        next === 'failed_timeout'
       );
     case 'review_requested':
       return next === 'done';
     case 'done':
     case 'failed':
     case 'failed_contract':
+    case 'failed_timeout':
       return false;
     default:
       return false;
@@ -1174,7 +1220,7 @@ function canTransitionWorkerRunStatus(
  * Insert a worker run record.
  * - 'new': run_id not seen before, inserted with status 'queued'
  * - 'retry': run_id exists with status 'failed' or 'failed_contract'
- * - 'duplicate': run_id exists with any other status
+ * - 'duplicate': run_id exists with any other status, including failed_timeout
  */
 export function insertWorkerRun(
   runId: string,

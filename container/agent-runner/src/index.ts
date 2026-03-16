@@ -16,9 +16,12 @@
 
 import { spawnSync } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { query, HookCallback, PreCompactHookInput, PreToolUseHookInput, SubagentStartHookInput } from '@anthropic-ai/claude-agent-sdk';
 import { fileURLToPath } from 'url';
+
+import { buildNoResultEventFailureOutput } from './output-contract.js';
 
 interface ContainerInput {
   prompt: string;
@@ -131,6 +134,28 @@ function configureGitIdentity(): void {
   }
 }
 
+function configureGitHubCredentials(): void {
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
+  if (!token) return;
+
+  const homeDir = os.homedir();
+  const gitCredentialsPath = path.join(homeDir, '.git-credentials');
+  const credentialLine = `https://openclaw-gurusharan:${encodeURIComponent(token)}@github.com\n`;
+
+  fs.writeFileSync(gitCredentialsPath, credentialLine, { mode: 0o600 });
+
+  const setHelper = spawnSync('git', ['config', '--global', 'credential.helper', 'store'], { stdio: 'ignore' });
+  const setUser = spawnSync(
+    'git',
+    ['config', '--global', 'url.https://openclaw-gurusharan@github.com/.insteadOf', 'https://github.com/'],
+    { stdio: 'ignore' },
+  );
+
+  if (setHelper.status !== 0 || setUser.status !== 0) {
+    throw new Error('failed to configure github credentials');
+  }
+}
+
 function injectSecrets(input: ContainerInput): void {
   if (!input.secrets) return;
 
@@ -158,8 +183,9 @@ function injectSecrets(input: ContainerInput): void {
   if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) {
     try {
       configureGitIdentity();
+      configureGitHubCredentials();
     } catch {
-      log('Failed to configure git identity from injected secrets');
+      log('Failed to configure git identity/credentials from injected secrets');
     }
   }
 }
@@ -604,15 +630,18 @@ async function runQuery(
   }
 
   ipcPolling = false;
-  if (resultCount === 0 && lastAssistantText?.trim()) {
-    log('No result message emitted; using final assistant text as fallback output');
-    writeOutput({
-      status: 'success',
-      result: lastAssistantText,
-      newSessionId,
-      agentId: capturedAgentId,
-      agentType: capturedAgentType,
-    });
+  const noResultFailureOutput = buildNoResultEventFailureOutput({
+    resultCount,
+    lastAssistantText,
+    newSessionId,
+    agentId: capturedAgentId,
+    agentType: capturedAgentType,
+  });
+  if (noResultFailureOutput) {
+    log(
+      `No result message emitted; returning explicit error instead of fallback output (${noResultFailureOutput.error})`,
+    );
+    writeOutput(noResultFailureOutput);
   }
   log(`Query done. Messages: ${messageCount}, results: ${resultCount}, lastAssistantUuid: ${lastAssistantUuid || 'none'}, closedDuringQuery: ${closedDuringQuery}`);
   return { newSessionId, lastAssistantUuid, closedDuringQuery };

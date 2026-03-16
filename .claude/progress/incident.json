@@ -1,5 +1,21 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-11T09:24:33Z",
-  "incidents": []
+  "updated_at": "2026-03-16T19:16:30Z",
+  "incidents": [
+    {
+      "id": "inc-20260316-worker-timeout-retry-loop",
+      "status": "open",
+      "summary": "Jarvis worker OpenCode stalls were failing host no-output timeout correctly but the same dispatch message was being automatically retried, causing repeat respawns of the same run_id instead of a terminal fail-loud outcome.",
+      "notes": [
+        "Confirmed live on run jarvis-nan-54-probe-1773664524945-378xt.",
+        "Host watchdog fix landed in src/container-runner.ts: synthetic worker-opencode-active heartbeats no longer re-arm no-output timeout.",
+        "Retry policy fix landed in src/index.ts with src/worker-agent-error-policy.ts: worker timeout errors are treated as terminal and should not be automatically retried.",
+        "Pending verification: timeout of the replayed run under the new runtime must stay terminal and avoid another respawn.",
+        "2026-03-16 reliability hardening: andy-developer now defers older review backlog behind fresh intake, review requests force a fresh Andy session, and fresh-intake preemption escalates from close sentinel to bounded force-stop if the stale session does not yield.",
+        "2026-03-16 worker shutdown hardening: single-shot worker agent-runtime now writes a graceful _close sentinel first and only falls back to container stop after a grace window, reducing normal post-completion exit 137 dependence.",
+        "2026-03-16 worker confidence: live probes reached review_requested on both jarvis-worker-1 (probe-jarvis-worker-1-1773688332-4691) and jarvis-worker-2 (probe-jarvis-worker-2-1773687505-30281); verify-worker-connectivity now passes.",
+        "2026-03-16 ops signal cleanup: preflight/status now report recent successful worker evidence instead of misclassifying quiet lanes as inactive from chat message timestamps alone."
+      ]
+    }
+  ]
 }

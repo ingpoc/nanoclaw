@@ -34,6 +34,16 @@ const STATUS_QUERY_MESSAGE: NewMessage = {
   timestamp: '2026-03-06T10:00:00.000Z',
 };
 
+const MIXED_WORK_MESSAGE: NewMessage = {
+  id: 'msg-status-plus-work',
+  chat_jid: 'andy-developer@g.us',
+  sender: 'user@s.whatsapp.net',
+  sender_name: 'User',
+  content:
+    '@Andy what are you working on right now? Also create a fresh NAN-54 pipeline probe for aadhaar-chain.',
+  timestamp: '2026-03-06T10:01:00.000Z',
+};
+
 describe('frontdesk-service', () => {
   beforeEach(() => {
     _initTestDatabase();
@@ -72,6 +82,39 @@ describe('frontdesk-service', () => {
     expect(listActiveAndyRequests(STATUS_QUERY_MESSAGE.chat_jid)).toHaveLength(
       0,
     );
+  });
+
+  it('does not send a status reply when the same batch also contains real work', async () => {
+    const sent: string[] = [];
+    const channel: Channel = {
+      name: 'test',
+      connect: async () => {},
+      sendMessage: async (_jid, text) => {
+        sent.push(text);
+      },
+      isConnected: () => true,
+      ownsJid: () => true,
+      disconnect: async () => {},
+    };
+
+    const handled = await handleAndyFrontdeskMessages({
+      chatJid: MIXED_WORK_MESSAGE.chat_jid,
+      group: ANDY_GROUP,
+      messages: [MIXED_WORK_MESSAGE],
+      channel,
+      runtime: {
+        markCursorInFlight: () => {},
+        clearInFlightCursor: () => {},
+        markBatchProcessed: () => {},
+        commitInFlightCursor: () => {},
+      },
+    });
+
+    expect(handled).toBe(false);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain('Tracking this as');
+    expect(sent[0]).not.toContain('Current tracked requests');
+    expect(getAndyRequestByMessageId(MIXED_WORK_MESSAGE.id)).toBeDefined();
   });
 
   it('does not ack internal review triggers or create new intake requests', async () => {

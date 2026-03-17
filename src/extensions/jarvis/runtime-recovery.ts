@@ -1,5 +1,4 @@
 import {
-  getAndyRequestByMessageId,
   getUnprocessedMessages,
   getRecentBotMessages,
   getMessagesSince,
@@ -18,6 +17,7 @@ import type { WorkerRunSupervisor } from '../../worker-run-supervisor.js';
 import {
   applyAndyReviewStateUpdates,
   parseAndyReviewStateUpdates,
+  resolveAndyRequestForMessage,
 } from './request-state-service.js';
 
 interface MessageRecoveryQueue {
@@ -67,7 +67,7 @@ export function recoverPendingMessages(input: {
     const staleTerminalIds: string[] = [];
     const replayable = pending.filter((message) => {
       if (group.folder !== 'andy-developer') return true;
-      const request = getAndyRequestByMessageId(message.id);
+      const request = resolveAndyRequestForMessage(message);
       if (!isTerminalAndyRequestState(request?.state)) return true;
       staleTerminalIds.push(message.id);
       return false;

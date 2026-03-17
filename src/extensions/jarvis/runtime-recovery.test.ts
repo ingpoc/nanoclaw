@@ -288,6 +288,56 @@ describe('recoverPendingMessages', () => {
     expect(queue.enqueueMessageCheck).not.toHaveBeenCalled();
     expect(getUnprocessedMessages('andy-developer@g.us')).toHaveLength(0);
   });
+
+  it('marks stale deferred Andy replay messages processed when the linked request is already terminal', () => {
+    createAndyRequestIfAbsent({
+      request_id: 'req-terminal-andy-replay-1',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      source_lane_id: 'andy-developer',
+      user_message_id: 'andy-user-msg-replay-original-1',
+      user_prompt: 'Retry the probe again.',
+      intent: 'work_intake',
+      state: 'completed',
+    });
+
+    storeChatMetadata(
+      'andy-developer@g.us',
+      '2026-03-16T14:05:00.000Z',
+      'Andy Developer',
+      'whatsapp',
+      true,
+    );
+    storeMessage({
+      id: 'andy-user-msg-replay-1',
+      chat_jid: 'andy-developer@g.us',
+      sender: 'nanoclaw-replay@nanoclaw',
+      sender_name: 'nanoclaw-replay',
+      content:
+        '<andy_request_replay>{"request_id":"req-terminal-andy-replay-1","kind":"coordinator","original_message_id":"andy-user-msg-replay-original-1"}</andy_request_replay>\nRun the probe again.',
+      timestamp: '2026-03-16T14:05:00.000Z',
+      is_from_me: false,
+      is_bot_message: false,
+    });
+
+    const queue = {
+      enqueueMessageCheck: vi.fn(),
+    };
+
+    recoverPendingMessages({
+      registeredGroups: {
+        'andy-developer@g.us': ANDY_GROUP,
+      },
+      lastAgentTimestamp: {},
+      assistantName: 'Andy',
+      queue,
+    });
+
+    expect(
+      isMessageProcessed('andy-developer@g.us', 'andy-user-msg-replay-1'),
+    ).toBe(true);
+    expect(queue.enqueueMessageCheck).not.toHaveBeenCalled();
+  });
 });
 
 describe('recoverTerminalWorkerDispatchMessages', () => {

@@ -19,14 +19,16 @@ import {
   createAndyWorkIntakeRequest,
   type AndyRequestMessageRef,
   listTrackedAndyRequestRefsForMessages,
+  parseAndyRequestReplayMetadata,
   parseAndyReviewRequestMessage,
+  stripAndyRequestReplayMetadata,
 } from './request-state-service.js';
 
 const ANDY_DEVELOPER_FOLDER = 'andy-developer';
 const SIMPLE_ANDY_GREETING_PATTERN =
   /^(hi|hello|hey|yo|hiya|sup|ping|what'?s up|good (morning|afternoon|evening))[\s!.,?]*$/i;
 const ANDY_PROGRESS_QUERY_PATTERN =
-  /\b(progress|status|update|what(?:'|’)s happening|what is happening|where are we|how far|eta|current progress|current status|what(?:\s+are|(?:'|’)re)\s+you\s+working\s+on(?:\s+(?:right\s+now|now|currently))?)\b/i;
+  /\b(progress|status|update|what(?:'|’)s happening|what is happening|where are we|how far|eta|current progress|current status|what(?:\s+is|(?:'|’)s)\s+the\s+current\s+progress|what(?:\s+is|(?:'|’)s)\s+the\s+current\s+status|what(?:\s+are|(?:'|’)re)\s+you\s+working\s+on(?:\s+(?:right\s+now|now|currently))?)\b/i;
 const ANDY_STATUS_BY_ID_PATTERN = /\bstatus\s+(req-[a-z0-9-]+)\b/i;
 const ANDY_REQUEST_ID_PATTERN = /\b(req-[a-z0-9-]+)\b/i;
 const STALE_REVIEW_REQUEST_THRESHOLD_MINUTES = 180;
@@ -41,7 +43,10 @@ export interface AndyFrontdeskRuntimeCallbacks {
 }
 
 function stripAssistantTrigger(content: string): string {
-  return content.trim().replace(TRIGGER_PATTERN, '').trim();
+  return stripAndyRequestReplayMetadata(content)
+    .trim()
+    .replace(TRIGGER_PATTERN, '')
+    .trim();
 }
 
 function hasExtraTextBeyondStatusQuery(body: string): boolean {
@@ -186,6 +191,7 @@ function isAndyWorkIntakeMessage(
   message: NewMessage,
 ): boolean {
   if (group.folder !== ANDY_DEVELOPER_FOLDER) return false;
+  if (parseAndyRequestReplayMetadata(message.content)) return false;
   if (parseDispatchPayload(message.content)) return false;
   if (parseAndyReviewRequestMessage(message.content)) return false;
 
@@ -219,7 +225,14 @@ export function buildAndyFrontdeskContextBlock(
     `request_id: ${requestId}`,
     `chat_jid: ${chatJid}`,
     `status_command: status ${requestId}`,
-    'If you dispatch strict JSON to jarvis-worker-*, include request_id exactly as above.',
+    'If you delegate to jarvis-worker-*, emit exactly one strict JSON object and nothing else.',
+    'Use mcp__nanoclaw__send_message to the intended jarvis-worker-* group JID with that JSON object as the entire message body.',
+    'Do not answer the user with prose that says dispatched, queued, or running before the host confirms worker acceptance.',
+    'If the validator blocks a dispatch, repair and resend it instead of narrating success.',
+    'For jarvis-worker dispatches: include request_id exactly as above.',
+    'Allowed task_type values: analyze, implement, fix, refactor, test, release, research, code.',
+    'branch must match jarvis-<feature>.',
+    'output_contract.required_fields must include: run_id, branch, commit_sha, files_changed, test_result, risk, pr_url or pr_skipped_reason.',
     '</frontdesk_request>',
   ].join('\n');
 }
@@ -450,6 +463,7 @@ export async function handleAndyFrontdeskMessages(input: {
   channel: Channel;
   runtime: AndyFrontdeskRuntimeCallbacks;
   allowGreeting?: boolean;
+  ackIntake?: boolean;
 }): Promise<boolean> {
   const {
     chatJid,
@@ -458,9 +472,8 @@ export async function handleAndyFrontdeskMessages(input: {
     channel,
     runtime,
     allowGreeting = true,
+    ackIntake = true,
   } = input;
-
-  await ackAndyIntakeMessages(chatJid, group, messages, channel);
 
   if (allowGreeting && isSimpleAndyGreeting(group, messages)) {
     runtime.markCursorInFlight(
@@ -485,7 +498,16 @@ export async function handleAndyFrontdeskMessages(input: {
     }
   }
 
-  return trySendAndyProgressStatus(chatJid, group, messages, channel, runtime);
+  if (
+    await trySendAndyProgressStatus(chatJid, group, messages, channel, runtime)
+  ) {
+    return true;
+  }
+
+  if (ackIntake) {
+    await ackAndyIntakeMessages(chatJid, group, messages, channel);
+  }
+  return false;
 }
 
 export function getAndyRequestsForMessages(

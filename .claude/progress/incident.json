@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-03-17T01:59:30+05:30",
+  "updated_at": "2026-03-17T02:33:00+05:30",
   "incidents": [
     {
       "id": "inc-20260316-worker-timeout-retry-loop",
@@ -35,7 +35,34 @@
         "Discovered during the first live LaunchDeck proving run on request req-1773692784606-5274h0tr for NAN-57 / LD-01.",
         "User-facing evidence: Andy sent a 'Dispatched: NAN-57 LD-01' message naming jarvis-worker-1 and a branch.",
         "Database evidence after the dispatch message: andy_requests row stayed state=coordinator_active with worker_run_id empty, and worker_runs had no row for request_id=req-1773692784606-5274h0tr.",
-        "Follow-up status query repeated the coordinator_active state ('Coordinator is processing your request'), confirming the visible dispatch message did not correspond to a linked worker run."
+        "Follow-up status query repeated the coordinator_active state ('Coordinator is processing your request'), confirming the visible dispatch message did not correspond to a linked worker run.",
+        "2026-03-17 fix landed in src/extensions/jarvis/user-facing-output.ts and src/index.ts: Andy dispatch-like output now waits for persisted worker-run confirmation before rendering a user-facing 'Dispatched ...' sentence, otherwise it falls back to truthful coordination text.",
+        "2026-03-17 regression coverage added in src/extensions/jarvis/user-facing-output.test.ts for confirmed, delayed, and unconfirmed dispatch states.",
+        "2026-03-17 live validation after restart: request req-1773693466333-pprimary stayed coordinator_active on immediate status reply, then linked to worker_run_id=req-1773693466333-pprimary before the worker stage advanced. This reproducer no longer showed the premature dispatch claim."
+      ]
+    },
+    {
+      "id": "inc-20260317-andy-frontdesk-restart-sla",
+      "status": "open",
+      "summary": "Andy frontdesk status/progress replies remain flaky around restart/recovery windows: natural-language progress queries can be misclassified as new work, and immediate status replies can miss the 8s SLA when stale pending messages are being recovered.",
+      "notes": [
+        "Discovered while running scripts/test-andy-full-user-journey-e2e.ts after the dispatch-truthfulness fix.",
+        "Live evidence on token 1773693464880-u8hef: '@Andy what is the current progress' created req-1773693529520-sstm8g7x instead of returning an immediate frontdesk progress reply.",
+        "Code hardening landed in src/extensions/jarvis/frontdesk-service.ts: frontdesk now handles pure greetings/status queries before intake ack, and the query matcher now recognizes 'what is the current progress' / 'what is the current status'.",
+        "Regression coverage added in src/extensions/jarvis/frontdesk-service.test.ts for the exact natural-language phrase that failed live.",
+        "A second live run immediately after service restart still missed the immediate status-reply SLA for req-1773693659172-pprimary; logs show recovery reopened stale pending Andy messages around startup, so restart/recovery interference is still unresolved.",
+        "2026-03-17 follow-up fix landed in src/index.ts: newly arrived Andy frontdesk queries are pre-handled before older pending work is merged, and already-processed messages are filtered out of the later allPending prompt batch.",
+        "2026-03-17 live verification improved materially: the full-user-journey build stage now passes intake ack, immediate status, dispatch linkage, immediate progress, worker terminal, and the post-worker status check."
+      ]
+    },
+    {
+      "id": "inc-20260317-andy-stale-message-bleed",
+      "status": "open",
+      "summary": "In multi-stage Andy journeys, stale control/retry messages from earlier requests can still bleed into later coordinator prompts, causing Andy to emit dispatch JSON for an older request while a newer request remains coordinator_active.",
+      "notes": [
+        "Observed during the live full-user-journey run for token 1773694440374-38luj when stage two request req-1773694551674-eprimary was active but Andy emitted a dispatch payload for req-1773694442351-pprimary instead.",
+        "The bleed is narrower after filtering already-processed messages from allPending, but a later run still showed Andy outputting raw JSON for older retry request req-1773694737377-reretry2 while fresh build request req-1773694747631-pprimary was active.",
+        "Current hypothesis: pending-message hygiene around deferred review triggers and previously acknowledged retry messages is still insufficient, so older non-terminal control messages remain eligible for later coordinator prompts."
       ]
     }
   ]

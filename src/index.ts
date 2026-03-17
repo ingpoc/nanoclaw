@@ -76,6 +76,7 @@ import {
   setSession,
   storeChatMetadata,
   storeMessage,
+  updateAndyRequestState,
   updateWorkerRunAttribution,
   updateWorkerRunDispatchMetadata,
   updateWorkerRunSessionMetadata,
@@ -108,6 +109,7 @@ import {
   recoverAndyReviewStateFromStoredMessages,
   recoverPendingMessages,
   recoverTerminalWorkerDispatchMessages,
+  sanitizeUserFacingOutput,
   reconcileJarvisStaleWorkerRuns,
   resolveAndyCoordinatorSessionOverride,
   selectAndyMessageBatch,
@@ -249,25 +251,6 @@ function findGroupJidByFolder(
     if (group.folder === folder) return jid;
   }
   return undefined;
-}
-
-function stripCodeFence(raw: string): string {
-  const trimmed = raw.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return fenced ? fenced[1].trim() : trimmed;
-}
-
-function sanitizeUserFacingOutput(
-  group: RegisteredGroup,
-  text: string,
-): string {
-  if (group.folder !== ANDY_DEVELOPER_FOLDER) return text;
-
-  const parsed = parseDispatchPayload(stripCodeFence(text));
-  if (!parsed) return text;
-
-  const requestLabel = parsed.request_id ? ` for \`${parsed.request_id}\`` : '';
-  return `Dispatched \`${parsed.run_id}\`${requestLabel} to \`${parsed.repo}\` on \`${parsed.branch}\` (${parsed.task_type}).`;
 }
 
 function timestampToMs(value: string | undefined): number | null {
@@ -933,6 +916,32 @@ function buildAndyReviewStateRepairPrompt(
     '',
     'Request IDs requiring a marker:',
     requestList,
+    '',
+    'Previous output excerpt (for correction only):',
+    excerpt,
+  ].join('\n');
+}
+
+const ANDY_DISPATCH_INTENT_PATTERN =
+  /\b(?:dispatch(?:ed|ing)?|queued|queueing)\b[\s\S]*\b(?:jarvis-worker-[12]|worker)\b/i;
+
+function buildAndyDispatchRepairPrompt(
+  requestId: string,
+  outputBuffer: string,
+): string {
+  const excerpt = outputBuffer.slice(-1600);
+  return [
+    'Your previous response indicated worker dispatch intent, but no accepted worker dispatch was recorded for the tracked request.',
+    'If this request should go to a jarvis-worker-* lane, repair it now.',
+    'Rules:',
+    '- Use mcp__nanoclaw__send_message exactly once to the intended jarvis-worker-* target group JID.',
+    '- The message body sent to the worker must be exactly one strict JSON dispatch object string.',
+    '- Include request_id exactly as provided below.',
+    '- Do not answer the user with prose that claims dispatched, queued, or running.',
+    '- After the worker message is sent, emit only an <internal>...</internal> note confirming the repair attempt.',
+    '- If no worker delegation is needed, reply with one short user-facing sentence that does not mention dispatch or jarvis-worker lanes.',
+    '',
+    `Tracked request_id: ${requestId}`,
     '',
     'Previous output excerpt (for correction only):',
     excerpt,
@@ -1636,7 +1645,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           `Agent output: ${raw.slice(0, 200)}`,
         );
         if (text) {
-          const outboundText = sanitizeUserFacingOutput(group, text);
+          const outboundText = await sanitizeUserFacingOutput(group, text);
           if (outboundText && channel) {
             await channel.sendMessage(chatJid, outboundText);
             outputSentToUser = true;
@@ -2190,6 +2199,104 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
   }
 
+  if (!workerRun && andyRequestsInBatch.some((request) => request.kind === 'coordinator')) {
+    let dispatchRepairRequests = andyRequestsInBatch
+      .filter((request) => request.kind === 'coordinator')
+      .map((request) => request.requestId)
+      .filter((requestId) => !getAndyRequestById(requestId)?.worker_run_id);
+
+    if (
+      dispatchRepairRequests.length > 0 &&
+      runOutcome.status !== 'error' &&
+      !hadError &&
+      ANDY_DISPATCH_INTENT_PATTERN.test(andyOutputBuffer)
+    ) {
+      const repairRequestId = dispatchRepairRequests[0]!;
+      logger.warn(
+        {
+          group: group.name,
+          requestId: repairRequestId,
+        },
+        'Andy coordinator output implied dispatch without an accepted worker run, requesting repair',
+      );
+      const repairPrompt = buildAndyDispatchRepairPrompt(
+        repairRequestId,
+        andyOutputBuffer,
+      );
+      let repairHadError = false;
+      const repairSessionOverride =
+        runtimeEffectiveSessionId ?? (coordinatorSessionOverride ?? null);
+      const repairOutcome = await runAgent(
+        group,
+        repairPrompt,
+        chatJid,
+        async (result) => {
+          if (!result.result) {
+            if (result.status === 'error') {
+              repairHadError = true;
+            }
+            return;
+          }
+          const raw =
+            typeof result.result === 'string'
+              ? result.result
+              : JSON.stringify(result.result);
+          andyOutputBuffer += `${raw}\n`;
+          const text = raw
+            .replace(/<internal>[\s\S]*?<\/internal>/g, '')
+            .trim();
+          if (text) {
+            const outboundText = await sanitizeUserFacingOutput(group, text);
+            if (outboundText && channel) {
+              await channel.sendMessage(chatJid, outboundText);
+              outputSentToUser = true;
+              outputAckCursor = maxTimestamp(
+                outputAckCursor,
+                inFlightAgentTimestamp[chatJid] || batchLastTimestamp,
+              );
+            }
+          }
+          if (result.status === 'error') {
+            repairHadError = true;
+          }
+        },
+        repairSessionOverride,
+      );
+      if (repairOutcome.newSessionId) {
+        runtimeEffectiveSessionId = repairOutcome.newSessionId;
+        sessions[group.folder] = repairOutcome.newSessionId;
+        setSession(group.folder, repairOutcome.newSessionId);
+      }
+      if (repairOutcome.status === 'error' || repairHadError) {
+        hadError = true;
+      }
+      dispatchRepairRequests = andyRequestsInBatch
+        .filter((request) => request.kind === 'coordinator')
+        .map((request) => request.requestId)
+        .filter((requestId) => !getAndyRequestById(requestId)?.worker_run_id);
+      if (
+        dispatchRepairRequests.length > 0 &&
+        ANDY_DISPATCH_INTENT_PATTERN.test(andyOutputBuffer)
+      ) {
+        hadError = true;
+        for (const requestId of dispatchRepairRequests) {
+          updateAndyRequestState(
+            requestId,
+            'failed',
+            'Andy dispatch protocol violation: worker dispatch was described but never accepted',
+          );
+        }
+        logger.error(
+          {
+            group: group.name,
+            requestIds: dispatchRepairRequests,
+          },
+          'Andy dispatch repair failed to produce an accepted worker run',
+        );
+      }
+    }
+  }
+
   if (!workerRun && andyRequestsInBatch.length > 0) {
     const coordinatorSessionId =
       runOutcome.newSessionId ?? (coordinatorSessionOverride ?? null);
@@ -2457,6 +2564,7 @@ async function startMessageLoop(): Promise<void> {
     return;
   }
   messageLoopRunning = true;
+  setRouterState('host_message_loop_ready_at', new Date().toISOString());
 
   logger.info(`NanoClaw running (trigger: @${ASSISTANT_NAME})`);
   let lastWorkerSnapshotRefresh = 0;
@@ -2523,6 +2631,28 @@ async function startMessageLoop(): Promise<void> {
             if (!hasTrigger) continue;
           }
 
+          if (
+            channel &&
+            group.folder === ANDY_DEVELOPER_FOLDER &&
+            groupMessages.length > 0 &&
+            (await handleAndyFrontdeskMessages({
+              chatJid,
+              group,
+              messages: [groupMessages[groupMessages.length - 1]],
+              channel,
+              ackIntake: false,
+              runtime: {
+                markCursorInFlight: () => {},
+                clearInFlightCursor: () => {},
+                markBatchProcessed,
+                commitInFlightCursor: () => {},
+              },
+            }))
+          ) {
+            queue.enqueueMessageCheck(chatJid);
+            continue;
+          }
+
           if (channel) {
             await ackAndyIntakeMessages(chatJid, group, groupMessages, channel);
           }
@@ -2536,16 +2666,28 @@ async function startMessageLoop(): Promise<void> {
           );
           let messagesToSend =
             allPending.length > 0 ? allPending : groupMessages;
+          const alreadyProcessedForSend = getProcessedMessageIds(
+            chatJid,
+            messagesToSend.map((message) => message.id),
+          );
+          if (alreadyProcessedForSend.size > 0) {
+            messagesToSend = messagesToSend.filter(
+              (message) => !alreadyProcessedForSend.has(message.id),
+            );
+          }
+          if (messagesToSend.length === 0) {
+            continue;
+          }
           if (group.folder === ANDY_DEVELOPER_FOLDER) {
             const replayTimestamp = new Date().toISOString();
             const selection = selectAndyMessageBatch(
               messagesToSend,
               replayTimestamp,
             );
-            if (selection.deferredReviewMessages.length > 0) {
+            if (selection.deferredMessages.length > 0) {
               markMessagesProcessed(
                 chatJid,
-                selection.deferredReviewMessages.map(
+                selection.deferredMessages.map(
                   (message) => message.originalMessageId,
                 ),
               );
@@ -2556,17 +2698,16 @@ async function startMessageLoop(): Promise<void> {
                 'nanoclaw',
                 true,
               );
-              for (const deferred of selection.deferredReviewMessages) {
+              for (const deferred of selection.deferredMessages) {
                 storeMessage(deferred.replayMessage);
               }
               logger.info(
                 {
                   chatJid,
                   activeRequestId: selection.activeRequestId,
-                  deferredReviewCount:
-                    selection.deferredReviewMessages.length,
+                  deferredMessageCount: selection.deferredMessages.length,
                 },
-                'Deferred older Andy review messages behind fresh coordinator intake',
+                'Deferred older Andy request messages behind fresh coordinator intake',
               );
             }
             messagesToSend = selection.selectedMessages;

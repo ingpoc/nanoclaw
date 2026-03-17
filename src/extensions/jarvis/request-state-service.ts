@@ -5,6 +5,7 @@ import {
   insertDispatchAttempt,
   linkAndyRequestToWorkerRun,
   setAndyRequestCoordinatorSession,
+  type AndyRequestRecord,
   type AndyRequestState,
   updateAndyRequestByWorkerRun,
   updateAndyRequestState,
@@ -14,6 +15,8 @@ import { resolveLaneIdFromGroupFolder } from './lanes.js';
 
 const REVIEW_REQUEST_PATTERN =
   /<review_request>\s*([\s\S]*?)\s*<\/review_request>/i;
+const ANDY_REQUEST_REPLAY_PATTERN =
+  /<andy_request_replay>\s*([\s\S]*?)\s*<\/andy_request_replay>/i;
 const REVIEW_STATE_UPDATE_PATTERN =
   /<review_state_update>\s*([\s\S]*?)\s*<\/review_state_update>/gi;
 const LEADING_ANDY_PREFIX_PATTERN = /^\s*Andy:\s*/i;
@@ -62,7 +65,13 @@ export interface AndyReviewStateUpdate {
   summary?: string;
 }
 
-export interface DeferredAndyReviewMessage {
+export interface AndyRequestReplayMetadata {
+  request_id: string;
+  kind: 'coordinator' | 'review';
+  original_message_id?: string;
+}
+
+export interface DeferredAndyMessage {
   originalMessageId: string;
   requestId: string;
   replayMessage: NewMessage;
@@ -71,7 +80,7 @@ export interface DeferredAndyReviewMessage {
 export interface AndyMessageBatchSelection {
   selectedMessages: NewMessage[];
   activeRequestId?: string;
-  deferredReviewMessages: DeferredAndyReviewMessage[];
+  deferredMessages: DeferredAndyMessage[];
 }
 
 function extractPipelineProbeToken(branch: string): string | null {
@@ -87,10 +96,69 @@ function parseJsonBlock<T>(raw: string): T | null {
   }
 }
 
+export function parseAndyRequestReplayMetadata(
+  content: string,
+): AndyRequestReplayMetadata | null {
+  const match = content.match(ANDY_REQUEST_REPLAY_PATTERN);
+  if (!match?.[1]) return null;
+
+  const parsed = parseJsonBlock<AndyRequestReplayMetadata>(match[1]);
+  if (!parsed) return null;
+  if (
+    typeof parsed.request_id !== 'string' ||
+    !parsed.request_id.trim() ||
+    (parsed.kind !== 'coordinator' && parsed.kind !== 'review')
+  ) {
+    return null;
+  }
+
+  if (
+    parsed.original_message_id != null &&
+    (typeof parsed.original_message_id !== 'string' ||
+      !parsed.original_message_id.trim())
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+export function stripAndyRequestReplayMetadata(content: string): string {
+  return content.replace(ANDY_REQUEST_REPLAY_PATTERN, '').trim();
+}
+
+export function buildAndyRequestReplayMessageContent(input: {
+  content: string;
+  requestId: string;
+  kind: 'coordinator' | 'review';
+  originalMessageId: string;
+}): string {
+  const metadata: AndyRequestReplayMetadata = {
+    request_id: input.requestId,
+    kind: input.kind,
+    original_message_id: input.originalMessageId,
+  };
+  const cleanContent = stripAndyRequestReplayMetadata(input.content);
+  return `<andy_request_replay>${JSON.stringify(metadata)}</andy_request_replay>\n${cleanContent}`;
+}
+
+export function resolveAndyRequestForMessage(
+  message: Pick<NewMessage, 'id' | 'content'>,
+): AndyRequestRecord | undefined {
+  const direct = getAndyRequestByMessageId(message.id);
+  if (direct) return direct;
+
+  const replay = parseAndyRequestReplayMetadata(message.content);
+  if (!replay) return undefined;
+  return getAndyRequestById(replay.request_id);
+}
+
 export function parseAndyReviewRequestMessage(
   content: string,
 ): AndyReviewRequestPayload | null {
-  const match = content.match(REVIEW_REQUEST_PATTERN);
+  const match = stripAndyRequestReplayMetadata(content).match(
+    REVIEW_REQUEST_PATTERN,
+  );
   if (!match?.[1]) return null;
 
   const parsed = parseJsonBlock<AndyReviewRequestPayload>(match[1]);
@@ -242,6 +310,20 @@ export function listTrackedAndyRequestRefsForMessages(
   const seen = new Set<string>();
   const rows: AndyRequestMessageRef[] = [];
   for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const replay = parseAndyRequestReplayMetadata(messages[i].content);
+    if (replay && !seen.has(replay.request_id)) {
+      const request = getAndyRequestById(replay.request_id);
+      if (request) {
+        seen.add(replay.request_id);
+        rows.push({
+          requestId: replay.request_id,
+          messageId: messages[i].id,
+          kind: replay.kind,
+        });
+        continue;
+      }
+    }
+
     const reviewTrigger = parseAndyReviewRequestMessage(messages[i].content);
     if (reviewTrigger && !seen.has(reviewTrigger.request_id)) {
       const request = getAndyRequestById(reviewTrigger.request_id);
@@ -391,7 +473,7 @@ export function selectAndyMessageBatch(
   if (!activeRequest) {
     return {
       selectedMessages: messages,
-      deferredReviewMessages: [],
+      deferredMessages: [],
     };
   }
 
@@ -399,15 +481,14 @@ export function selectAndyMessageBatch(
     return {
       selectedMessages: messages,
       activeRequestId: activeRequest.requestId,
-      deferredReviewMessages: [],
+      deferredMessages: [],
     };
   }
 
-  const deferredReviewMessages: DeferredAndyReviewMessage[] = [];
+  const deferredMessages: DeferredAndyMessage[] = [];
   const deferredIds = new Set<string>();
 
   for (const ref of refs.slice(1)) {
-    if (ref.kind !== 'review') continue;
     if (ref.requestId === activeRequest.requestId) continue;
 
     const request = getAndyRequestById(ref.requestId);
@@ -417,12 +498,18 @@ export function selectAndyMessageBatch(
     if (!original) continue;
 
     deferredIds.add(original.id);
-    deferredReviewMessages.push({
+    deferredMessages.push({
       originalMessageId: original.id,
       requestId: ref.requestId,
       replayMessage: {
         ...original,
         id: `deferred-${original.id}-${Date.now().toString(36)}`,
+        content: buildAndyRequestReplayMessageContent({
+          content: original.content,
+          requestId: ref.requestId,
+          kind: ref.kind,
+          originalMessageId: original.id,
+        }),
         timestamp: replayTimestamp,
       },
     });
@@ -434,7 +521,7 @@ export function selectAndyMessageBatch(
         ? messages.filter((message) => !deferredIds.has(message.id))
         : messages,
     activeRequestId: activeRequest.requestId,
-    deferredReviewMessages,
+    deferredMessages,
   };
 }
 

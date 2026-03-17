@@ -6,6 +6,7 @@ import {
   getAndyRequestById,
 } from '../../db.js';
 import {
+  buildAndyRequestReplayMessageContent,
   buildAndyReviewTriggerMessage,
   completeAndyCoordinatorRequest,
   markAndyRequestsCoordinatorActive,
@@ -257,17 +258,143 @@ describe('parseAndyReviewStateUpdates', () => {
     expect(selection.selectedMessages.map((message) => message.id)).toEqual([
       'user-msg-intake-new',
     ]);
-    expect(selection.deferredReviewMessages).toHaveLength(1);
-    expect(selection.deferredReviewMessages[0]).toMatchObject({
+    expect(selection.deferredMessages).toHaveLength(1);
+    expect(selection.deferredMessages[0]).toMatchObject({
       originalMessageId: 'review-msg-older',
       requestId: 'req-review-older',
     });
-    expect(selection.deferredReviewMessages[0]?.replayMessage.id).toContain(
+    expect(selection.deferredMessages[0]?.replayMessage.id).toContain(
       'deferred-review-msg-older-',
     );
-    expect(selection.deferredReviewMessages[0]?.replayMessage.timestamp).toBe(
+    expect(selection.deferredMessages[0]?.replayMessage.timestamp).toBe(
       '2026-03-16T18:01:01.000Z',
     );
+  });
+
+  it('defers older coordinator requests behind a fresh coordinator intake', () => {
+    createAndyRequestIfAbsent({
+      request_id: 'req-intake-older',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      source_lane_id: 'andy-developer',
+      user_message_id: 'user-msg-intake-older',
+      user_prompt: 'Older task.',
+      intent: 'work_intake',
+      state: 'queued_for_coordinator',
+    });
+    createAndyRequestIfAbsent({
+      request_id: 'req-intake-newer',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      source_lane_id: 'andy-developer',
+      user_message_id: 'user-msg-intake-newer',
+      user_prompt: 'Newer task.',
+      intent: 'work_intake',
+      state: 'queued_for_coordinator',
+    });
+
+    const selection = selectAndyMessageBatch(
+      [
+        {
+          id: 'user-msg-intake-older',
+          chat_jid: 'andy-developer@g.us',
+          sender: 'uat-user@nanoclaw',
+          sender_name: 'User',
+          content: '@Andy retry the older task',
+          timestamp: '2026-03-16T18:00:00.000Z',
+          is_from_me: false,
+          is_bot_message: false,
+        },
+        {
+          id: 'user-msg-intake-newer',
+          chat_jid: 'andy-developer@g.us',
+          sender: 'uat-user@nanoclaw',
+          sender_name: 'User',
+          content: '@Andy handle the newer task',
+          timestamp: '2026-03-16T18:01:00.000Z',
+          is_from_me: false,
+          is_bot_message: false,
+        },
+      ],
+      '2026-03-16T18:01:01.000Z',
+    );
+
+    expect(selection.activeRequestId).toBe('req-intake-newer');
+    expect(selection.selectedMessages.map((message) => message.id)).toEqual([
+      'user-msg-intake-newer',
+    ]);
+    expect(selection.deferredMessages).toHaveLength(1);
+    expect(selection.deferredMessages[0]).toMatchObject({
+      originalMessageId: 'user-msg-intake-older',
+      requestId: 'req-intake-older',
+    });
+    expect(selection.deferredMessages[0]?.replayMessage.id).toContain(
+      'deferred-user-msg-intake-older-',
+    );
+  });
+
+  it('keeps deferred replay coordinator messages bound to their original request', () => {
+    createAndyRequestIfAbsent({
+      request_id: 'req-intake-older',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      source_lane_id: 'andy-developer',
+      user_message_id: 'user-msg-intake-older',
+      user_prompt: 'Older task.',
+      intent: 'work_intake',
+      state: 'queued_for_coordinator',
+    });
+    createAndyRequestIfAbsent({
+      request_id: 'req-intake-newer',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      source_lane_id: 'andy-developer',
+      user_message_id: 'user-msg-intake-newer',
+      user_prompt: 'Newer task.',
+      intent: 'work_intake',
+      state: 'queued_for_coordinator',
+    });
+
+    const selection = selectAndyMessageBatch(
+      [
+        {
+          id: 'deferred-user-msg-intake-older-1',
+          chat_jid: 'andy-developer@g.us',
+          sender: 'nanoclaw-replay@nanoclaw',
+          sender_name: 'nanoclaw-replay',
+          content: buildAndyRequestReplayMessageContent({
+            content: '@Andy retry the older task',
+            requestId: 'req-intake-older',
+            kind: 'coordinator',
+            originalMessageId: 'user-msg-intake-older',
+          }),
+          timestamp: '2026-03-16T18:00:30.000Z',
+          is_from_me: false,
+          is_bot_message: false,
+        },
+        {
+          id: 'user-msg-intake-newer',
+          chat_jid: 'andy-developer@g.us',
+          sender: 'uat-user@nanoclaw',
+          sender_name: 'User',
+          content: '@Andy handle the newer task',
+          timestamp: '2026-03-16T18:01:00.000Z',
+          is_from_me: false,
+          is_bot_message: false,
+        },
+      ],
+      '2026-03-16T18:01:01.000Z',
+    );
+
+    expect(selection.activeRequestId).toBe('req-intake-newer');
+    expect(selection.selectedMessages.map((message) => message.id)).toEqual([
+      'user-msg-intake-newer',
+    ]);
+    expect(selection.deferredMessages).toHaveLength(1);
+    expect(selection.deferredMessages[0]).toMatchObject({
+      originalMessageId: 'deferred-user-msg-intake-older-1',
+      requestId: 'req-intake-older',
+    });
   });
 });
 

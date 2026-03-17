@@ -8,6 +8,7 @@ import {
   updateAndyRequestState,
 } from '../../db.js';
 import {
+  buildAndyFrontdeskContextBlock,
   buildAndyProgressStatusReply,
   getAndyRequestsForMessages,
   handleAndyFrontdeskMessages,
@@ -84,6 +85,48 @@ describe('frontdesk-service', () => {
     );
   });
 
+  it('treats "what is the current progress" as status, not intake', async () => {
+    const sent: string[] = [];
+    const channel: Channel = {
+      name: 'test',
+      connect: async () => {},
+      sendMessage: async (_jid, text) => {
+        sent.push(text);
+      },
+      isConnected: () => true,
+      ownsJid: () => true,
+      disconnect: async () => {},
+    };
+
+    const message: NewMessage = {
+      id: 'msg-current-progress',
+      chat_jid: 'andy-developer@g.us',
+      sender: 'user@s.whatsapp.net',
+      sender_name: 'User',
+      content: '@Andy what is the current progress',
+      timestamp: '2026-03-06T10:00:00.000Z',
+    };
+
+    const handled = await handleAndyFrontdeskMessages({
+      chatJid: message.chat_jid,
+      group: ANDY_GROUP,
+      messages: [message],
+      channel,
+      runtime: {
+        markCursorInFlight: () => {},
+        clearInFlightCursor: () => {},
+        markBatchProcessed: () => {},
+        commitInFlightCursor: () => {},
+      },
+    });
+
+    expect(handled).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain('There are no worker runs yet');
+    expect(getAndyRequestByMessageId(message.id)).toBeUndefined();
+    expect(listActiveAndyRequests(message.chat_jid)).toHaveLength(0);
+  });
+
   it('does not send a status reply when the same batch also contains real work', async () => {
     const sent: string[] = [];
     const channel: Channel = {
@@ -115,6 +158,66 @@ describe('frontdesk-service', () => {
     expect(sent[0]).toContain('Tracking this as');
     expect(sent[0]).not.toContain('Current tracked requests');
     expect(getAndyRequestByMessageId(MIXED_WORK_MESSAGE.id)).toBeDefined();
+  });
+
+  it('can probe frontdesk-only handling without creating intake for real work', async () => {
+    const sent: string[] = [];
+    const channel: Channel = {
+      name: 'test',
+      connect: async () => {},
+      sendMessage: async (_jid, text) => {
+        sent.push(text);
+      },
+      isConnected: () => true,
+      ownsJid: () => true,
+      disconnect: async () => {},
+    };
+
+    const workMessage: NewMessage = {
+      id: 'msg-work-precheck',
+      chat_jid: 'andy-developer@g.us',
+      sender: 'user@s.whatsapp.net',
+      sender_name: 'User',
+      content: '@Andy build a launch tracker',
+      timestamp: '2026-03-06T10:02:00.000Z',
+    };
+
+    const handled = await handleAndyFrontdeskMessages({
+      chatJid: workMessage.chat_jid,
+      group: ANDY_GROUP,
+      messages: [workMessage],
+      channel,
+      ackIntake: false,
+      runtime: {
+        markCursorInFlight: () => {},
+        clearInFlightCursor: () => {},
+        markBatchProcessed: () => {},
+        commitInFlightCursor: () => {},
+      },
+    });
+
+    expect(handled).toBe(false);
+    expect(sent).toHaveLength(0);
+    expect(getAndyRequestByMessageId(workMessage.id)).toBeUndefined();
+  });
+
+  it('includes strict worker dispatch rules in the frontdesk context block', () => {
+    const block = buildAndyFrontdeskContextBlock(
+      'andy-developer@g.us',
+      'req-ctx-1',
+    );
+
+    expect(block).toContain('request_id: req-ctx-1');
+    expect(block).toContain(
+      'emit exactly one strict JSON object and nothing else',
+    );
+    expect(block).toContain(
+      'Allowed task_type values: analyze, implement, fix, refactor, test, release, research, code.',
+    );
+    expect(block).toContain('branch must match jarvis-<feature>.');
+    expect(block).toContain(
+      'Use mcp__nanoclaw__send_message to the intended jarvis-worker-* group JID',
+    );
   });
 
   it('does not ack internal review triggers or create new intake requests', async () => {
@@ -164,6 +267,48 @@ describe('frontdesk-service', () => {
     expect(sent).toHaveLength(0);
     expect(getAndyRequestByMessageId(reviewTrigger.id)).toBeUndefined();
     expect(listActiveAndyRequests(reviewTrigger.chat_jid)).toHaveLength(0);
+  });
+
+  it('does not create a fresh intake request for deferred replayed coordinator messages', async () => {
+    const sent: string[] = [];
+    const channel: Channel = {
+      name: 'test',
+      connect: async () => {},
+      sendMessage: async (_jid, text) => {
+        sent.push(text);
+      },
+      isConnected: () => true,
+      ownsJid: () => true,
+      disconnect: async () => {},
+    };
+
+    const replayedMessage: NewMessage = {
+      id: 'deferred-user-msg-launchdeck-1',
+      chat_jid: 'andy-developer@g.us',
+      sender: 'nanoclaw-replay@nanoclaw',
+      sender_name: 'nanoclaw-replay',
+      content:
+        '<andy_request_replay>{"request_id":"req-launchdeck-1","kind":"coordinator","original_message_id":"msg-launchdeck-1"}</andy_request_replay>\n@Andy build LaunchDeck',
+      timestamp: '2026-03-17T11:00:00.000Z',
+    };
+
+    const handled = await handleAndyFrontdeskMessages({
+      chatJid: replayedMessage.chat_jid,
+      group: ANDY_GROUP,
+      messages: [replayedMessage],
+      channel,
+      runtime: {
+        markCursorInFlight: () => {},
+        clearInFlightCursor: () => {},
+        markBatchProcessed: () => {},
+        commitInFlightCursor: () => {},
+      },
+    });
+
+    expect(handled).toBe(false);
+    expect(sent).toHaveLength(0);
+    expect(getAndyRequestByMessageId(replayedMessage.id)).toBeUndefined();
+    expect(listActiveAndyRequests(replayedMessage.chat_jid)).toHaveLength(0);
   });
 
   it('maps review triggers back to the existing tracked request', () => {

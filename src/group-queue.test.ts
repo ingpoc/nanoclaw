@@ -3,9 +3,11 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { GroupQueue } from './group-queue.js';
 
 vi.mock('child_process', () => ({
-  exec: vi.fn((_cmd: string, _opts: unknown, cb?: (err: Error | null) => void) => {
-    cb?.(null);
-  }),
+  exec: vi.fn(
+    (_cmd: string, _opts: unknown, cb?: (err: Error | null) => void) => {
+      cb?.(null);
+    },
+  ),
 }));
 
 vi.mock('./container-runtime.js', () => ({

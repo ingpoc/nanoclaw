@@ -45,7 +45,8 @@ describe('parseAndyReviewStateUpdates', () => {
       {
         request_id: 'req-1773661794890-661mgcfo',
         state: 'completed',
-        summary: 'REVIEW: req-1773661794890-661mgcfo — COMPLETED Worker pushed commit.',
+        summary:
+          'REVIEW: req-1773661794890-661mgcfo — COMPLETED Worker pushed commit.',
       },
     ]);
   });

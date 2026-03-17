@@ -80,7 +80,8 @@ function mapWorkerRunStatusToAndyState(status: string): {
     case 'running':
       return {
         state: 'worker_running',
-        summary: 'Duplicate dispatch reconciled to existing running worker run.',
+        summary:
+          'Duplicate dispatch reconciled to existing running worker run.',
       };
     case 'review_requested':
       return {
@@ -91,7 +92,8 @@ function mapWorkerRunStatusToAndyState(status: string): {
     case 'done':
       return {
         state: 'completed',
-        summary: 'Duplicate dispatch reconciled to an already completed worker run.',
+        summary:
+          'Duplicate dispatch reconciled to an already completed worker run.',
       };
     default:
       return null;
@@ -124,7 +126,11 @@ function reconcileDuplicateDispatchAttempt(
     existingRun.group_folder,
     workerState.state,
   );
-  syncAndyRequestWithWorkerRun(event.run_id, workerState.state, workerState.summary);
+  syncAndyRequestWithWorkerRun(
+    event.run_id,
+    workerState.state,
+    workerState.summary,
+  );
 
   return insertDispatchAttempt({
     request_id: requestId,

@@ -407,7 +407,10 @@ describe('recoverTerminalWorkerDispatchMessages', () => {
     });
 
     expect(
-      isMessageProcessed('jarvis-worker-1@nanoclaw', 'stale-terminal-dispatch-1'),
+      isMessageProcessed(
+        'jarvis-worker-1@nanoclaw',
+        'stale-terminal-dispatch-1',
+      ),
     ).toBe(true);
   });
 });

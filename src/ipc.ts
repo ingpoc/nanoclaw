@@ -520,15 +520,15 @@ export function startIpcWatcher(deps: IpcDeps): void {
                         ? 'target_authorization_failed'
                         : workerToWorkerMessageBlocked
                           ? 'unauthorized_source_lane'
-                        : isDuplicateRunId
-                          ? 'duplicate_run_id'
-                          : !dispatchValidation.valid
-                            ? dispatchValidation.reason?.includes(
-                                'only andy-developer',
-                              )
-                              ? 'unauthorized_source_lane'
-                              : 'invalid_dispatch_payload'
-                            : 'duplicate_run_id';
+                          : isDuplicateRunId
+                            ? 'duplicate_run_id'
+                            : !dispatchValidation.valid
+                              ? dispatchValidation.reason?.includes(
+                                  'only andy-developer',
+                                )
+                                ? 'unauthorized_source_lane'
+                                : 'invalid_dispatch_payload'
+                              : 'duplicate_run_id';
 
                     await notifyDispatchBlocked(
                       deps,

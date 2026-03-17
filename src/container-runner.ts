@@ -118,11 +118,10 @@ function isTruthyEnvValue(value: string | undefined): boolean {
   return /^(true|1|yes|on)$/i.test(value.trim());
 }
 
-export function resolveWorkerRuntimeMode():
-  | 'agent'
-  | 'opencode'
-  | 'auto' {
-  const configured = readRuntimeConfigValue('WORKER_RUNTIME_MODE')?.toLowerCase();
+export function resolveWorkerRuntimeMode(): 'agent' | 'opencode' | 'auto' {
+  const configured = readRuntimeConfigValue(
+    'WORKER_RUNTIME_MODE',
+  )?.toLowerCase();
   if (configured === 'agent' || configured === 'opencode') {
     return configured;
   }
@@ -175,7 +174,9 @@ function requestGracefulContainerClose(groupFolder: string): void {
   fs.writeFileSync(path.join(inputDir, '_close'), '');
 }
 
-function resolveGithubTokenForGroup(group: RegisteredGroup): string | undefined {
+function resolveGithubTokenForGroup(
+  group: RegisteredGroup,
+): string | undefined {
   const candidateKeys =
     group.folder === 'andy-developer'
       ? ['GITHUB_TOKEN_ANDY_DEVELOPER', 'GITHUB_TOKEN', 'GH_TOKEN']
@@ -192,7 +193,9 @@ function resolveGithubTokenForGroup(group: RegisteredGroup): string | undefined 
   return undefined;
 }
 
-function resolveContainerSecrets(group: RegisteredGroup): Record<string, string> {
+function resolveContainerSecrets(
+  group: RegisteredGroup,
+): Record<string, string> {
   const resolved: Record<string, string> = {};
 
   const githubToken = resolveGithubTokenForGroup(group);
@@ -618,7 +621,8 @@ function buildVolumeMounts(
     const missingHooks = requiredHooks.filter(
       (hook) =>
         !existingPreToolUse.some(
-          (existingHook) => JSON.stringify(existingHook) === JSON.stringify(hook),
+          (existingHook) =>
+            JSON.stringify(existingHook) === JSON.stringify(hook),
         ),
     );
     settings.hooks = {
@@ -636,7 +640,9 @@ function buildVolumeMounts(
   let mcpConfig: SessionMcpConfig = {};
   if (fs.existsSync(mcpConfigFile)) {
     try {
-      mcpConfig = JSON.parse(fs.readFileSync(mcpConfigFile, 'utf8')) as SessionMcpConfig;
+      mcpConfig = JSON.parse(
+        fs.readFileSync(mcpConfigFile, 'utf8'),
+      ) as SessionMcpConfig;
     } catch {
       mcpConfig = {};
     }
@@ -789,7 +795,10 @@ function buildContainerArgs(
   // Forward model override so containers use the same model as the host.
   // Required when the upstream proxy (e.g. minimax) maps a specific model name.
   if (process.env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
-    args.push('-e', `ANTHROPIC_DEFAULT_SONNET_MODEL=${process.env.ANTHROPIC_DEFAULT_SONNET_MODEL}`);
+    args.push(
+      '-e',
+      `ANTHROPIC_DEFAULT_SONNET_MODEL=${process.env.ANTHROPIC_DEFAULT_SONNET_MODEL}`,
+    );
   }
 
   // Expose the resolved host gateway IP so the agent-runner can build correct MCP URLs.

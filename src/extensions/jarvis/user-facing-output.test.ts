@@ -49,8 +49,8 @@ describe('sanitizeUserFacingOutput', () => {
 
   it('renders dispatched only after worker linkage is confirmed', async () => {
     const text = await sanitizeUserFacingOutput(ANDY_GROUP, DISPATCH_PAYLOAD, {
-      getRequestById: () => ({ worker_run_id: 'task-launchdeck-ld01' } as any),
-      getWorkerRunById: () => ({ run_id: 'task-launchdeck-ld01' } as any),
+      getRequestById: () => ({ worker_run_id: 'task-launchdeck-ld01' }) as any,
+      getWorkerRunById: () => ({ run_id: 'task-launchdeck-ld01' }) as any,
       sleep: async () => {},
       timeoutMs: 1,
       pollIntervalMs: 1,

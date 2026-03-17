@@ -207,10 +207,7 @@ export class GroupQueue {
   /**
    * Signal the active container to wind down by writing a close sentinel.
    */
-  closeStdin(
-    groupJid: string,
-    forceAfterMs = 0,
-  ): void {
+  closeStdin(groupJid: string, forceAfterMs = 0): void {
     const state = this.getGroup(groupJid);
     if (!state.active || !state.groupFolder) return;
 

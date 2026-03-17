@@ -16,7 +16,9 @@ describe('worker agent error policy', () => {
 
   it('detects hard timeout errors', () => {
     expect(
-      isContainerTimeoutError('Container timed out (hard_timeout after 900000ms)'),
+      isContainerTimeoutError(
+        'Container timed out (hard_timeout after 900000ms)',
+      ),
     ).toBe(true);
   });
 

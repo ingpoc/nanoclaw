@@ -158,10 +158,7 @@ import {
   RegisteredGroup,
 } from './types.js';
 import { logger } from './logger.js';
-import {
-  notionQueryMemory,
-  notionCreateMemory,
-} from './symphony-notion.js';
+import { notionQueryMemory, notionCreateMemory } from './symphony-notion.js';
 import { readEnvFile } from './env.js';
 import { WorkerRunSupervisor } from './worker-run-supervisor.js';
 
@@ -725,7 +722,8 @@ function extractWorkerRunContext(
 async function queryProjectMemories(repo: string): Promise<string> {
   const databaseId =
     process.env.NOTION_AGENT_MEMORY_DATABASE_ID ||
-    readEnvFile(['NOTION_AGENT_MEMORY_DATABASE_ID']).NOTION_AGENT_MEMORY_DATABASE_ID ||
+    readEnvFile(['NOTION_AGENT_MEMORY_DATABASE_ID'])
+      .NOTION_AGENT_MEMORY_DATABASE_ID ||
     '';
   if (!databaseId) return '';
 
@@ -738,12 +736,13 @@ async function queryProjectMemories(repo: string): Promise<string> {
     const entries = [...projectMemories, ...globalMemories];
     if (entries.length === 0) return '';
 
-    const lines = entries.map(
-      (m) => `- [${m.type}/${m.scope}] ${m.content}`,
-    );
+    const lines = entries.map((m) => `- [${m.type}/${m.scope}] ${m.content}`);
     return ['## Prior Knowledge', '', ...lines].join('\n');
   } catch (err) {
-    logger.debug({ err, repo }, 'Failed to query project memories — continuing without');
+    logger.debug(
+      { err, repo },
+      'Failed to query project memories — continuing without',
+    );
     return '';
   }
 }
@@ -759,7 +758,8 @@ async function persistWorkerLearnings(
 ): Promise<void> {
   const databaseId =
     process.env.NOTION_AGENT_MEMORY_DATABASE_ID ||
-    readEnvFile(['NOTION_AGENT_MEMORY_DATABASE_ID']).NOTION_AGENT_MEMORY_DATABASE_ID ||
+    readEnvFile(['NOTION_AGENT_MEMORY_DATABASE_ID'])
+      .NOTION_AGENT_MEMORY_DATABASE_ID ||
     '';
   if (!databaseId) return;
 
@@ -775,12 +775,18 @@ async function persistWorkerLearnings(
         content: trimmed,
       });
     } catch (err) {
-      logger.debug({ err, runId, projectKey }, 'Failed to persist worker learning');
+      logger.debug(
+        { err, runId, projectKey },
+        'Failed to persist worker learning',
+      );
     }
   }
 }
 
-function buildWorkerDispatchPrompt(payload: DispatchPayload, memories?: string): string {
+function buildWorkerDispatchPrompt(
+  payload: DispatchPayload,
+  memories?: string,
+): string {
   const acceptanceTests = payload.acceptance_tests
     .map((test, idx) => `${idx + 1}. ${test}`)
     .join('\n');
@@ -902,7 +908,9 @@ function buildAndyReviewStateRepairPrompt(
   requestIds: string[],
   outputBuffer: string,
 ): string {
-  const requestList = requestIds.map((requestId) => `- ${requestId}`).join('\n');
+  const requestList = requestIds
+    .map((requestId) => `- ${requestId}`)
+    .join('\n');
   const excerpt = outputBuffer.slice(-1600);
   return [
     'Your previous review response did not emit the required hidden review state markers.',
@@ -942,9 +950,7 @@ function buildAndyDispatchRepairPrompt(
     '- Do not answer the user with prose that claims dispatched, queued, or running.',
     '- After the worker message is sent, emit only an <internal>...</internal> note confirming the repair attempt.',
     '- If no worker delegation is needed, reply with one short user-facing sentence that does not mention dispatch or jarvis-worker lanes.',
-    ...(blockedReason
-      ? ['', `Latest validator block: ${blockedReason}`]
-      : []),
+    ...(blockedReason ? ['', `Latest validator block: ${blockedReason}`] : []),
     '',
     `Tracked request_id: ${requestId}`,
     '',
@@ -1195,7 +1201,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   const selectedMessages = selectMessagesForExecution(group, missedMessages);
   if (isJarvisWorkerFolder(group.folder) && selectedMessages.length === 0) {
     markBatchProcessed(chatJid, missedMessages);
-    markCursorInFlight(chatJid, missedMessages[missedMessages.length - 1].timestamp);
+    markCursorInFlight(
+      chatJid,
+      missedMessages[missedMessages.length - 1].timestamp,
+    );
     commitInFlightCursor(chatJid);
     logger.warn(
       {
@@ -1229,7 +1238,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   }
   if (group.folder === ANDY_DEVELOPER_FOLDER) {
     const replayTimestamp = new Date().toISOString();
-    const selection = selectAndyMessageBatch(messagesToProcess, replayTimestamp);
+    const selection = selectAndyMessageBatch(
+      messagesToProcess,
+      replayTimestamp,
+    );
     if (selection.deferredMessages.length > 0) {
       markMessagesProcessed(
         chatJid,
@@ -1325,7 +1337,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   const workerRun = extractWorkerRunContext(group, messagesToProcess);
   const workerMemories = workerRun
-    ? await queryProjectMemories(workerRun.dispatchPayload.project_key ?? workerRun.dispatchPayload.repo)
+    ? await queryProjectMemories(
+        workerRun.dispatchPayload.project_key ?? workerRun.dispatchPayload.repo,
+      )
     : '';
   const basePrompt = workerRun
     ? buildWorkerDispatchPrompt(workerRun.dispatchPayload, workerMemories)
@@ -1655,10 +1669,17 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         let cleaned = raw;
         if (group.folder === ANDY_DEVELOPER_FOLDER) {
           andyOutputBuffer += `${raw}\n`;
-          if (result.newSessionId && !workerRun && andyRequestsInBatch.length > 0) {
+          if (
+            result.newSessionId &&
+            !workerRun &&
+            andyRequestsInBatch.length > 0
+          ) {
             for (const request of andyRequestsInBatch) {
               if (request.kind === 'coordinator') {
-                setAndyCoordinatorSession(request.requestId, result.newSessionId);
+                setAndyCoordinatorSession(
+                  request.requestId,
+                  result.newSessionId,
+                );
               }
             }
           }
@@ -1729,9 +1750,13 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   }
 
   if (workerRun) {
-    const requireCodeChanges = ['code', 'implement', 'fix', 'refactor', 'release'].includes(
-      workerRun.dispatchPayload.task_type,
-    );
+    const requireCodeChanges = [
+      'code',
+      'implement',
+      'fix',
+      'refactor',
+      'release',
+    ].includes(workerRun.dispatchPayload.task_type);
     let completion = parseCompletionContract(workerOutputBuffer);
     let completionCheck = validateCompletionContract(completion, {
       expectedRunId: workerRun.runId,
@@ -1751,8 +1776,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       const repairWorkspaceCheck = verifyGitWorkspaceState({
         repoPath: repairRepoPath,
         expectedBranch: workerRun.dispatchPayload.branch,
-        expectedCommitSha:
-          getWorkerRun(workerRun.runId)?.commit_sha || '',
+        expectedCommitSha: getWorkerRun(workerRun.runId)?.commit_sha || '',
         requireCleanWorktree: false,
       });
       const repairPrompt = buildWorkerCompletionRepairPrompt(
@@ -1883,7 +1907,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       if (
         normalizedCommitSha &&
         normalizedCommitSha !== completion.commit_sha &&
-        workspaceCheck.errors.every((error) => error === 'workspace head mismatch')
+        workspaceCheck.errors.every(
+          (error) => error === 'workspace head mismatch',
+        )
       ) {
         completion = {
           ...completion,
@@ -1915,7 +1941,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       if (!workspaceCheck.valid) {
         completionCheck = {
           valid: false,
-          missing: [...new Set([...completionCheck.missing, ...workspaceCheck.errors])],
+          missing: [
+            ...new Set([...completionCheck.missing, ...workspaceCheck.errors]),
+          ],
         };
         logger.warn(
           {
@@ -2155,9 +2183,14 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   if (!workerRun && reviewRequestIds.length > 0) {
     let unresolvedReviewRequests = reviewRequestIds.filter(
-      (requestId) => getAndyRequestById(requestId)?.state === 'review_in_progress',
+      (requestId) =>
+        getAndyRequestById(requestId)?.state === 'review_in_progress',
     );
-    if (unresolvedReviewRequests.length > 0 && runOutcome.status !== 'error' && !hadError) {
+    if (
+      unresolvedReviewRequests.length > 0 &&
+      runOutcome.status !== 'error' &&
+      !hadError
+    ) {
       logger.warn(
         {
           group: group.name,
@@ -2171,7 +2204,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       );
       let repairHadError = false;
       const repairSessionOverride =
-        runtimeEffectiveSessionId ?? (coordinatorSessionOverride ?? null);
+        runtimeEffectiveSessionId ?? coordinatorSessionOverride ?? null;
       const repairOutcome = await runAgent(
         group,
         repairPrompt,
@@ -2206,7 +2239,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         hadError = true;
       }
       unresolvedReviewRequests = reviewRequestIds.filter(
-        (requestId) => getAndyRequestById(requestId)?.state === 'review_in_progress',
+        (requestId) =>
+          getAndyRequestById(requestId)?.state === 'review_in_progress',
       );
       if (unresolvedReviewRequests.length > 0) {
         hadError = true;
@@ -2231,7 +2265,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
   }
 
-  if (!workerRun && andyRequestsInBatch.some((request) => request.kind === 'coordinator')) {
+  if (
+    !workerRun &&
+    andyRequestsInBatch.some((request) => request.kind === 'coordinator')
+  ) {
     let dispatchRepairRequests = andyRequestsInBatch
       .filter((request) => request.kind === 'coordinator')
       .map((request) => request.requestId)
@@ -2244,7 +2281,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         return attempt ? { requestId, attempt } : undefined;
       })
       .find((value): value is NonNullable<typeof value> => Boolean(value));
-    const blockedDispatchReason = latestBlockedAttempt?.attempt.reason_text?.trim();
+    const blockedDispatchReason =
+      latestBlockedAttempt?.attempt.reason_text?.trim();
     const dispatchRepairTriggerReason =
       blockedDispatchReason ||
       (ANDY_DISPATCH_INTENT_PATTERN.test(andyOutputBuffer)
@@ -2274,7 +2312,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       );
       let repairHadError = false;
       const repairSessionOverride =
-        runtimeEffectiveSessionId ?? (coordinatorSessionOverride ?? null);
+        runtimeEffectiveSessionId ?? coordinatorSessionOverride ?? null;
       const repairOutcome = await runAgent(
         group,
         repairPrompt,
@@ -2348,7 +2386,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   if (!workerRun && andyRequestsInBatch.length > 0) {
     const coordinatorSessionId =
-      runOutcome.newSessionId ?? (coordinatorSessionOverride ?? null);
+      runOutcome.newSessionId ?? coordinatorSessionOverride ?? null;
     const runFailed = runOutcome.status === 'error' || hadError;
     for (const request of andyRequestsInBatch) {
       completeAndyCoordinatorRequest({

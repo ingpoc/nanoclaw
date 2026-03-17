@@ -407,7 +407,12 @@ describe('container-runner timeout behavior', () => {
       groupFolder: 'jarvis-worker-1',
     };
 
-    const resultPromise = runContainerAgent(workerGroup, workerLikeInput, () => {}, async () => {});
+    const resultPromise = runContainerAgent(
+      workerGroup,
+      workerLikeInput,
+      () => {},
+      async () => {},
+    );
 
     emitOutputMarker(fakeProc, {
       status: 'success',

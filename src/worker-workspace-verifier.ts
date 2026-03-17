@@ -22,7 +22,8 @@ export function normalizeCommitShaFromWorkspace(input: {
   if (!verification.headCommit) return null;
   if (verification.actualBranch !== expectedBranch) return null;
   if (verification.dirtyEntries.length > 0) return null;
-  if (verification.headCommit === reportedCommitSha) return verification.headCommit;
+  if (verification.headCommit === reportedCommitSha)
+    return verification.headCommit;
   return verification.headCommit;
 }
 

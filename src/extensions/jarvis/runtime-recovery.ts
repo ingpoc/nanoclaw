@@ -202,7 +202,11 @@ export function recoverInterruptedWorkerDispatches(input: {
     const hasRunningContainer = hasRunningContainerWithPrefix(
       `nanoclaw-${run.group_folder}-`,
     );
-    if (hasPendingDispatchForRun && run.status === 'running' && !hasRunningContainer) {
+    if (
+      hasPendingDispatchForRun &&
+      run.status === 'running' &&
+      !hasRunningContainer
+    ) {
       requeueWorkerRunForReplay(
         run.run_id,
         'running_without_container_startup_replay',

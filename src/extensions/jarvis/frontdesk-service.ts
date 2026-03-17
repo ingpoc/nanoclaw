@@ -513,7 +513,15 @@ export async function handleAndyFrontdeskMessages(input: {
 export function getAndyRequestsForMessages(
   messages: NewMessage[],
 ): AndyRequestMessageRef[] {
-  return listTrackedAndyRequestRefsForMessages(messages);
+  const refs = listTrackedAndyRequestRefsForMessages(messages);
+  const active =
+    refs.find((ref) => ref.kind === 'coordinator' && !ref.isReplay) ??
+    refs.find((ref) => ref.kind === 'coordinator') ??
+    refs[0];
+  if (!active) {
+    return refs;
+  }
+  return [active, ...refs.filter((ref) => ref !== active)];
 }
 
 export function getAndyRequestByMessageRef(messageId: string) {

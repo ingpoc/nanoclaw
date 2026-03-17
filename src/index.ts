@@ -59,6 +59,7 @@ import {
   getLatestAndyRequestForChat,
   getMessagesSince,
   getLatestReusableWorkerSession,
+  listDispatchAttemptsForRequest,
   getNewMessages,
   getRegisteredGroup,
   getStoredMessage,
@@ -928,6 +929,7 @@ const ANDY_DISPATCH_INTENT_PATTERN =
 function buildAndyDispatchRepairPrompt(
   requestId: string,
   outputBuffer: string,
+  blockedReason?: string,
 ): string {
   const excerpt = outputBuffer.slice(-1600);
   return [
@@ -940,6 +942,9 @@ function buildAndyDispatchRepairPrompt(
     '- Do not answer the user with prose that claims dispatched, queued, or running.',
     '- After the worker message is sent, emit only an <internal>...</internal> note confirming the repair attempt.',
     '- If no worker delegation is needed, reply with one short user-facing sentence that does not mention dispatch or jarvis-worker lanes.',
+    ...(blockedReason
+      ? ['', `Latest validator block: ${blockedReason}`]
+      : []),
     '',
     `Tracked request_id: ${requestId}`,
     '',
@@ -1207,7 +1212,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     chatJid,
     selectedMessages.map((m) => m.id),
   );
-  const messagesToProcess = selectedMessages.filter(
+  let messagesToProcess = selectedMessages.filter(
     (m) => !alreadyProcessed.has(m.id),
   );
   if (messagesToProcess.length === 0) {
@@ -1222,6 +1227,33 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     );
     return true;
   }
+  if (group.folder === ANDY_DEVELOPER_FOLDER) {
+    const replayTimestamp = new Date().toISOString();
+    const selection = selectAndyMessageBatch(messagesToProcess, replayTimestamp);
+    if (selection.deferredMessages.length > 0) {
+      markMessagesProcessed(
+        chatJid,
+        selection.deferredMessages.map((message) => message.originalMessageId),
+      );
+      storeChatMetadata(chatJid, replayTimestamp, group.name, 'nanoclaw', true);
+      for (const deferred of selection.deferredMessages) {
+        storeMessage(deferred.replayMessage);
+      }
+      logger.info(
+        {
+          chatJid,
+          activeRequestId: selection.activeRequestId,
+          deferredMessageCount: selection.deferredMessages.length,
+        },
+        'Deferred older Andy request messages behind fresh coordinator intake',
+      );
+    }
+    messagesToProcess = selection.selectedMessages;
+    if (messagesToProcess.length === 0) {
+      return true;
+    }
+  }
+
   const batchLastTimestamp =
     messagesToProcess[messagesToProcess.length - 1].timestamp;
 
@@ -2204,24 +2236,41 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       .filter((request) => request.kind === 'coordinator')
       .map((request) => request.requestId)
       .filter((requestId) => !getAndyRequestById(requestId)?.worker_run_id);
+    const latestBlockedAttempt = dispatchRepairRequests
+      .map((requestId) => {
+        const attempt = listDispatchAttemptsForRequest(requestId).find(
+          (candidate) => candidate.status === 'blocked',
+        );
+        return attempt ? { requestId, attempt } : undefined;
+      })
+      .find((value): value is NonNullable<typeof value> => Boolean(value));
+    const blockedDispatchReason = latestBlockedAttempt?.attempt.reason_text?.trim();
+    const dispatchRepairTriggerReason =
+      blockedDispatchReason ||
+      (ANDY_DISPATCH_INTENT_PATTERN.test(andyOutputBuffer)
+        ? 'unaccepted dispatch intent'
+        : undefined);
 
     if (
       dispatchRepairRequests.length > 0 &&
       runOutcome.status !== 'error' &&
       !hadError &&
-      ANDY_DISPATCH_INTENT_PATTERN.test(andyOutputBuffer)
+      dispatchRepairTriggerReason
     ) {
-      const repairRequestId = dispatchRepairRequests[0]!;
+      const repairRequestId =
+        latestBlockedAttempt?.requestId ?? dispatchRepairRequests[0]!;
       logger.warn(
         {
           group: group.name,
           requestId: repairRequestId,
+          trigger: dispatchRepairTriggerReason,
         },
-        'Andy coordinator output implied dispatch without an accepted worker run, requesting repair',
+        'Andy coordinator dispatch requires repair before a worker run can be accepted',
       );
       const repairPrompt = buildAndyDispatchRepairPrompt(
         repairRequestId,
         andyOutputBuffer,
+        blockedDispatchReason,
       );
       let repairHadError = false;
       const repairSessionOverride =

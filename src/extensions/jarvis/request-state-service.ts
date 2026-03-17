@@ -1,6 +1,7 @@
 import {
   createAndyRequestIfAbsent,
   getAndyRequestById,
+  getLatestActiveAndyCoordinatorRequest,
   getAndyRequestByMessageId,
   insertDispatchAttempt,
   linkAndyRequestToWorkerRun,
@@ -37,6 +38,7 @@ export interface AndyRequestMessageRef {
   requestId: string;
   messageId: string;
   kind: 'coordinator' | 'review';
+  isReplay?: boolean;
 }
 
 export interface AndyReviewRequestPayload {
@@ -319,6 +321,7 @@ export function listTrackedAndyRequestRefsForMessages(
           requestId: replay.request_id,
           messageId: messages[i].id,
           kind: replay.kind,
+          isReplay: true,
         });
         continue;
       }
@@ -333,6 +336,7 @@ export function listTrackedAndyRequestRefsForMessages(
           requestId: reviewTrigger.request_id,
           messageId: messages[i].id,
           kind: 'review',
+          isReplay: false,
         });
         continue;
       }
@@ -345,6 +349,7 @@ export function listTrackedAndyRequestRefsForMessages(
       requestId: request.request_id,
       messageId: messages[i].id,
       kind: 'coordinator',
+      isReplay: false,
     });
   }
   return rows;
@@ -469,7 +474,14 @@ export function selectAndyMessageBatch(
   replayTimestamp: string,
 ): AndyMessageBatchSelection {
   const refs = listTrackedAndyRequestRefsForMessages(messages);
-  const activeRequest = refs[0];
+  const chatJid = messages[0]?.chat_jid;
+  const latestActiveCoordinator = chatJid
+    ? getLatestActiveAndyCoordinatorRequest(chatJid)
+    : undefined;
+  const activeRequest =
+    refs.find((ref) => ref.kind === 'coordinator' && !ref.isReplay) ??
+    refs.find((ref) => ref.kind === 'coordinator') ??
+    refs[0];
   if (!activeRequest) {
     return {
       selectedMessages: messages,
@@ -478,6 +490,16 @@ export function selectAndyMessageBatch(
   }
 
   if (activeRequest.kind !== 'coordinator') {
+    if (
+      latestActiveCoordinator &&
+      latestActiveCoordinator.request_id !== activeRequest.requestId
+    ) {
+      return {
+        selectedMessages: [],
+        activeRequestId: latestActiveCoordinator.request_id,
+        deferredMessages: [],
+      };
+    }
     return {
       selectedMessages: messages,
       activeRequestId: activeRequest.requestId,
@@ -488,7 +510,7 @@ export function selectAndyMessageBatch(
   const deferredMessages: DeferredAndyMessage[] = [];
   const deferredIds = new Set<string>();
 
-  for (const ref of refs.slice(1)) {
+  for (const ref of refs) {
     if (ref.requestId === activeRequest.requestId) continue;
 
     const request = getAndyRequestById(ref.requestId);
@@ -498,6 +520,9 @@ export function selectAndyMessageBatch(
     if (!original) continue;
 
     deferredIds.add(original.id);
+    if (parseAndyRequestReplayMetadata(original.content)) {
+      continue;
+    }
     deferredMessages.push({
       originalMessageId: original.id,
       requestId: ref.requestId,

@@ -13,6 +13,7 @@ import {
   getAndyRequestsForMessages,
   handleAndyFrontdeskMessages,
 } from './frontdesk-service.js';
+import { buildAndyRequestReplayMessageContent } from './request-state-service.js';
 import {
   type Channel,
   type NewMessage,
@@ -346,8 +347,127 @@ describe('frontdesk-service', () => {
         requestId: 'req-review-2',
         messageId: 'msg-review-trigger-2',
         kind: 'review',
+        isReplay: false,
       },
     ]);
+  });
+
+  it('prioritizes a coordinator request ahead of a newer review replay in mixed batches', () => {
+    createAndyRequestIfAbsent({
+      request_id: 'req-build-2',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      user_message_id: 'msg-user-build-2',
+      user_prompt: 'add a feature',
+      intent: 'work_intake',
+      state: 'queued_for_coordinator',
+    });
+    createAndyRequestIfAbsent({
+      request_id: 'req-review-4',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      user_message_id: 'msg-user-review-4',
+      user_prompt: 'review the prior run',
+      intent: 'work_intake',
+      state: 'worker_review_requested',
+    });
+
+    const refs = getAndyRequestsForMessages([
+      {
+        id: 'msg-user-build-2',
+        chat_jid: 'andy-developer@g.us',
+        sender: 'uat-user@nanoclaw',
+        sender_name: 'User',
+        content: '@Andy add filter controls',
+        timestamp: '2026-03-17T07:08:21.012Z',
+      },
+      {
+        id: 'deferred-review-4',
+        chat_jid: 'andy-developer@g.us',
+        sender: 'nanoclaw-review@nanoclaw',
+        sender_name: 'nanoclaw-review',
+        content: buildAndyRequestReplayMessageContent({
+          content: `<review_request>
+{
+  "request_id": "req-review-4",
+  "run_id": "run-review-4",
+  "repo": "openclaw-gurusharan/nanoclaw",
+  "branch": "jarvis-review-4",
+  "worker_group_folder": "jarvis-worker-1"
+}
+</review_request>`,
+          requestId: 'req-review-4',
+          kind: 'review',
+          originalMessageId: 'msg-review-trigger-4',
+        }),
+        timestamp: '2026-03-17T07:08:22.743Z',
+      },
+    ]);
+
+    expect(refs[0]).toMatchObject({
+      requestId: 'req-build-2',
+      kind: 'coordinator',
+    });
+    expect(refs[1]).toMatchObject({
+      requestId: 'req-review-4',
+      kind: 'review',
+    });
+  });
+
+  it('prioritizes a fresh coordinator request ahead of a newer replayed coordinator message', () => {
+    createAndyRequestIfAbsent({
+      request_id: 'req-build-5',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      user_message_id: 'msg-user-build-5',
+      user_prompt: 'ship the follow-up',
+      intent: 'work_intake',
+      state: 'queued_for_coordinator',
+    });
+    createAndyRequestIfAbsent({
+      request_id: 'req-build-4',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      user_message_id: 'msg-user-build-4',
+      user_prompt: 'older follow-up',
+      intent: 'work_intake',
+      state: 'queued_for_coordinator',
+    });
+
+    const refs = getAndyRequestsForMessages([
+      {
+        id: 'msg-user-build-5',
+        chat_jid: 'andy-developer@g.us',
+        sender: 'uat-user@nanoclaw',
+        sender_name: 'User',
+        content: '@Andy retry add feature',
+        timestamp: '2026-03-17T07:18:14.235Z',
+      },
+      {
+        id: 'deferred-user-build-4',
+        chat_jid: 'andy-developer@g.us',
+        sender: 'nanoclaw-replay@nanoclaw',
+        sender_name: 'nanoclaw-replay',
+        content: buildAndyRequestReplayMessageContent({
+          content: '@Andy add feature',
+          requestId: 'req-build-4',
+          kind: 'coordinator',
+          originalMessageId: 'msg-user-build-4',
+        }),
+        timestamp: '2026-03-17T07:18:16.527Z',
+      },
+    ]);
+
+    expect(refs[0]).toMatchObject({
+      requestId: 'req-build-5',
+      kind: 'coordinator',
+      isReplay: false,
+    });
+    expect(refs[1]).toMatchObject({
+      requestId: 'req-build-4',
+      kind: 'coordinator',
+      isReplay: true,
+    });
   });
 
   it('humanizes explicit review ownership states in status replies', () => {

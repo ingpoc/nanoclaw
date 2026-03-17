@@ -2003,6 +2003,21 @@ export function getLatestAndyRequestForChat(
     .get(chatJid) as AndyRequestRecord | undefined;
 }
 
+export function getLatestActiveAndyCoordinatorRequest(
+  chatJid: string,
+): AndyRequestRecord | undefined {
+  return db
+    .prepare(
+      `SELECT request_id, chat_jid, source_group_folder, source_lane_id, user_message_id, user_prompt, intent, state, worker_run_id, worker_group_folder, coordinator_session_id, last_status_text, created_at, updated_at, closed_at
+     FROM andy_requests
+     WHERE chat_jid = ?
+       AND state IN ('queued_for_coordinator', 'coordinator_active')
+     ORDER BY updated_at DESC, created_at DESC
+     LIMIT 1`,
+    )
+    .get(chatJid) as AndyRequestRecord | undefined;
+}
+
 export function listActiveAndyRequests(
   chatJid: string,
   limit = 5,

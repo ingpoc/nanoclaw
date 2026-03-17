@@ -333,7 +333,7 @@ describe('parseAndyReviewStateUpdates', () => {
     );
   });
 
-  it('keeps deferred replay coordinator messages bound to their original request', () => {
+  it('parks deferred replay coordinator messages without replaying them again', () => {
     createAndyRequestIfAbsent({
       request_id: 'req-intake-older',
       chat_jid: 'andy-developer@g.us',
@@ -390,11 +390,117 @@ describe('parseAndyReviewStateUpdates', () => {
     expect(selection.selectedMessages.map((message) => message.id)).toEqual([
       'user-msg-intake-newer',
     ]);
-    expect(selection.deferredMessages).toHaveLength(1);
-    expect(selection.deferredMessages[0]).toMatchObject({
-      originalMessageId: 'deferred-user-msg-intake-older-1',
-      requestId: 'req-intake-older',
+    expect(selection.deferredMessages).toHaveLength(0);
+  });
+
+  it('prefers a fresh coordinator request over a newer deferred review replay without creating a replay chain', () => {
+    createAndyRequestIfAbsent({
+      request_id: 'req-build-1',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      source_lane_id: 'andy-developer',
+      user_message_id: 'user-msg-build-1',
+      user_prompt: 'Build the app.',
+      intent: 'work_intake',
+      state: 'queued_for_coordinator',
     });
+    createAndyRequestIfAbsent({
+      request_id: 'req-review-1',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      source_lane_id: 'andy-developer',
+      user_message_id: 'user-msg-review-1',
+      user_prompt: 'Review prior worker output.',
+      intent: 'work_intake',
+      state: 'worker_review_requested',
+    });
+
+    const selection = selectAndyMessageBatch(
+      [
+        {
+          id: 'user-msg-build-1',
+          chat_jid: 'andy-developer@g.us',
+          sender: 'uat-user@nanoclaw',
+          sender_name: 'User',
+          content: '@Andy add filter controls',
+          timestamp: '2026-03-17T06:01:41.532Z',
+          is_from_me: false,
+          is_bot_message: false,
+        },
+        {
+          id: 'deferred-review-1',
+          chat_jid: 'andy-developer@g.us',
+          sender: 'nanoclaw-review@nanoclaw',
+          sender_name: 'nanoclaw-review',
+          content: buildAndyRequestReplayMessageContent({
+            content:
+              '<review_request>{"request_id":"req-review-1","run_id":"run-review-1","repo":"openclaw-gurusharan/launchdeck","branch":"jarvis-launchdeck-build","worker_group_folder":"jarvis-worker-1"}</review_request>',
+            requestId: 'req-review-1',
+            kind: 'review',
+            originalMessageId: 'review-msg-review-1',
+          }),
+          timestamp: '2026-03-17T06:01:43.349Z',
+          is_from_me: false,
+          is_bot_message: false,
+        },
+      ],
+      '2026-03-17T06:01:44.000Z',
+    );
+
+    expect(selection.activeRequestId).toBe('req-build-1');
+    expect(selection.selectedMessages.map((message) => message.id)).toEqual([
+      'user-msg-build-1',
+    ]);
+    expect(selection.deferredMessages).toHaveLength(0);
+  });
+
+  it('keeps a deferred review parked while a newer coordinator request is still active in the same chat', () => {
+    createAndyRequestIfAbsent({
+      request_id: 'req-build-new',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      source_lane_id: 'andy-developer',
+      user_message_id: 'user-msg-build-new',
+      user_prompt: 'Build the new app.',
+      intent: 'work_intake',
+      state: 'coordinator_active',
+    });
+    createAndyRequestIfAbsent({
+      request_id: 'req-review-old',
+      chat_jid: 'andy-developer@g.us',
+      source_group_folder: 'andy-developer',
+      source_lane_id: 'andy-developer',
+      user_message_id: 'user-msg-review-old',
+      user_prompt: 'Review prior worker output.',
+      intent: 'work_intake',
+      state: 'worker_review_requested',
+    });
+
+    const selection = selectAndyMessageBatch(
+      [
+        {
+          id: 'deferred-review-old',
+          chat_jid: 'andy-developer@g.us',
+          sender: 'nanoclaw-review@nanoclaw',
+          sender_name: 'nanoclaw-review',
+          content: buildAndyRequestReplayMessageContent({
+            content:
+              '<review_request>{"request_id":"req-review-old","run_id":"run-review-old","repo":"openclaw-gurusharan/launchdeck","branch":"jarvis-launchdeck-build","worker_group_folder":"jarvis-worker-1"}</review_request>',
+            requestId: 'req-review-old',
+            kind: 'review',
+            originalMessageId: 'review-msg-review-old',
+          }),
+          timestamp: '2026-03-17T06:01:43.349Z',
+          is_from_me: false,
+          is_bot_message: false,
+        },
+      ],
+      '2026-03-17T06:01:44.000Z',
+    );
+
+    expect(selection.activeRequestId).toBe('req-build-new');
+    expect(selection.selectedMessages).toHaveLength(0);
+    expect(selection.deferredMessages).toHaveLength(0);
   });
 });
 

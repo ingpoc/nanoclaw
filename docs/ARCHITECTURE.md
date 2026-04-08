@@ -1,30 +1,32 @@
 # Architecture Boundary Contract
 
-## Purpose
+## Boundary Purpose
 Define the hard boundary between upstream-aligned NanoClaw core and fork-owned Jarvis customization so agents know where behavior belongs before editing code.
 
-## Doc Type
+## Boundary Doc Type
 `contract`
 
-## Canonical Owner
-`docs/ARCHITECTURE.md` owns core-vs-extension ownership rules.
+## Control Owner
 
-Adjacent docs that must not duplicate this ownership contract:
-- `docs/architecture/nanoclaw-system-architecture.md` owns topology and runtime layers.
-- `docs/architecture/nanoclaw-jarvis.md` owns Jarvis runtime behavior and lane semantics.
-- `docs/reference/REQUIREMENTS.md` owns baseline core constraints.
+Owner for:
+- `docs/ARCHITECTURE.md` core-vs-extension ownership rules
 
-## Use When
+Should not contain:
+- topology or runtime detail that belongs in `docs/architecture/nanoclaw-system-architecture.md`
+- Jarvis runtime behavior or lane semantics that belong in `docs/architecture/nanoclaw-jarvis.md`
+- baseline core constraints that belong in `docs/reference/REQUIREMENTS.md`
+
+## Boundary Use When
 - Before editing `src/index.ts`, `src/ipc.ts`, `src/db.ts`, `src/container-runner.ts`, `src/container-runtime.ts`, or `src/dispatch-validator.ts`
 - Before adding new Jarvis behavior, worker-lane logic, Andy request semantics, or synthetic `@nanoclaw` routing
 - Before deciding whether a change belongs in core files or `src/extensions/jarvis/*`
 
-## Do Not Use When
+## Boundary Do Not Use When
 - You are changing feature-specific worker contract fields or completion schema details only.
 - You are debugging a live incident and need the execution runbook first.
 - You are making a purely upstream NanoClaw sync with no Jarvis behavior change.
 
-## Requirements
+## Boundary Requirements
 
 ### Core Principle
 NanoClaw core stays small, generic, and upstream-aligned. Jarvis behavior is an extension layer, not an alternative architecture inside the core runtime.
@@ -92,7 +94,7 @@ If a change introduces any of the following, it belongs in the Jarvis extension 
 - worker lane authorization
 - request/linkage semantics
 
-## Field Rules
+## Boundary Field Rules
 
 ### Allowed Core-to-Extension Direction
 - Shared seam files may import from `src/extensions/jarvis/*`.
@@ -104,19 +106,19 @@ If a change introduces any of the following, it belongs in the Jarvis extension 
 ### Extension Exception Rule
 - If a Jarvis change must touch a shared seam file, the work item must explain why the seam change could not live entirely in the extension layer.
 
-## Validation Gates
+## Boundary Validation Gates
 - `bash scripts/check-architecture-boundary.sh`
 - `bash scripts/check-workflow-contracts.sh`
 - `bash scripts/check-claude-codex-mirror.sh`
 - `bash scripts/check-tooling-governance.sh`
 
-## Exit Criteria
+## Boundary Exit Criteria
 - The change places new Jarvis behavior in `src/extensions/jarvis/*` unless a seam exception is justified.
 - No frozen core file gains new Jarvis-specific markers.
 - `CLAUDE.md` and `AGENTS.md` both point to this contract before risky edits.
 - The deterministic boundary check passes.
 
-## Related Docs
+## Boundary Related Docs
 - `docs/architecture/nanoclaw-system-architecture.md`
 - `docs/architecture/nanoclaw-jarvis.md`
 - `docs/reference/REQUIREMENTS.md`

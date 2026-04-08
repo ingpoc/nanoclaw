@@ -2,6 +2,15 @@
 
 Runtime contract for OpenCode-based worker containers.
 
+## Control Owner
+
+Owner for:
+- OpenCode-based worker container runtime behavior and boundaries
+
+Should not contain:
+- dispatch payload and completion contract rules that belong in `docs/workflow/runtime/nanoclaw-jarvis-dispatch-contract.md`
+- execution-lane routing or shared-context policy that belongs in the control-plane contracts
+
 ## Worker Image
 
 - Default image: `nanoclaw-worker:latest` (`WORKER_CONTAINER_IMAGE`)
@@ -204,7 +213,7 @@ Token counts are zero-filled until OpenCode exposes deterministic per-call usage
 2. Non-worker groups remain on the Claude Agent SDK runtime path.
 3. Worker-specific behavior is bounded by folder/image detection and does not alter main-group orchestration semantics.
 
-## Agent Routing
+## Worker Agent Routing
 
 Use the canonical routing owners in:
 

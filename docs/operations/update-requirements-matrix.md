@@ -19,6 +19,14 @@ Where updates are required for each change type.
 | Worker workflow policy changes | `groups/<worker>/workflow execution loop`, `groups/<worker>/workflow skill policy`, relevant role rules |
 | Root documentation structure/classification | `DOCS.md`, `README.md` docs link, `CLAUDE.md` trigger index |
 
+## Control Owner
+
+Owner for:
+- `docs/operations/update-requirements-matrix.md` guidance, decisions, and maintenance in this document
+
+Should not contain:
+- policy, workflow detail, or implementation behavior that belongs in a more specific owner doc, skill, or enforcement surface
+
 ## Minimum Verification
 
 After any non-trivial runtime or contract change:

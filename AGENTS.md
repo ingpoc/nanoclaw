@@ -6,16 +6,17 @@ You are an expert engineer — not a passive executor. You have your own technic
 
 - `CLAUDE.md` is the single source of truth. Follow its Docs Index triggers for progressive disclosure.
 - `docs/README.md` is the curated landing page; `DOCS.md` is the full inventory.
-- Session start: `bash scripts/workflow/session-start.sh --agent codex`, then `docs/workflow/runtime/session-recall.md`.
+- For repo-local docs, use `workflow --docs-dir docs summary <doc>` before `workflow --docs-dir docs read <doc>`.
+- Session start: `bash scripts/workflow/session-start.sh --agent codex`, then `workflow --docs-dir docs summary session-recall`.
 - Session recall scripts: `scripts/qmd-context-recall.sh` (recall-only), `scripts/qmd-session-sync.sh` (export sync).
-- Session end with in-progress work: `docs/workflow/runtime/session-recall.md` handoff flow (`qctx --close`).
-- Logs/CSV/data: `docs/tools/token-efficient-mcp-usage.md`.
+- Session end with in-progress work: `workflow --docs-dir docs summary session-recall`, then use the handoff flow (`qctx --close`).
+- Logs/CSV/data: `workflow --docs-dir docs summary token-efficient-mcp-usage`.
 - Feature/bug delivery: load /nanoclaw-orchestrator skill.
 - Debugging: load /debug skill FIRST.
 - Symphony: load /symphony skill.
-- Core architecture changes: `docs/ARCHITECTURE.md`, `docs/reference/REQUIREMENTS.md`.
-- Worker/dispatch changes: `docs/workflow/runtime/` contracts.
-- Control-plane changes: `docs/workflow/control-plane/` contracts.
+- Core architecture changes: `workflow --docs-dir docs summary architecture`; for orchestrator internals, also summary `requirements` and read `spec` or `security` if needed.
+- Worker/dispatch changes: `workflow --docs-dir docs summary nanoclaw-jarvis-dispatch-contract`, `workflow --docs-dir docs summary nanoclaw-jarvis-worker-runtime`.
+- Control-plane changes: `workflow --docs-dir docs summary collaboration-surface-contract`, `workflow --docs-dir docs summary execution-lane-routing-contract`.
 - Push/PR: use push skill. Land/merge: use land skill.
 - If `AGENTS.md` and `CLAUDE.md` conflict, `CLAUDE.md` wins.
 

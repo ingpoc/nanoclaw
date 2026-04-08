@@ -14,7 +14,7 @@ export const CONTAINER_RUNTIME_BIN =
   process.env.CONTAINER_RUNTIME ||
   'container';
 
-const IS_APPLE_CONTAINER_RUNTIME = /(^|\/)container$/.test(
+export const IS_APPLE_CONTAINER_RUNTIME = /(^|\/)container$/.test(
   CONTAINER_RUNTIME_BIN,
 );
 

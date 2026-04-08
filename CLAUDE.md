@@ -9,7 +9,9 @@ See [README.md](README.md) for philosophy and setup. See [docs/reference/REQUIRE
 - `CLAUDE.md` is the canonical instruction source for this repository.
 - `AGENTS.md` is a mirror/bridge for Codex and must remain fully aligned with this file.
 - `docs/README.md` is the landing page for curated start points; `DOCS.md` is the full inventory.
-- Codex task preflight: read this file first, then load only the docs referenced by relevant `Docs Index` trigger lines.
+- Codex task preflight: read this file first, then load only the minimum extra docs referenced by the relevant `Docs Index` trigger lines.
+- Run repo-local `workflow --docs-dir docs ...` and `scripts/...` commands from the repo root.
+- For repo-local docs, use `workflow --docs-dir docs summary <doc>` before `workflow --docs-dir docs read <doc>`.
 - Any policy/process change here must be reflected in `AGENTS.md` in the same change.
 
 ## Quick Context
@@ -38,23 +40,23 @@ NanoClaw baseline is the default. Jarvis docs apply only when working on the `ja
 ## Docs Index
 
 ```text
-SESSION START → run bash scripts/workflow/session-start.sh --agent <claude|codex>, then read docs/workflow/runtime/session-recall.md
+SESSION START → run bash scripts/workflow/session-start.sh --agent <claude|codex>, then workflow --docs-dir docs summary session-recall
 TASK START → state selected route (intent + skill/doc/MCP) before deeper work
 FEATURE/BUG/RELIABILITY delivery or platform pickup → load /nanoclaw-orchestrator skill
-LOGS, CSV, data, or MCP execute_code/process_* → read docs/tools/token-efficient-mcp-usage.md
+LOGS, CSV, data, or MCP execute_code/process_* → workflow --docs-dir docs summary token-efficient-mcp-usage
 PUSH or PR → use push skill | MERGE/LAND → use land skill
-UPSTREAM SYNC → read docs/operations/upstream-sync-policy.md
-CORE ORCHESTRATOR/IPC changes → read docs/reference/REQUIREMENTS.md, SPEC.md, SECURITY.md
-CORE-VS-EXTENSION boundaries → read docs/ARCHITECTURE.md
-JARVIS architecture/state machine → read docs/architecture/nanoclaw-jarvis.md
-WORKER contracts/dispatch/runtime → read docs/workflow/runtime/ (dispatch-contract, worker-runtime)
+UPSTREAM SYNC → workflow --docs-dir docs summary upstream-sync-policy
+CORE ORCHESTRATOR/IPC changes → workflow --docs-dir docs summary requirements; if orchestrator internals changed, also workflow --docs-dir docs summary spec and workflow --docs-dir docs summary security
+CORE-VS-EXTENSION boundaries → workflow --docs-dir docs summary architecture
+JARVIS architecture/state machine → workflow --docs-dir docs summary nanoclaw-jarvis
+WORKER contracts/dispatch/runtime → workflow --docs-dir docs summary nanoclaw-jarvis-dispatch-contract and workflow --docs-dir docs summary nanoclaw-jarvis-worker-runtime
 JARVIS workflow finalization or Andy reliability → load /nanoclaw-testing skill
-CONTROL-PLANE changes (Linear/Notion/GitHub/Symphony routing) → read docs/workflow/control-plane/
+CONTROL-PLANE changes (Linear/Notion/GitHub/Symphony routing) → workflow --docs-dir docs summary collaboration-surface-contract and workflow --docs-dir docs summary execution-lane-routing-contract
 SYMPHONY operations/dispatch/debugging → load /symphony skill
-PROJECT ONBOARDING or secret model → read docs/workflow/control-plane/project-bootstrap-and-secret-contract.md
-GITHUB ACTIONS/delivery governance → read docs/workflow/github/github-delivery-governance.md
+PROJECT ONBOARDING or secret model → workflow --docs-dir docs summary project-bootstrap-and-secret-contract
+GITHUB ACTIONS/delivery governance → workflow --docs-dir docs summary github-delivery-governance
 DEBUGGING containers/auth/MCP/connectivity → load /debug skill FIRST
-WORKFLOW OPTIMIZATION from research → read docs/workflow/strategy/workflow-optimization-loop.md
+WORKFLOW OPTIMIZATION from research → workflow --docs-dir docs summary workflow-optimization-loop
 WEEKLY CLEANUP → load /weekly-cleanup skill | NIGHTLY IMPROVEMENT → load /nightly-improvement skill
 SESSION END with avoidable friction → load /session-introspection skill
 ```

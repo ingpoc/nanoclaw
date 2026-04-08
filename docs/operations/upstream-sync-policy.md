@@ -8,6 +8,14 @@ Remote boundary for this repo:
 - `upstream` = `https://github.com/qwibitai/nanoclaw.git` and is fetch-only.
 - Never push to `upstream`.
 
+## Control Owner
+
+Owner for:
+- `docs/operations/upstream-sync-policy.md` guidance, decisions, and maintenance in this document
+
+Should not contain:
+- policy, workflow detail, or implementation behavior that belongs in a more specific owner doc, skill, or enforcement surface
+
 ## Required Cadence
 
 - Perform a daily pull/fetch from `upstream/main` (nanoclaw mainline).
@@ -42,7 +50,7 @@ After each daily sync:
 - `Docs/Infra`
 - Conflict notes and local compatibility decisions
 
-## Authority
+## Sync Authority
 
 - `CLAUDE.md` keeps only trigger/reference lines.
 - This file contains the full sync policy details.

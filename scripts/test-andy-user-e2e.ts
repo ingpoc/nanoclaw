@@ -5,7 +5,7 @@
  * processes), then waits for bot replies and enforces response criteria.
  *
  * Run with:
- *   npx tsx scripts/test-andy-user-e2e.ts
+ *   bash scripts/with-service-node.sh npx tsx scripts/test-andy-user-e2e.ts
  */
 import Database from 'better-sqlite3';
 

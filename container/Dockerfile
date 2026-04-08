@@ -6,8 +6,6 @@ FROM node:22-slim
 # Install system dependencies for Chromium
 RUN apt-get update && apt-get install -y \
     chromium \
-    gh \
-    jq \
     fonts-liberation \
     fonts-noto-cjk \
     fonts-noto-color-emoji \
@@ -32,8 +30,8 @@ RUN apt-get update && apt-get install -y \
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Install agent/browser and MCP bridge tooling globally
-RUN npm install -g agent-browser @anthropic-ai/claude-code mcp-remote
+# Install agent-browser and claude-code globally
+RUN npm install -g agent-browser @anthropic-ai/claude-code
 
 # Create app directory
 WORKDIR /app

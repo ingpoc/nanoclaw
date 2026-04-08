@@ -5,18 +5,28 @@ Defines who changes GitHub governance and how those changes are shipped.
 For cross-domain ownership and update-location mapping, see
 `docs/operations/update-requirements-matrix.md`.
 
-## Owns
+## Control Owner
 
-This document owns GitHub-hosted governance for this repository:
+Owner for:
+- GitHub-hosted delivery governance for this repository
+
+Should not contain:
+- collaboration-surface placement that belongs in `docs/workflow/control-plane/collaboration-surface-contract.md`
+- GitHub-vs-local placement decisions that belong in `docs/workflow/github/github-offload-boundary-loop.md`
+- active task tracking or planning context that belongs in Linear or Notion
+
+## In Scope
+
+This document covers GitHub-hosted governance for this repository:
 
 1. workflow auth and secrets expectations
 2. PR review automation policy
 3. CI failure feedback loops
 4. merge policy, required validation, and governance branch guardrails
 
-## Does Not Own
+## Out Of Scope
 
-This document does not own:
+This document does not cover:
 
 1. active task tracking, ownership, or triage
 2. shared planning, research, or decision context

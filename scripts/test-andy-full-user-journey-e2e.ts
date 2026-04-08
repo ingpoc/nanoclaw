@@ -6,7 +6,7 @@
  * With status checks in-between, as a normal user would do.
  *
  * Run with:
- *   node --experimental-transform-types scripts/test-andy-full-user-journey-e2e.ts
+ *   bash scripts/with-service-node.sh npx tsx scripts/test-andy-full-user-journey-e2e.ts
  */
 import Database from 'better-sqlite3';
 

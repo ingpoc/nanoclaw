@@ -26,7 +26,7 @@ Should not contain:
 - You are debugging a live incident and need the execution runbook first.
 - You are making a purely upstream NanoClaw sync with no Jarvis behavior change.
 
-## Boundary Requirements
+## Requirements
 
 ### Core Principle
 NanoClaw core stays small, generic, and upstream-aligned. Jarvis behavior is an extension layer, not an alternative architecture inside the core runtime.
@@ -106,13 +106,13 @@ If a change introduces any of the following, it belongs in the Jarvis extension 
 ### Extension Exception Rule
 - If a Jarvis change must touch a shared seam file, the work item must explain why the seam change could not live entirely in the extension layer.
 
-## Boundary Validation Gates
+## Validation Gates
 - `bash scripts/check-architecture-boundary.sh`
 - `bash scripts/check-workflow-contracts.sh`
 - `bash scripts/check-claude-codex-mirror.sh`
 - `bash scripts/check-tooling-governance.sh`
 
-## Boundary Exit Criteria
+## Exit Criteria
 - The change places new Jarvis behavior in `src/extensions/jarvis/*` unless a seam exception is justified.
 - No frozen core file gains new Jarvis-specific markers.
 - `CLAUDE.md` and `AGENTS.md` both point to this contract before risky edits.

@@ -56,7 +56,7 @@ SYMPHONY operations/dispatch/debugging → load /symphony skill
 PROJECT ONBOARDING or secret model → workflow --docs-dir docs summary project-bootstrap-and-secret-contract
 GITHUB ACTIONS/delivery governance → workflow --docs-dir docs summary github-delivery-governance
 DEBUGGING containers/auth/MCP/connectivity → load /debug skill FIRST
-WORKFLOW OPTIMIZATION from research → workflow --docs-dir docs summary workflow-optimization-loop
+WORKFLOW OPTIMIZATION from research → workflow --docs-dir docs summary workflow-optimization-loop (`docs/workflow/strategy/workflow-optimization-loop.md`)
 WEEKLY CLEANUP → load /weekly-cleanup skill | NIGHTLY IMPROVEMENT → load /nightly-improvement skill
 SESSION END with avoidable friction → load /session-introspection skill
 ```

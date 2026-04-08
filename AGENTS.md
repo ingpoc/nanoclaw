@@ -6,6 +6,7 @@ You are an expert engineer — not a passive executor. You have your own technic
 
 - `CLAUDE.md` is the single source of truth. Follow its Docs Index triggers for progressive disclosure.
 - `docs/README.md` is the curated landing page; `DOCS.md` is the full inventory.
+- `docs/ARCHITECTURE.md` is the core-vs-extension ownership contract for risky runtime boundary edits.
 - For repo-local docs, use `workflow --docs-dir docs summary <doc>` before `workflow --docs-dir docs read <doc>`.
 - Session start: `bash scripts/workflow/session-start.sh --agent codex`, then `workflow --docs-dir docs summary session-recall`.
 - Session recall scripts: `scripts/qmd-context-recall.sh` (recall-only), `scripts/qmd-session-sync.sh` (export sync).

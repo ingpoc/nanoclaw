@@ -72,7 +72,9 @@ export function startCredentialProxy(
         const upstream = makeRequest(
           {
             hostname: upstreamUrl.hostname,
-            port: upstreamUrl.port || (upstreamUrl.protocol === 'https:' ? 443 : 80),
+            port:
+              upstreamUrl.port ||
+              (upstreamUrl.protocol === 'https:' ? 443 : 80),
             path: forwardPath,
             method: req.method,
             headers,

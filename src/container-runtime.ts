@@ -105,9 +105,14 @@ export function readonlyMountArgs(
   return ['-v', `${hostPath}:${containerPath}:ro`];
 }
 
-/** Returns the shell command to stop a container by name. */
-export function stopContainer(name: string): string {
-  return `${CONTAINER_RUNTIME_BIN} stop ${name}`;
+const SAFE_CONTAINER_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+
+/** Stop a container by name. Throws on invalid names to prevent command injection. */
+export function stopContainer(name: string): void {
+  if (!SAFE_CONTAINER_NAME.test(name)) {
+    throw new Error(`Invalid container name: ${name}`);
+  }
+  execSync(`${CONTAINER_RUNTIME_BIN} stop -t 1 ${name}`, { stdio: 'pipe' });
 }
 
 function parseContainersFromJson(output: string): RuntimeContainer[] {
@@ -264,7 +269,7 @@ export function stopContainerWithVerification(
 ): StopContainerResult {
   const attempts: string[] = [];
   const commands = [
-    stopContainer(name),
+    `${CONTAINER_RUNTIME_BIN} stop -t 1 ${name}`,
     `${CONTAINER_RUNTIME_BIN} stop -s SIGKILL -t 1 ${name}`,
     `${CONTAINER_RUNTIME_BIN} kill ${name}`,
   ];
@@ -340,7 +345,7 @@ export function cleanupOrphans(): void {
 
     for (const name of orphans) {
       try {
-        execSync(stopContainer(name), { stdio: 'pipe' });
+        stopContainer(name);
       } catch (err) {
         logger.warn({ err, name }, 'Failed to stop orphaned container');
       }

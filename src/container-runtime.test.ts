@@ -32,14 +32,17 @@ beforeEach(() => {
 // --- Pure functions ---
 
 describe('readonlyMountArgs', () => {
-  it('returns -v flag with :ro suffix', () => {
+  it('returns --mount with readonly flag (Apple Container runtime)', () => {
     const args = readonlyMountArgs('/host/path', '/container/path');
-    expect(args).toEqual(['-v', '/host/path:/container/path:ro']);
+    expect(args).toEqual([
+      '--mount',
+      'type=bind,source=/host/path,target=/container/path,readonly',
+    ]);
   });
 });
 
 describe('stopContainer', () => {
-  it('calls docker stop for valid container names', () => {
+  it('executes stop for valid container names', () => {
     stopContainer('nanoclaw-test-123');
     expect(mockExecSync).toHaveBeenCalledWith(
       `${CONTAINER_RUNTIME_BIN} stop -t 1 nanoclaw-test-123`,
@@ -68,10 +71,10 @@ describe('ensureContainerRuntimeRunning', () => {
     ensureContainerRuntimeRunning();
 
     expect(mockExecSync).toHaveBeenCalledTimes(1);
-    expect(mockExecSync).toHaveBeenCalledWith(`${CONTAINER_RUNTIME_BIN} info`, {
-      stdio: 'pipe',
-      timeout: 10000,
-    });
+    expect(mockExecSync).toHaveBeenCalledWith(
+      `${CONTAINER_RUNTIME_BIN} system status`,
+      { stdio: 'pipe', timeout: 10000 },
+    );
     expect(logger.debug).toHaveBeenCalledWith(
       'Container runtime already running',
     );
@@ -93,9 +96,9 @@ describe('ensureContainerRuntimeRunning', () => {
 
 describe('cleanupOrphans', () => {
   it('stops orphaned nanoclaw containers', () => {
-    // docker ps returns container names, one per line
+    // Apple Container `ls -a` output includes a header row (skipped by parser)
     mockExecSync.mockReturnValueOnce(
-      'nanoclaw-group1-111\nnanoclaw-group2-222\n',
+      'ID IMAGE STATE\nnanoclaw-group1-111 img running\nnanoclaw-group2-222 img running\n',
     );
     // stop calls succeed
     mockExecSync.mockReturnValue('');
@@ -143,7 +146,10 @@ describe('cleanupOrphans', () => {
   });
 
   it('continues stopping remaining containers when one stop fails', () => {
-    mockExecSync.mockReturnValueOnce('nanoclaw-a-1\nnanoclaw-b-2\n');
+    // Apple Container `ls -a` output includes a header row (skipped by parser)
+    mockExecSync.mockReturnValueOnce(
+      'ID IMAGE STATE\nnanoclaw-a-1 img running\nnanoclaw-b-2 img running\n',
+    );
     // First stop fails
     mockExecSync.mockImplementationOnce(() => {
       throw new Error('already stopped');

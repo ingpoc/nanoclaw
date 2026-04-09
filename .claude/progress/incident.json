@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-04-07T18:15:29.244277+00:00",
+  "updated_at": "2026-04-08T06:18:03.745117+00:00",
   "incidents": [
     {
       "id": "incident-20260407-main-lane-auth-bridge",
@@ -8,7 +8,7 @@
       "status": "open",
       "severity": "high",
       "created_at": "2026-04-07T18:15:23.325678+00:00",
-      "updated_at": "2026-04-07T18:15:29.244193+00:00",
+      "updated_at": "2026-04-08T06:18:03.745030+00:00",
       "summary": {
         "symptom": "Main WhatsApp lane replied to status probes with login/auth failures instead of concrete control-plane status.",
         "suspected_cause": "Container runtime was missing the credential-proxy startup and Anthropic proxy env injection path; earlier in the same outage broken stag...",
@@ -32,6 +32,11 @@
           "ts": "2026-04-07T18:15:29.244189+00:00",
           "author": "operator",
           "text": "Applied fixes in src/container-runner.ts, src/container-runtime.ts, src/index.ts, src/config.ts, and new src/credential-proxy.ts. Verified build passes, targeted src/container-runner.test.ts passes, launchd service runs on Node v20.19.2, and bash scripts/with-service-node.sh npx tsx scripts/test-main-lane-status-e2e.ts now passes both scenarios with concrete Andy status output."
+        },
+        {
+          "ts": "2026-04-08T06:18:03.745025+00:00",
+          "author": "codex",
+          "text": "2026-04-08 verification: com.nanoclaw launchd service is running and main WhatsApp lane status E2E passed via scripts/test-main-lane-status-e2e.ts, but andy-developer remains offline. Evidence: container ls shows only nanoclaw-agent main container, runtime_owners table is empty, verify-worker-connectivity fails at preflight on missing runtime owner row and missing worker_runs columns run_generation/stop_reason, and logs/nanoclaw.error.log shows OneCLI gateway not reachable so container has no credentials."
         }
       ]
     },

@@ -15,6 +15,8 @@ You are an expert engineer — not a passive executor. You have your own technic
 - Feature/bug delivery: load /nanoclaw-orchestrator skill.
 - Debugging: load /debug skill FIRST.
 - Symphony: load /symphony skill.
+- CI failure / PR checks / GitHub Actions debugging: `workflow --docs-dir docs summary github-delivery-governance`.
+- High-stakes decision with multiple plausible paths / real downside or explicit "should I", "pressure-test", or "council this": load /llm-council skill. Skip for factual lookups or simple implementation choices.
 - Core architecture changes: `workflow --docs-dir docs summary architecture`; for orchestrator internals, also summary `requirements` and read `spec` or `security` if needed.
 - Worker/dispatch changes: `workflow --docs-dir docs summary nanoclaw-jarvis-dispatch-contract`, `workflow --docs-dir docs summary nanoclaw-jarvis-worker-runtime`.
 - Control-plane changes: `workflow --docs-dir docs summary collaboration-surface-contract`, `workflow --docs-dir docs summary execution-lane-routing-contract`.

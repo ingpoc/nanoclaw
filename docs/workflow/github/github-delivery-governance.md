@@ -161,6 +161,55 @@ Use instead:
 - `workflow_run` feedback workflows only become active after the workflow file exists on the default branch; do not expect the PR that introduces the workflow to self-summarize its own failures before merge.
 - This repository ships that feedback loop at `.github/workflows/ci-failure-summary.yml`.
 
+## CI Failure Inspection Lane
+
+Use this lane when a PR check is red and you need the exact failing job or step
+before deciding whether the repair is deterministic or judgment-heavy.
+
+### Preferred Sequence
+
+1. Identify the PR and current failing checks:
+   - `gh pr view --repo ingpoc/nanoclaw <pr> --json url,statusCheckRollup`
+   - or `gh pr checks <pr>`
+2. If the failure is a GitHub Actions run, inspect the failing job logs directly:
+   - `gh run view <run-id> --repo ingpoc/nanoclaw --log-failed`
+3. Classify the failure before editing code:
+   - deterministic governance or contract failure
+   - formatter or generated-artifact drift
+   - test / build / type failure requiring code judgment
+4. Apply the narrowest local fix and rerun the matching local command before
+   push.
+5. Push the repair and let PR checks rerun.
+
+### Classification Rule
+
+- If the failing step already maps to a stable local command, run that exact
+  local command first.
+- If the failure is an umbrella `ci` bucket, do not treat the bucket itself as
+  actionable. Inspect the concrete failing job and step first.
+- If the failure requires product or architecture judgment, keep it human-owned
+  or explicit `@codex fix` rather than autonomous cleanup.
+
+### Repository Examples
+
+| Failing job / step | First local command |
+|--------------------|---------------------|
+| `Workflow contract lint` | `bash scripts/check-workflow-contracts.sh` |
+| `Claude/Codex mirror lint` | `bash scripts/check-claude-codex-mirror.sh` |
+| `Tooling governance lint` | `bash scripts/check-tooling-governance.sh` |
+| `Format check` | `npm run format:check` |
+| `Typecheck` | `npx tsc --noEmit` |
+| `Tests` | `npx vitest run` or the smallest affected test file first |
+
+### Route Selection
+
+- Use this document first for repo-local CI failure routing.
+- Use `/land` when the job is to shepherd an open PR through review and green
+  checks end to end.
+- Use a global GitHub Actions debugging helper only as fallback when repo-local
+  governance tells you to inspect Actions logs but does not already encode a
+  more specific local repair lane.
+
 ## Codex Repair Automation Baseline
 
 - Use `openai/codex-action@v1` for explicit repair automation on trusted PR branches.

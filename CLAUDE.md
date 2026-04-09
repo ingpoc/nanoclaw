@@ -54,7 +54,8 @@ JARVIS workflow finalization or Andy reliability → load /nanoclaw-testing skil
 CONTROL-PLANE changes (Linear/Notion/GitHub/Symphony routing) → workflow --docs-dir docs summary collaboration-surface-contract and workflow --docs-dir docs summary execution-lane-routing-contract
 SYMPHONY operations/dispatch/debugging → load /symphony skill
 PROJECT ONBOARDING or secret model → workflow --docs-dir docs summary project-bootstrap-and-secret-contract
-GITHUB ACTIONS/delivery governance → workflow --docs-dir docs summary github-delivery-governance
+GITHUB ACTIONS/delivery governance or CI failure / PR checks / Actions log debugging → workflow --docs-dir docs summary github-delivery-governance
+HIGH-STAKES decision with multiple plausible paths / real downside / explicit "should I", "pressure-test", or "council this" request → load /llm-council skill (skip for factual lookups or simple implementation choices)
 DEBUGGING containers/auth/MCP/connectivity → load /debug skill FIRST
 WORKFLOW OPTIMIZATION from research → workflow --docs-dir docs summary workflow-optimization-loop (`docs/workflow/strategy/workflow-optimization-loop.md`)
 WEEKLY CLEANUP → load /weekly-cleanup skill | NIGHTLY IMPROVEMENT → load /nightly-improvement skill

@@ -210,12 +210,7 @@ function normalizeTaskIpcPayload(
       : undefined) ||
     (!isMain ? findGroupJidByFolder(registeredGroups, sourceGroup) : undefined);
 
-  if (
-    data.prompt &&
-    data.schedule_type &&
-    data.schedule_value &&
-    targetJid
-  ) {
+  if (data.prompt && data.schedule_type && data.schedule_value && targetJid) {
     logger.info(
       { sourceGroup, targetJid },
       'Normalizing legacy IPC task payload to schedule_task',

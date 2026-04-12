@@ -7,6 +7,8 @@ Personal Claude assistant that operates as an expert engineer — not a passive 
 - `CLAUDE.md` is the canonical instruction source for this repository.
 - `AGENTS.md` is a mirror/bridge for Codex and must remain fully aligned with this file.
 - Use `workflow --docs-dir docs summary README` as the docs landing path before reading deeper repo docs.
+- Core-vs-extension boundary contract: `docs/ARCHITECTURE.md`.
+- Workflow optimization lane: `docs/workflow/strategy/workflow-optimization-loop.md`.
 - Codex task preflight: read this file first, then load only the minimum extra docs referenced by the relevant `Docs Index` trigger lines.
 - Run repo-local `workflow --docs-dir docs ...` and `scripts/...` commands from the repo root.
 - Editing `AGENTS.md`: `workflow summary agentmd-quality-gate`.

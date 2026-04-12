@@ -27,6 +27,21 @@ export interface IpcDeps {
 
 let ipcWatcherRunning = false;
 
+export function canIpcAccessTarget(
+  sourceGroup: string,
+  isMain: boolean,
+  targetGroup?: RegisteredGroup,
+): boolean {
+  if (isMain) return true;
+  if (!targetGroup) return false;
+  if (targetGroup.folder === sourceGroup) return true;
+
+  return (
+    sourceGroup === 'andy-developer' &&
+    targetGroup.folder.startsWith('jarvis-worker-')
+  );
+}
+
 export function startIpcWatcher(deps: IpcDeps): void {
   if (ipcWatcherRunning) {
     logger.debug('IPC watcher already running, skipping duplicate start');
@@ -77,10 +92,7 @@ export function startIpcWatcher(deps: IpcDeps): void {
               if (data.type === 'message' && data.chatJid && data.text) {
                 // Authorization: verify this group can send to this chatJid
                 const targetGroup = registeredGroups[data.chatJid];
-                if (
-                  isMain ||
-                  (targetGroup && targetGroup.folder === sourceGroup)
-                ) {
+                if (canIpcAccessTarget(sourceGroup, isMain, targetGroup)) {
                   await deps.sendMessage(data.chatJid, data.text);
                   logger.info(
                     { chatJid: data.chatJid, sourceGroup },

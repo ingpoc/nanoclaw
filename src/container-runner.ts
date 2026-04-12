@@ -4,6 +4,7 @@
  */
 import { ChildProcess, spawn } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import {
@@ -17,7 +18,6 @@ import {
   ONECLI_URL,
   TIMEZONE,
 } from './config.js';
-import { detectAuthMode } from './credential-proxy.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
 import {
@@ -29,7 +29,9 @@ import {
   stopContainer,
 } from './container-runtime.js';
 import { OneCLI } from '@onecli-sh/sdk';
+import { type AuthMode, detectAuthMode } from './credential-proxy.js';
 import { validateAdditionalMounts } from './mount-security.js';
+import { resolveOneCliAgent } from './onecli-agent.js';
 import { RegisteredGroup } from './types.js';
 
 const onecli = new OneCLI({ url: ONECLI_URL });
@@ -37,6 +39,14 @@ const onecli = new OneCLI({ url: ONECLI_URL });
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
+const APPLE_ONECLI_MOUNT_DIR = '/tmp/nanoclaw-onecli';
+const CREDENTIAL_PROXY_NO_PROXY_HOSTS = [
+  '127.0.0.1',
+  'localhost',
+  'host.docker.internal',
+  CONTAINER_HOST_GATEWAY,
+];
+const HOST_CODEX_DIR = path.join(os.homedir(), '.codex');
 
 export interface ContainerInput {
   prompt: string;
@@ -102,6 +112,24 @@ function buildVolumeMounts(
   const projectRoot = process.cwd();
   const groupDir = resolveGroupFolderPath(group.folder);
 
+  const groupSessionsDir = path.join(
+    DATA_DIR,
+    'sessions',
+    group.folder,
+    '.claude',
+  );
+  fs.mkdirSync(groupSessionsDir, { recursive: true });
+
+  // Mount the host Codex control-plane root read-only so every lane can use
+  // the same `workflow` CLI implementation and global docs/knowledge surfaces.
+  if (fs.existsSync(HOST_CODEX_DIR)) {
+    mounts.push({
+      hostPath: HOST_CODEX_DIR,
+      containerPath: '/home/node/.codex',
+      readonly: true,
+    });
+  }
+
   if (isMain) {
     const projectMirrorDir = prepareReadonlyProjectMirror(
       projectRoot,
@@ -166,13 +194,6 @@ function buildVolumeMounts(
 
   // Per-group Claude sessions directory (isolated from other groups)
   // Each group gets their own .claude/ to prevent cross-group session access
-  const groupSessionsDir = path.join(
-    DATA_DIR,
-    'sessions',
-    group.folder,
-    '.claude',
-  );
-  fs.mkdirSync(groupSessionsDir, { recursive: true });
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
   if (!fs.existsSync(settingsFile)) {
     fs.writeFileSync(
@@ -216,7 +237,19 @@ function buildVolumeMounts(
       }
       if (!srcStat.isDirectory()) continue;
       const dstDir = path.join(skillsDst, skillDir);
-      fs.cpSync(srcDir, dstDir, { recursive: true });
+      // If dst is a symlink it resolves to the same real path as src (since
+      // container/skills entries are also symlinks). cpSync rejects same-path
+      // copies. Remove the symlink so we write a real copy instead.
+      try {
+        if (fs.lstatSync(dstDir).isSymbolicLink()) {
+          fs.unlinkSync(dstDir);
+        }
+      } catch {
+        // dst doesn't exist — that's fine
+      }
+      // dereference: true copies the content the symlinks point to rather than
+      // recreating symlinks in the destination, preventing future same-path errors.
+      fs.cpSync(srcDir, dstDir, { recursive: true, dereference: true });
     }
   }
   mounts.push({
@@ -298,11 +331,16 @@ async function buildContainerArgs(
     '-e',
     `ANTHROPIC_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}`,
   );
-  if (detectAuthMode() === 'api-key') {
+  const authMode = detectAuthMode();
+  if (authMode === 'api-key') {
     args.push('-e', 'ANTHROPIC_API_KEY=placeholder');
   } else {
     args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
   }
+  // GitHub tooling expects a token-shaped env var before it emits authenticated
+  // requests. OneCLI still injects the real lane-scoped credential at the proxy.
+  args.push('-e', 'GH_TOKEN=placeholder');
+  args.push('-e', 'GITHUB_TOKEN=placeholder');
 
   // OneCLI gateway handles credential injection — containers never see real secrets.
   // The gateway intercepts HTTPS traffic and injects API keys or OAuth tokens.
@@ -317,6 +355,13 @@ async function buildContainerArgs(
       { containerName },
       'OneCLI gateway not reachable — container will have no credentials',
     );
+  }
+  enforceSingleAnthropicAuthMode(args, authMode);
+  ensureCredentialProxyNoProxy(args);
+
+  if (IS_APPLE_CONTAINER_RUNTIME) {
+    rewriteOneCliProxyHostsForAppleContainer(args);
+    rewriteOneCliFileMountsForAppleContainer(args, containerName);
   }
 
   // Runtime-specific args for host gateway resolution
@@ -352,6 +397,156 @@ async function buildContainerArgs(
   return args;
 }
 
+function enforceSingleAnthropicAuthMode(
+  args: string[],
+  authMode: AuthMode,
+): void {
+  const blockedKeys =
+    authMode === 'api-key'
+      ? ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN']
+      : ['ANTHROPIC_API_KEY'];
+  stripEnvArgs(args, blockedKeys);
+}
+
+function stripEnvArgs(args: string[], blockedKeys: string[]): void {
+  const blocked = new Set(blockedKeys);
+
+  for (let i = 0; i < args.length - 1; ) {
+    if (args[i] !== '-e') {
+      i += 1;
+      continue;
+    }
+
+    const envArg = args[i + 1];
+    const eqIdx = envArg.indexOf('=');
+    const key = eqIdx === -1 ? envArg : envArg.slice(0, eqIdx);
+    if (!blocked.has(key)) {
+      i += 2;
+      continue;
+    }
+
+    args.splice(i, 2);
+  }
+}
+
+function ensureCredentialProxyNoProxy(args: string[]): void {
+  const existingEntries = collectEnvValues(args, ['NO_PROXY', 'no_proxy']);
+  const merged = new Set<string>();
+
+  for (const entry of existingEntries) {
+    for (const value of entry.split(',')) {
+      const trimmed = value.trim();
+      if (trimmed) merged.add(trimmed);
+    }
+  }
+
+  for (const host of CREDENTIAL_PROXY_NO_PROXY_HOSTS) {
+    merged.add(host);
+  }
+
+  const noProxyValue = Array.from(merged).join(',');
+  stripEnvArgs(args, ['NO_PROXY', 'no_proxy']);
+  args.push('-e', `NO_PROXY=${noProxyValue}`);
+  args.push('-e', `no_proxy=${noProxyValue}`);
+}
+
+function collectEnvValues(args: string[], keys: string[]): string[] {
+  const wanted = new Set(keys);
+  const values: string[] = [];
+
+  for (let i = 0; i < args.length - 1; i++) {
+    if (args[i] !== '-e') continue;
+    const envArg = args[i + 1];
+    const eqIdx = envArg.indexOf('=');
+    const key = eqIdx === -1 ? envArg : envArg.slice(0, eqIdx);
+    if (!wanted.has(key)) continue;
+    values.push(eqIdx === -1 ? '' : envArg.slice(eqIdx + 1));
+  }
+
+  return values;
+}
+
+function rewriteOneCliProxyHostsForAppleContainer(args: string[]): void {
+  for (let i = 0; i < args.length - 1; i++) {
+    if (args[i] !== '-e') continue;
+    args[i + 1] = args[i + 1].replaceAll(
+      'host.docker.internal',
+      CONTAINER_HOST_GATEWAY,
+    );
+  }
+}
+
+function rewriteOneCliFileMountsForAppleContainer(
+  args: string[],
+  containerName: string,
+): void {
+  const stagedPaths = new Map<string, string>();
+  const stageDir = path.join(DATA_DIR, 'onecli-mounts', containerName);
+
+  for (let i = 0; i < args.length - 1; ) {
+    if (args[i] !== '-v') {
+      i += 1;
+      continue;
+    }
+
+    const spec = parseSimpleBindMount(args[i + 1]);
+    if (!spec || !spec.containerPath.includes('onecli')) {
+      i += 2;
+      continue;
+    }
+
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(spec.hostPath);
+    } catch {
+      i += 2;
+      continue;
+    }
+    if (!stat.isFile()) {
+      i += 2;
+      continue;
+    }
+
+    fs.mkdirSync(stageDir, { recursive: true });
+    const stagedPath = path.join(stageDir, path.basename(spec.containerPath));
+    fs.copyFileSync(spec.hostPath, stagedPath);
+    stagedPaths.set(
+      spec.containerPath,
+      `${APPLE_ONECLI_MOUNT_DIR}/${path.basename(spec.containerPath)}`,
+    );
+    args.splice(i, 2);
+  }
+
+  if (stagedPaths.size === 0) return;
+
+  args.push(...readonlyMountArgs(stageDir, APPLE_ONECLI_MOUNT_DIR));
+
+  for (let i = 0; i < args.length - 1; i++) {
+    if (args[i] !== '-e') continue;
+    let envArg = args[i + 1];
+    for (const [fromPath, toPath] of stagedPaths) {
+      envArg = envArg.replaceAll(fromPath, toPath);
+    }
+    args[i + 1] = envArg;
+  }
+}
+
+function parseSimpleBindMount(
+  spec: string,
+): { hostPath: string; containerPath: string } | null {
+  const readonlySuffix = ':ro';
+  const mountSpec = spec.endsWith(readonlySuffix)
+    ? spec.slice(0, -readonlySuffix.length)
+    : spec;
+  const separatorIdx = mountSpec.indexOf(':');
+  if (separatorIdx === -1) return null;
+
+  return {
+    hostPath: mountSpec.slice(0, separatorIdx),
+    containerPath: mountSpec.slice(separatorIdx + 1),
+  };
+}
+
 export async function runContainerAgent(
   group: RegisteredGroup,
   input: ContainerInput,
@@ -366,10 +561,9 @@ export async function runContainerAgent(
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
-  // Main group uses the default OneCLI agent; others use their own agent.
-  const agentIdentifier = input.isMain
-    ? undefined
-    : group.folder.toLowerCase().replace(/_/g, '-');
+  // Main chat maps to the dedicated andy-bot OneCLI agent instead of the
+  // catch-all default agent so each lane receives its own credential scope.
+  const { identifier: agentIdentifier } = resolveOneCliAgent(group);
   const containerArgs = await buildContainerArgs(
     mounts,
     containerName,

@@ -117,6 +117,41 @@ async function readStdin(): Promise<string> {
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
 
+function configureCredentialProxyBypass(
+  env: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  const baseUrl = env.ANTHROPIC_BASE_URL;
+  if (!baseUrl) return env;
+
+  let proxyHost: string;
+  try {
+    proxyHost = new URL(baseUrl).hostname;
+  } catch {
+    return env;
+  }
+
+  const merged = new Set<string>();
+  for (const key of ['NO_PROXY', 'no_proxy'] as const) {
+    const value = env[key];
+    if (!value) continue;
+    for (const entry of value.split(',')) {
+      const trimmed = entry.trim();
+      if (trimmed) merged.add(trimmed);
+    }
+  }
+
+  for (const host of ['127.0.0.1', 'localhost', 'host.docker.internal', proxyHost]) {
+    merged.add(host);
+  }
+
+  const noProxyValue = Array.from(merged).join(',');
+  return {
+    ...env,
+    NO_PROXY: noProxyValue,
+    no_proxy: noProxyValue,
+  };
+}
+
 function writeOutput(output: ContainerOutput): void {
   console.log(OUTPUT_START_MARKER);
   console.log(JSON.stringify(output));
@@ -623,10 +658,10 @@ async function main(): Promise<void> {
 
   // Credentials are injected by the host's credential proxy via ANTHROPIC_BASE_URL.
   // No real secrets exist in the container environment.
-  const sdkEnv: Record<string, string | undefined> = {
+  const sdkEnv = configureCredentialProxyBypass({
     ...process.env,
     CLAUDE_CODE_AUTO_COMPACT_WINDOW: '165000',
-  };
+  });
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const mcpServerPath = path.join(__dirname, 'ipc-mcp-stdio.js');

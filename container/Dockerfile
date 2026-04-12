@@ -33,6 +33,11 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 # Install agent-browser and claude-code globally
 RUN npm install -g agent-browser @anthropic-ai/claude-code
 
+# Expose the host-mounted Codex workflow CLI inside the container.
+# The implementation lives under /home/node/.codex, mounted read-only by the host.
+RUN printf '#!/bin/sh\nexport CODEX_WORKFLOW_PUBLIC_ENTRYPOINT=1\nexec python3 /home/node/.codex/bin/workflow.py "$@"\n' > /usr/local/bin/workflow \
+    && chmod +x /usr/local/bin/workflow
+
 # Create app directory
 WORKDIR /app
 

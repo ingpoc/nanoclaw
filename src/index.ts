@@ -33,14 +33,18 @@ import {
   PROXY_BIND_HOST,
 } from './container-runtime.js';
 import {
+  acceptWorkerRunCompletion,
   getAllChats,
   getAllRegisteredGroups,
+  getRegisteredGroup,
   getAllSessions,
   deleteSession,
   getAllTasks,
   getLastBotMessageTimestamp,
   getMessagesSince,
   getNewMessages,
+  getWorkerRun,
+  insertWorkerRun,
   getRouterState,
   initDatabase,
   setRegisteredGroup,
@@ -48,7 +52,14 @@ import {
   setSession,
   storeChatMetadata,
   storeMessage,
+  updateWorkerRunStatus,
 } from './db.js';
+import {
+  parseCompletionContract,
+  parseDispatchPayload,
+  validateCompletionContract,
+  validateDispatchPayload,
+} from './dispatch-validator.js';
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
@@ -58,6 +69,7 @@ import {
   startRemoteControl,
   stopRemoteControl,
 } from './remote-control.js';
+import { resolveOneCliAgent } from './onecli-agent.js';
 import {
   isSenderAllowed,
   isTriggerAllowed,
@@ -84,9 +96,8 @@ const queue = new GroupQueue();
 const onecli = new OneCLI({ url: ONECLI_URL });
 
 function ensureOneCLIAgent(jid: string, group: RegisteredGroup): void {
-  if (group.isMain) return;
-  const identifier = group.folder.toLowerCase().replace(/_/g, '-');
-  onecli.ensureAgent({ name: group.name, identifier }).then(
+  const { identifier, name } = resolveOneCliAgent(group);
+  onecli.ensureAgent({ name, identifier }).then(
     (res) => {
       logger.info(
         { jid, identifier, created: res.created },
@@ -143,6 +154,152 @@ function getOrRecoverCursor(chatJid: string): string {
 function saveState(): void {
   setRouterState('last_timestamp', lastTimestamp);
   setRouterState('last_agent_timestamp', JSON.stringify(lastAgentTimestamp));
+}
+
+function isInternalWorkerLane(
+  jid: string,
+  group: RegisteredGroup | undefined,
+): boolean {
+  return Boolean(
+    group &&
+      group.folder.startsWith('jarvis-worker-') &&
+      jid.endsWith('@nanoclaw'),
+  );
+}
+
+async function routeLaneMessage(jid: string, text: string): Promise<void> {
+  const group = registeredGroups[jid] || getRegisteredGroup(jid);
+  if (group && !registeredGroups[jid]) {
+    registeredGroups[jid] = group;
+  }
+  const channel = findChannel(channels, jid);
+
+  if (channel) {
+    const outbound = formatOutbound(text);
+    if (outbound) {
+      await channel.sendMessage(jid, outbound);
+    }
+    return;
+  }
+
+  if (isInternalWorkerLane(jid, group)) {
+    await enqueueInternalWorkerRun(jid, text, group!);
+    return;
+  }
+
+  throw new Error(`No channel for JID: ${jid}`);
+}
+
+async function enqueueInternalWorkerRun(
+  chatJid: string,
+  rawDispatchText: string,
+  group: RegisteredGroup,
+): Promise<void> {
+  const dispatch = parseDispatchPayload(rawDispatchText);
+  const validation = validateDispatchPayload(dispatch);
+
+  if (!dispatch || !validation.valid) {
+    throw new Error(
+      `Invalid worker dispatch payload: ${validation.missing.join(', ') || 'unparseable JSON'}`,
+    );
+  }
+
+  const existing = getWorkerRun(dispatch.run_id);
+  if (existing && /^(queued|running|stopping|review_requested|done)$/.test(existing.status)) {
+    logger.info(
+      { chatJid, runId: dispatch.run_id, status: existing.status },
+      'Worker run already present, skipping duplicate internal dispatch',
+    );
+    return;
+  }
+
+  insertWorkerRun(dispatch.run_id, group.folder, {
+    lane_id: chatJid,
+    dispatch_repo: dispatch.repo,
+    dispatch_branch: dispatch.branch,
+    request_id: dispatch.request_id,
+    context_intent: dispatch.context_intent,
+    dispatch_payload: JSON.stringify(dispatch),
+    phase: 'queued',
+    status: 'queued',
+  });
+
+  queue.enqueueTask(chatJid, dispatch.run_id, async () => {
+    updateWorkerRunStatus(dispatch.run_id, 'running', {
+      phase: 'running',
+      result_summary: 'worker container started',
+    });
+
+    let workerText = '';
+    let closeRequested = false;
+    try {
+      const output = await runAgent(
+        group,
+        rawDispatchText,
+        chatJid,
+        async (result: ContainerOutput) => {
+          if (result.result) {
+            workerText += String(result.result);
+            if (!closeRequested) {
+              const completion = parseCompletionContract(workerText);
+              if (completion) {
+                closeRequested = true;
+                queue.closeStdin(chatJid);
+              }
+            }
+          }
+        },
+      );
+
+      if (output === 'error' && !workerText.trim()) {
+        updateWorkerRunStatus(dispatch.run_id, 'failed_runtime', {
+          phase: 'failed',
+          result_summary: 'worker run failed before producing output',
+        });
+        return;
+      }
+
+      const completion = parseCompletionContract(workerText);
+      const completionCheck = validateCompletionContract(completion, {
+        expectedRunId: dispatch.run_id,
+        expectedBranch: dispatch.branch,
+      });
+      if (!completion || !completionCheck.valid) {
+        updateWorkerRunStatus(dispatch.run_id, 'failed_contract', {
+          phase: 'failed',
+          result_summary:
+            completionCheck.missing.join(', ') || 'completion contract invalid',
+          error_details: JSON.stringify({
+            missing: completionCheck.missing,
+          }),
+        });
+        return;
+      }
+
+      const accepted = acceptWorkerRunCompletion(dispatch.run_id, {
+        branch_name: completion.branch,
+        pr_url: completion.pr_url,
+        commit_sha: completion.commit_sha,
+        files_changed: completion.files_changed,
+        test_summary: completion.test_result,
+        risk_summary: completion.risk,
+      });
+      if (!accepted.ok) {
+        updateWorkerRunStatus(dispatch.run_id, 'failed_contract', {
+          phase: 'failed',
+          result_summary: 'worker completion could not be persisted',
+        });
+      }
+    } catch (err) {
+      updateWorkerRunStatus(dispatch.run_id, 'failed_runtime', {
+        phase: 'failed',
+        result_summary: err instanceof Error ? err.message : String(err),
+        error_details: JSON.stringify({
+          reason: err instanceof Error ? err.message : String(err),
+        }),
+      });
+    }
+  });
 }
 
 function registerGroup(jid: string, group: RegisteredGroup): void {
@@ -708,21 +865,18 @@ async function main(): Promise<void> {
     onProcess: (groupJid, proc, containerName, groupFolder) =>
       queue.registerProcess(groupJid, proc, containerName, groupFolder),
     sendMessage: async (jid, rawText) => {
-      const channel = findChannel(channels, jid);
-      if (!channel) {
-        logger.warn({ jid }, 'No channel owns JID, cannot send message');
-        return;
+      try {
+        await routeLaneMessage(jid, rawText);
+      } catch (err) {
+        logger.warn(
+          { jid, err: err instanceof Error ? err.message : String(err) },
+          'Unable to route scheduler message',
+        );
       }
-      const text = formatOutbound(rawText);
-      if (text) await channel.sendMessage(jid, text);
     },
   });
   startIpcWatcher({
-    sendMessage: (jid, text) => {
-      const channel = findChannel(channels, jid);
-      if (!channel) throw new Error(`No channel for JID: ${jid}`);
-      return channel.sendMessage(jid, text);
-    },
+    sendMessage: routeLaneMessage,
     registeredGroups: () => registeredGroups,
     registerGroup,
     syncGroups: async (force: boolean) => {

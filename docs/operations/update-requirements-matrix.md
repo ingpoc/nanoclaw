@@ -1,6 +1,8 @@
 # Update Requirements Matrix
 
-Where updates are required for each change type.
+Decision: use this matrix as the first stop whenever a change affects runtime contracts, role authority, sync policy, or documentation ownership, and do not close the work until every listed owner surface has been updated or explicitly ruled out.
+
+Use this document to determine which repo surfaces must change together for a given change type. If a proposed edit is not covered here, extend the matrix before treating the work as complete.
 
 | Change Type | Required Updates |
 |-------------|------------------|

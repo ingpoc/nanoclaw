@@ -8,7 +8,7 @@ import {
   getTaskById,
   setRegisteredGroup,
 } from './db.js';
-import { processTaskIpc, IpcDeps } from './ipc.js';
+import { canIpcAccessTarget, processTaskIpc, IpcDeps } from './ipc.js';
 import { RegisteredGroup } from './types.js';
 
 // Set up registered groups used across tests
@@ -34,6 +34,14 @@ const THIRD_GROUP: RegisteredGroup = {
   added_at: '2024-01-01T00:00:00.000Z',
 };
 
+const WORKER_GROUP: RegisteredGroup = {
+  name: 'Jarvis Worker 1',
+  folder: 'jarvis-worker-1',
+  trigger: '@jarvis',
+  added_at: '2024-01-01T00:00:00.000Z',
+  requiresTrigger: false,
+};
+
 let groups: Record<string, RegisteredGroup>;
 let deps: IpcDeps;
 
@@ -44,12 +52,14 @@ beforeEach(() => {
     'main@g.us': MAIN_GROUP,
     'other@g.us': OTHER_GROUP,
     'third@g.us': THIRD_GROUP,
+    'jarvis-worker-1@nanoclaw': WORKER_GROUP,
   };
 
   // Populate DB as well
   setRegisteredGroup('main@g.us', MAIN_GROUP);
   setRegisteredGroup('other@g.us', OTHER_GROUP);
   setRegisteredGroup('third@g.us', THIRD_GROUP);
+  setRegisteredGroup('jarvis-worker-1@nanoclaw', WORKER_GROUP);
 
   deps = {
     sendMessage: async () => {},
@@ -383,49 +393,48 @@ describe('refresh_groups authorization', () => {
 });
 
 // --- IPC message authorization ---
-// Tests the authorization pattern from startIpcWatcher (ipc.ts).
-// The logic: isMain || (targetGroup && targetGroup.folder === sourceGroup)
+// Tests the authorization helper from ipc.ts.
 
 describe('IPC message authorization', () => {
-  // Replicate the exact check from the IPC watcher
   function isMessageAuthorized(
     sourceGroup: string,
     isMain: boolean,
     targetChatJid: string,
-    registeredGroups: Record<string, RegisteredGroup>,
   ): boolean {
-    const targetGroup = registeredGroups[targetChatJid];
-    return isMain || (!!targetGroup && targetGroup.folder === sourceGroup);
+    return canIpcAccessTarget(sourceGroup, isMain, groups[targetChatJid]);
   }
 
   it('main group can send to any group', () => {
-    expect(
-      isMessageAuthorized('whatsapp_main', true, 'other@g.us', groups),
-    ).toBe(true);
-    expect(
-      isMessageAuthorized('whatsapp_main', true, 'third@g.us', groups),
-    ).toBe(true);
+    expect(isMessageAuthorized('whatsapp_main', true, 'other@g.us')).toBe(true);
+    expect(isMessageAuthorized('whatsapp_main', true, 'third@g.us')).toBe(true);
   });
 
   it('non-main group can send to its own chat', () => {
+    expect(isMessageAuthorized('other-group', false, 'other@g.us')).toBe(true);
+  });
+
+  it('andy-developer can send to jarvis-worker lanes', () => {
     expect(
-      isMessageAuthorized('other-group', false, 'other@g.us', groups),
+      isMessageAuthorized(
+        'andy-developer',
+        false,
+        'jarvis-worker-1@nanoclaw',
+      ),
     ).toBe(true);
   });
 
   it('non-main group cannot send to another groups chat', () => {
-    expect(isMessageAuthorized('other-group', false, 'main@g.us', groups)).toBe(
-      false,
-    );
+    expect(isMessageAuthorized('other-group', false, 'main@g.us')).toBe(false);
+    expect(isMessageAuthorized('other-group', false, 'third@g.us')).toBe(false);
     expect(
-      isMessageAuthorized('other-group', false, 'third@g.us', groups),
+      isMessageAuthorized('third-group', false, 'jarvis-worker-1@nanoclaw'),
     ).toBe(false);
   });
 
   it('non-main group cannot send to unregistered JID', () => {
-    expect(
-      isMessageAuthorized('other-group', false, 'unknown@g.us', groups),
-    ).toBe(false);
+    expect(isMessageAuthorized('other-group', false, 'unknown@g.us')).toBe(
+      false,
+    );
   });
 
   it('main group can send to unregistered JID', () => {

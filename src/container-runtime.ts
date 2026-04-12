@@ -336,25 +336,23 @@ export function ensureContainerRuntimeRunning(): void {
 /** Kill orphaned NanoClaw containers from previous runs. */
 export function cleanupOrphans(): void {
   try {
-    const output = execSync(runtimeListContainersCommand(), {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      encoding: 'utf-8',
-    });
-    const orphans = parseNanoclawContainers(output);
-    if (orphans.length === 0) return;
+    const { matched, stopped, failures } =
+      stopRunningContainersByPrefix('nanoclaw-');
+    if (matched.length === 0) return;
 
-    for (const name of orphans) {
-      try {
-        stopContainer(name);
-      } catch (err) {
-        logger.warn({ err, name }, 'Failed to stop orphaned container');
-      }
+    for (const failure of failures) {
+      logger.warn(
+        { name: failure.name, attempts: failure.attempts },
+        'Failed to stop orphaned container',
+      );
     }
 
-    logger.info(
-      { count: orphans.length, names: orphans },
-      'Stopped orphaned containers',
-    );
+    if (stopped.length > 0) {
+      logger.info(
+        { count: stopped.length, names: stopped },
+        'Stopped orphaned containers',
+      );
+    }
   } catch (err) {
     logger.warn({ err }, 'Failed to clean up orphaned containers');
   }

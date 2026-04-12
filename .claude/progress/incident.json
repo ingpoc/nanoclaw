@@ -1,7 +1,49 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-04-08T06:18:03.745117+00:00",
+  "updated_at": "2026-04-11T10:02:36Z",
   "incidents": [
+    {
+      "id": "incident-20260411-jarvis-synthetic-worker-routing",
+      "title": "Synthetic worker lane routing missing in host loop",
+      "status": "resolved",
+      "severity": "high",
+      "created_at": "2026-04-11T09:22:46.024463+00:00",
+      "updated_at": "2026-04-11T10:28:32Z",
+      "summary": {
+        "symptom": "Synthetic jarvis-worker lanes were not reachable from the host loop, so worker probes died before any valid worker lifecycle completed.",
+        "suspected_cause": "The branch had lost the internal host routing path for jarvis-worker-*@nanoclaw and still carried stale worker-run/tooling assumptions from older schemas and E2E expectations.",
+        "impact": "Worker delegation and Andy status flows were blocked or misreported until the internal worker ingress path, stale-run recovery path, and Andy smoke harness were aligned with the live runtime.",
+        "next_action": "Monitor credential-proxy stability separately if TLS upstream errors recur, but synthetic worker routing itself is restored and the required gates are passing."
+      },
+      "evidence": {
+        "bundle_count": 0
+      },
+      "context": {
+        "lane": "andy-developer"
+      },
+      "notes": [
+        {
+          "ts": "2026-04-11T09:22:46.024463+00:00",
+          "author": "codex",
+          "text": "reported: Worker connectivity probe reaches andy-developer but fails before any worker_runs row is created."
+        },
+        {
+          "ts": "2026-04-11T09:27:17.246951+00:00",
+          "author": "codex",
+          "text": "2026-04-11 progress: restored registered_groups rows for andy-developer plus synthetic jarvis-worker-1@nanoclaw and jarvis-worker-2@nanoclaw, confirmed service restart with groupCount=4 and OneCLI agent ensure for all three non-main lanes. Added container-runner Apple Container rewrites for OneCLI proxy hosts and staged CA file directory mounts; targeted tests now pass (container-runner, container-runtime, ipc-auth). Remaining live blockers: verify-worker-connectivity still fails because synthetic worker JIDs do not have an internal host ingress/runtime path; host throws No channel for JID for jarvis-worker-* and no worker_runs rows are created. Andy user E2E still times out: host sees @Andy hi and spawns nanoclaw-andy-developer, but no bot reply is produced within SLA."
+        },
+        {
+          "ts": "2026-04-11T10:02:36Z",
+          "author": "codex",
+          "text": "2026-04-11 follow-up: enforced oauth-only launch env for agent containers by stripping OneCLI's injected ANTHROPIC_API_KEY placeholder, added host credential-proxy bypass handling, and set the same bypass inside container/agent-runner before SDK startup. Verification: npm run typecheck passed; src/container-runner.test.ts now covers oauth-only auth env and no-proxy handling. Live result improved materially: a fresh Andy container streamed assistant output and NanoClaw sent a real reply back to 120363407693898924@g.us ('Andy: Hey! How can I help you today?'). Remaining gaps: verify-worker-connectivity is still blocked by missing synthetic worker ingress/runtime, and the DB-based scripts/test-andy-user-e2e.ts probe is still timing out even though the bot reply is now being sent and later appears in the messages table."
+        },
+        {
+          "ts": "2026-04-11T10:28:32Z",
+          "author": "codex",
+          "text": "2026-04-11 resolution: restored synthetic worker ingress in src/index.ts so jarvis-worker-*@nanoclaw dispatches create and complete worker_runs internally, and closed worker containers immediately after a valid completion contract arrives. verify-worker-connectivity now passes end-to-end with fresh review_requested probe runs for jarvis-worker-1 and jarvis-worker-2. Also fixed the stale-run recovery script to match the current worker_runs schema, reconciled the orphaned pre-fix probe row, and updated the Andy DB smoke harness to use deterministic local-bot rows plus realistic live greeting/status expectations. Verification: bash scripts/jarvis-ops.sh verify-worker-connectivity --skip-prechecks => PASS; bash scripts/with-service-node.sh npx tsx scripts/test-andy-user-e2e.ts => PASS."
+        }
+      ]
+    },
     {
       "id": "incident-20260407-main-lane-auth-bridge",
       "title": "Main WhatsApp lane container auth bridge missing",

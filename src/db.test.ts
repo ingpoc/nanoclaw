@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import {
   _initTestDatabase,
+  acceptWorkerRunCompletion,
   createTask,
   deleteTask,
   getAllChats,
@@ -10,9 +11,12 @@ import {
   getMessagesSince,
   getNewMessages,
   getTaskById,
+  getWorkerRun,
+  insertWorkerRun,
   setRegisteredGroup,
   storeChatMetadata,
   storeMessage,
+  updateWorkerRunStatus,
   updateTask,
 } from './db.js';
 import { formatMessages } from './router.js';
@@ -219,6 +223,50 @@ describe('reply context', () => {
     expect(messages).toHaveLength(1);
     expect(messages[0].reply_to_message_id).toBe('99');
     expect(messages[0].reply_to_sender_name).toBe('Dave');
+  });
+});
+
+describe('worker run helpers', () => {
+  it('inserts and updates a worker run lifecycle', () => {
+    expect(
+      insertWorkerRun('probe-jarvis-worker-1-1', 'jarvis-worker-1', {
+        lane_id: 'jarvis-worker-1@nanoclaw',
+        dispatch_repo: 'openclaw-gurusharan/nanoclaw',
+        dispatch_branch: 'jarvis-probe-1',
+        request_id: 'req-1',
+      }),
+    ).toBe('inserted');
+
+    updateWorkerRunStatus('probe-jarvis-worker-1-1', 'running', {
+      phase: 'executing',
+      active_container_name: 'nanoclaw-jarvis-worker-1-123',
+    });
+
+    const running = getWorkerRun('probe-jarvis-worker-1-1');
+    expect(running?.status).toBe('running');
+    expect(running?.phase).toBe('executing');
+    expect(running?.active_container_name).toBe('nanoclaw-jarvis-worker-1-123');
+
+    const accepted = acceptWorkerRunCompletion('probe-jarvis-worker-1-1', {
+      branch_name: 'jarvis-probe-1',
+      commit_sha: 'deadbeef',
+      files_changed: ['proof.txt'],
+      test_summary: 'probe passed',
+      risk_summary: 'low',
+      pr_url: 'https://example.test/pr/1',
+    });
+    expect(accepted.ok).toBe(true);
+
+    const completed = getWorkerRun('probe-jarvis-worker-1-1');
+    expect(completed?.status).toBe('review_requested');
+    expect(completed?.branch_name).toBe('jarvis-probe-1');
+    expect(completed?.commit_sha).toBe('deadbeef');
+    expect(completed?.pr_url).toBe('https://example.test/pr/1');
+  });
+
+  it('returns duplicate for an existing run id', () => {
+    expect(insertWorkerRun('probe-dup', 'jarvis-worker-1')).toBe('inserted');
+    expect(insertWorkerRun('probe-dup', 'jarvis-worker-1')).toBe('duplicate');
   });
 });
 

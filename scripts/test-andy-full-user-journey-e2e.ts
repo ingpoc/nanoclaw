@@ -39,7 +39,10 @@ type Stage = {
 
 const DEFAULT_DB_PATH = 'store/messages.db';
 const POLL_MS = 500;
-const IMMEDIATE_REPLY_MAX_MS = 8_000;
+const IMMEDIATE_REPLY_MAX_MS = Number.parseInt(
+  process.env.ANDY_IMMEDIATE_REPLY_MAX_MS || '25000',
+  10,
+);
 const REQUEST_ACK_TIMEOUT_MS = 30_000;
 const REQUEST_LINK_TIMEOUT_MS = 180_000;
 const RUN_TERMINAL_TIMEOUT_MS = 15 * 60_000;

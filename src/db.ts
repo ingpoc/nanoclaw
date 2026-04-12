@@ -82,6 +82,111 @@ function createSchema(database: Database.Database): void {
       container_config TEXT,
       requires_trigger INTEGER DEFAULT 1
     );
+    CREATE TABLE IF NOT EXISTS processed_messages (
+      chat_jid TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      processed_at TEXT NOT NULL,
+      run_id TEXT,
+      PRIMARY KEY (chat_jid, message_id)
+    );
+    CREATE TABLE IF NOT EXISTS dispatch_attempts (
+      attempt_id TEXT PRIMARY KEY,
+      request_id TEXT,
+      source_lane_id TEXT NOT NULL,
+      target_lane_id TEXT NOT NULL,
+      run_id TEXT,
+      status TEXT NOT NULL,
+      reason_code TEXT,
+      reason_text TEXT,
+      session_strategy TEXT,
+      dispatch_payload TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_dispatch_attempts_request
+      ON dispatch_attempts(request_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_dispatch_attempts_run
+      ON dispatch_attempts(run_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_dispatch_attempts_status
+      ON dispatch_attempts(status, created_at DESC);
+    CREATE TABLE IF NOT EXISTS andy_requests (
+      request_id TEXT PRIMARY KEY,
+      chat_jid TEXT NOT NULL,
+      source_group_folder TEXT NOT NULL,
+      source_lane_id TEXT,
+      user_message_id TEXT NOT NULL UNIQUE,
+      user_prompt TEXT NOT NULL,
+      intent TEXT NOT NULL,
+      state TEXT NOT NULL,
+      worker_run_id TEXT,
+      worker_group_folder TEXT,
+      coordinator_session_id TEXT,
+      last_status_text TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      closed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_andy_requests_chat_state
+      ON andy_requests(chat_jid, state, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_andy_requests_worker_run
+      ON andy_requests(worker_run_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_andy_requests_created
+      ON andy_requests(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_andy_requests_source_lane
+      ON andy_requests(source_lane_id, updated_at DESC);
+    CREATE TABLE IF NOT EXISTS worker_runs (
+      run_id TEXT PRIMARY KEY,
+      group_folder TEXT NOT NULL,
+      lane_id TEXT,
+      status TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      completed_at TEXT,
+      result_summary TEXT,
+      files_changed TEXT,
+      dispatch_repo TEXT,
+      dispatch_branch TEXT,
+      request_id TEXT,
+      context_intent TEXT,
+      dispatch_payload TEXT,
+      parent_run_id TEXT,
+      dispatch_session_id TEXT,
+      selected_session_id TEXT,
+      effective_session_id TEXT,
+      session_selection_source TEXT,
+      session_resume_status TEXT,
+      session_resume_error TEXT,
+      phase TEXT DEFAULT 'queued',
+      last_heartbeat_at TEXT,
+      spawn_acknowledged_at TEXT,
+      active_container_name TEXT,
+      no_container_since TEXT,
+      expects_followup_container INTEGER DEFAULT 0,
+      supervisor_owner TEXT,
+      lease_expires_at TEXT,
+      recovered_from_reason TEXT,
+      agent_id TEXT,
+      agent_type TEXT,
+      retry_count INTEGER DEFAULT 0,
+      error_details TEXT,
+      branch_name TEXT,
+      pr_url TEXT,
+      commit_sha TEXT,
+      test_summary TEXT,
+      risk_summary TEXT,
+      last_progress_summary TEXT,
+      last_progress_at TEXT,
+      steer_count INTEGER DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_worker_runs_folder
+      ON worker_runs(group_folder, started_at);
+    CREATE INDEX IF NOT EXISTS idx_worker_runs_context_lookup
+      ON worker_runs(group_folder, dispatch_repo, dispatch_branch, started_at);
+    CREATE INDEX IF NOT EXISTS idx_worker_runs_effective_session
+      ON worker_runs(effective_session_id, started_at);
+    CREATE INDEX IF NOT EXISTS idx_worker_runs_request_id
+      ON worker_runs(request_id, started_at);
+    CREATE INDEX IF NOT EXISTS idx_worker_runs_lane_id
+      ON worker_runs(lane_id, started_at);
   `);
 
   // Add context_mode column if it doesn't exist (migration for existing DBs)
@@ -402,6 +507,196 @@ export function getLastBotMessageTimestamp(
     )
     .get(chatJid, `${botPrefix}:%`) as { ts: string | null } | undefined;
   return row?.ts ?? undefined;
+}
+
+export interface WorkerRunRecord {
+  run_id: string;
+  group_folder: string;
+  lane_id: string | null;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  result_summary: string | null;
+  files_changed: string | null;
+  dispatch_repo: string | null;
+  dispatch_branch: string | null;
+  request_id: string | null;
+  context_intent: string | null;
+  dispatch_payload: string | null;
+  phase: string | null;
+  error_details: string | null;
+  branch_name: string | null;
+  pr_url: string | null;
+  commit_sha: string | null;
+  test_summary: string | null;
+  risk_summary: string | null;
+}
+
+export function insertWorkerRun(
+  runId: string,
+  groupFolder: string,
+  seed: {
+    lane_id?: string;
+    dispatch_repo?: string;
+    dispatch_branch?: string;
+    request_id?: string;
+    context_intent?: string;
+    dispatch_payload?: string;
+    phase?: string;
+    status?: string;
+  } = {},
+): 'inserted' | 'duplicate' {
+  const now = new Date().toISOString();
+  const info = db
+    .prepare(
+      `
+      INSERT OR IGNORE INTO worker_runs (
+        run_id,
+        group_folder,
+        lane_id,
+        status,
+        started_at,
+        dispatch_repo,
+        dispatch_branch,
+        request_id,
+        context_intent,
+        dispatch_payload,
+        phase,
+        last_heartbeat_at,
+        spawn_acknowledged_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    )
+    .run(
+      runId,
+      groupFolder,
+      seed.lane_id ?? null,
+      seed.status ?? 'queued',
+      now,
+      seed.dispatch_repo ?? null,
+      seed.dispatch_branch ?? null,
+      seed.request_id ?? null,
+      seed.context_intent ?? null,
+      seed.dispatch_payload ?? null,
+      seed.phase ?? 'queued',
+      now,
+      now,
+    );
+
+  return info.changes > 0 ? 'inserted' : 'duplicate';
+}
+
+export function updateWorkerRunStatus(
+  runId: string,
+  status: string,
+  updates: {
+    phase?: string;
+    result_summary?: string | null;
+    error_details?: string | null;
+    active_container_name?: string | null;
+    branch_name?: string | null;
+    commit_sha?: string | null;
+    test_summary?: string | null;
+    risk_summary?: string | null;
+    files_changed?: string[] | null;
+    pr_url?: string | null;
+  } = {},
+): void {
+  const now = new Date().toISOString();
+  const isTerminal = /^(review_requested|done|failed_runtime|failed_timeout|failed_contract|failed)$/.test(
+    status,
+  );
+
+  db.prepare(
+    `
+    UPDATE worker_runs
+    SET status = ?,
+        phase = COALESCE(?, phase),
+        result_summary = COALESCE(?, result_summary),
+        error_details = COALESCE(?, error_details),
+        active_container_name = COALESCE(?, active_container_name),
+        branch_name = COALESCE(?, branch_name),
+        commit_sha = COALESCE(?, commit_sha),
+        test_summary = COALESCE(?, test_summary),
+        risk_summary = COALESCE(?, risk_summary),
+        files_changed = COALESCE(?, files_changed),
+        pr_url = COALESCE(?, pr_url),
+        completed_at = CASE WHEN ? = 1 THEN ? ELSE completed_at END,
+        last_heartbeat_at = ?,
+        spawn_acknowledged_at = COALESCE(spawn_acknowledged_at, ?)
+    WHERE run_id = ?
+  `,
+  ).run(
+    status,
+    updates.phase ?? null,
+    updates.result_summary ?? null,
+    updates.error_details ?? null,
+    updates.active_container_name ?? null,
+    updates.branch_name ?? null,
+    updates.commit_sha ?? null,
+    updates.test_summary ?? null,
+    updates.risk_summary ?? null,
+    updates.files_changed ? JSON.stringify(updates.files_changed) : null,
+    updates.pr_url ?? null,
+    isTerminal ? 1 : 0,
+    now,
+    now,
+    now,
+    runId,
+  );
+}
+
+export function getWorkerRun(runId: string): WorkerRunRecord | undefined {
+  return db.prepare('SELECT * FROM worker_runs WHERE run_id = ?').get(runId) as
+    | WorkerRunRecord
+    | undefined;
+}
+
+export function acceptWorkerRunCompletion(
+  runId: string,
+  completion: {
+    branch_name: string;
+    pr_url?: string;
+    commit_sha?: string;
+    files_changed?: string[];
+    test_summary?: string;
+    risk_summary?: string;
+  },
+): { ok: boolean } {
+  const now = new Date().toISOString();
+  const info = db
+    .prepare(
+      `
+      UPDATE worker_runs
+      SET status = 'review_requested',
+          phase = 'completed',
+          branch_name = ?,
+          pr_url = ?,
+          commit_sha = ?,
+          files_changed = ?,
+          test_summary = ?,
+          risk_summary = ?,
+          completed_at = ?,
+          result_summary = COALESCE(result_summary, 'completion accepted'),
+          last_heartbeat_at = ?
+      WHERE run_id = ?
+    `,
+    )
+    .run(
+      completion.branch_name,
+      completion.pr_url ?? null,
+      completion.commit_sha ?? null,
+      completion.files_changed
+        ? JSON.stringify(completion.files_changed)
+        : null,
+      completion.test_summary ?? null,
+      completion.risk_summary ?? null,
+      now,
+      now,
+      runId,
+    );
+
+  return { ok: info.changes > 0 };
 }
 
 export function createTask(

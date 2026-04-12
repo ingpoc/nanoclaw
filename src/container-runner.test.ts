@@ -177,10 +177,7 @@ describe('container-runner timeout behavior', () => {
       '/tmp/nanoclaw-test-data/sessions/test-group/agent-runner-src',
       'dir',
     );
-    testState.mockPathKinds.set(
-      `${process.env.HOME}/.codex`,
-      'dir',
-    );
+    testState.mockPathKinds.set(`${process.env.HOME}/.codex`, 'dir');
   });
 
   afterEach(() => {
@@ -276,27 +273,25 @@ describe('container-runner timeout behavior', () => {
 
   it('rewrites OneCLI proxy envs to the Apple bridge host before spawn', async () => {
     testState.isAppleContainerRuntime = true;
-    testState.applyContainerConfigMock.mockImplementation(async (args: string[]) => {
-      args.push(
-        '-e',
-        'HTTPS_PROXY=http://host.docker.internal:4318',
-        '-e',
-        'HTTP_PROXY=http://host.docker.internal:4318',
-      );
-      return true;
-    });
+    testState.applyContainerConfigMock.mockImplementation(
+      async (args: string[]) => {
+        args.push(
+          '-e',
+          'HTTPS_PROXY=http://host.docker.internal:4318',
+          '-e',
+          'HTTP_PROXY=http://host.docker.internal:4318',
+        );
+        return true;
+      },
+    );
 
     const resultPromise = runContainerAgent(testGroup, testInput, () => {});
     await vi.advanceTimersByTimeAsync(0);
 
     expect(testState.spawnMock).toHaveBeenCalledTimes(1);
     const spawnArgs = testState.spawnMock.mock.calls[0]?.[1] as string[];
-    expect(spawnArgs).toContain(
-      'HTTPS_PROXY=http://192.168.64.1:4318',
-    );
-    expect(spawnArgs).toContain(
-      'HTTP_PROXY=http://192.168.64.1:4318',
-    );
+    expect(spawnArgs).toContain('HTTPS_PROXY=http://192.168.64.1:4318');
+    expect(spawnArgs).toContain('HTTP_PROXY=http://192.168.64.1:4318');
     expect(spawnArgs).not.toContain(
       'HTTPS_PROXY=http://host.docker.internal:4318',
     );
@@ -320,15 +315,17 @@ describe('container-runner timeout behavior', () => {
   });
 
   it('removes OneCLI API key env when oauth auth mode is active', async () => {
-    testState.applyContainerConfigMock.mockImplementation(async (args: string[]) => {
-      args.push(
-        '-e',
-        'ANTHROPIC_API_KEY=placeholder',
-        '-e',
-        'HTTPS_PROXY=http://192.168.64.1:10255',
-      );
-      return true;
-    });
+    testState.applyContainerConfigMock.mockImplementation(
+      async (args: string[]) => {
+        args.push(
+          '-e',
+          'ANTHROPIC_API_KEY=placeholder',
+          '-e',
+          'HTTPS_PROXY=http://192.168.64.1:10255',
+        );
+        return true;
+      },
+    );
 
     const resultPromise = runContainerAgent(testGroup, testInput, () => {});
     await vi.advanceTimersByTimeAsync(0);
@@ -425,15 +422,17 @@ describe('container-runner timeout behavior', () => {
   });
 
   it('adds a no-proxy bypass for the host credential proxy', async () => {
-    testState.applyContainerConfigMock.mockImplementation(async (args: string[]) => {
-      args.push(
-        '-e',
-        'HTTP_PROXY=http://192.168.64.1:10255',
-        '-e',
-        'NO_PROXY=example.internal',
-      );
-      return true;
-    });
+    testState.applyContainerConfigMock.mockImplementation(
+      async (args: string[]) => {
+        args.push(
+          '-e',
+          'HTTP_PROXY=http://192.168.64.1:10255',
+          '-e',
+          'NO_PROXY=example.internal',
+        );
+        return true;
+      },
+    );
 
     const resultPromise = runContainerAgent(testGroup, testInput, () => {});
     await vi.advanceTimersByTimeAsync(0);
@@ -467,19 +466,21 @@ describe('container-runner timeout behavior', () => {
     testState.isAppleContainerRuntime = true;
     testState.mockPathKinds.set('/tmp/onecli-proxy-ca.pem', 'file');
     testState.mockPathKinds.set('/tmp/onecli-combined-ca.pem', 'file');
-    testState.applyContainerConfigMock.mockImplementation(async (args: string[]) => {
-      args.push(
-        '-e',
-        'NODE_EXTRA_CA_CERTS=/tmp/onecli-gateway-ca.pem',
-        '-v',
-        '/tmp/onecli-proxy-ca.pem:/tmp/onecli-gateway-ca.pem:ro',
-        '-e',
-        'SSL_CERT_FILE=/tmp/onecli-combined-ca.pem',
-        '-v',
-        '/tmp/onecli-combined-ca.pem:/tmp/onecli-combined-ca.pem:ro',
-      );
-      return true;
-    });
+    testState.applyContainerConfigMock.mockImplementation(
+      async (args: string[]) => {
+        args.push(
+          '-e',
+          'NODE_EXTRA_CA_CERTS=/tmp/onecli-gateway-ca.pem',
+          '-v',
+          '/tmp/onecli-proxy-ca.pem:/tmp/onecli-gateway-ca.pem:ro',
+          '-e',
+          'SSL_CERT_FILE=/tmp/onecli-combined-ca.pem',
+          '-v',
+          '/tmp/onecli-combined-ca.pem:/tmp/onecli-combined-ca.pem:ro',
+        );
+        return true;
+      },
+    );
 
     const resultPromise = runContainerAgent(testGroup, testInput, () => {});
     await vi.advanceTimersByTimeAsync(0);

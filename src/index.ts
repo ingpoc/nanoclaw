@@ -162,8 +162,8 @@ function isInternalWorkerLane(
 ): boolean {
   return Boolean(
     group &&
-      group.folder.startsWith('jarvis-worker-') &&
-      jid.endsWith('@nanoclaw'),
+    group.folder.startsWith('jarvis-worker-') &&
+    jid.endsWith('@nanoclaw'),
   );
 }
 
@@ -205,7 +205,10 @@ async function enqueueInternalWorkerRun(
   }
 
   const existing = getWorkerRun(dispatch.run_id);
-  if (existing && /^(queued|running|stopping|review_requested|done)$/.test(existing.status)) {
+  if (
+    existing &&
+    /^(queued|running|stopping|review_requested|done)$/.test(existing.status)
+  ) {
     logger.info(
       { chatJid, runId: dispatch.run_id, status: existing.status },
       'Worker run already present, skipping duplicate internal dispatch',

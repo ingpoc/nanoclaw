@@ -7,7 +7,9 @@ export function normalizeOneCliAgentIdentifier(groupFolder: string): string {
   return groupFolder.toLowerCase().replace(/_/g, '-');
 }
 
-export function resolveOneCliAgent(group: Pick<RegisteredGroup, 'folder' | 'name' | 'isMain'>): {
+export function resolveOneCliAgent(
+  group: Pick<RegisteredGroup, 'folder' | 'name' | 'isMain'>,
+): {
   identifier: string;
   name: string;
 } {

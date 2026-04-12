@@ -84,7 +84,9 @@ export function validateDispatchPayload(
   };
 }
 
-export function parseCompletionContract(text: string): CompletionContract | null {
+export function parseCompletionContract(
+  text: string,
+): CompletionContract | null {
   const match = /<completion>([\s\S]*?)<\/completion>/i.exec(text);
   if (!match) return null;
 

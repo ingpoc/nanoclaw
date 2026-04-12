@@ -603,9 +603,10 @@ export function updateWorkerRunStatus(
   } = {},
 ): void {
   const now = new Date().toISOString();
-  const isTerminal = /^(review_requested|done|failed_runtime|failed_timeout|failed_contract|failed)$/.test(
-    status,
-  );
+  const isTerminal =
+    /^(review_requested|done|failed_runtime|failed_timeout|failed_contract|failed)$/.test(
+      status,
+    );
 
   db.prepare(
     `

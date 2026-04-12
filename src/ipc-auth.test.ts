@@ -415,11 +415,7 @@ describe('IPC message authorization', () => {
 
   it('andy-developer can send to jarvis-worker lanes', () => {
     expect(
-      isMessageAuthorized(
-        'andy-developer',
-        false,
-        'jarvis-worker-1@nanoclaw',
-      ),
+      isMessageAuthorized('andy-developer', false, 'jarvis-worker-1@nanoclaw'),
     ).toBe(true);
   });
 
